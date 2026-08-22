@@ -2,14 +2,14 @@ import { useState, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import {
   ScanLine, Sparkles, FileCheck2, AlertTriangle, Upload, Images,
-  ArrowUpRight, ArrowDownRight, Minus, Code2, FileSpreadsheet, CheckCircle2,
+  ArrowUpRight, ArrowDownRight, Minus, Code2, FileSpreadsheet, CheckCircle2, IndianRupee, Keyboard,
 } from 'lucide-react'
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Modal, Empty, useChartTheme } from '@/components/ui'
 import {
   BATCHES, CAPTURED, FIELD_ACCURACY, AI_SUMMARY, EXPORT_PATTERNS, API_ENDPOINTS,
   type CapturedBill,
 } from '@/data/aidocs'
-import { inr2, csvDownload, fmtDate, cn } from '@/lib/utils'
+import { inr, inr2, csvDownload, fmtDate, cn } from '@/lib/utils'
 
 const TABS = ['Capture Queue', 'Upload Batches', 'Correction Report', 'Export Patterns', 'API'] as const
 
@@ -210,6 +210,8 @@ function BillDetail({ bill, onClose }: { bill: CapturedBill | null; onClose: () 
 function Batches() {
   return (
     <>
+      <CostEstimator />
+
       <div className="card mb-4 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="section-title text-base flex items-center gap-2"><Upload size={15} className="text-brand" /> Upload a page</p>
@@ -248,6 +250,80 @@ function Batches() {
         even where no bill number is written — and gives it a sequential temporary ID until it is posted.
       </p>
     </>
+  )
+}
+
+/* ── What the reading actually costs ───────────────────────────────────
+   The dashboard itself has no running cost. Reading an image does, because
+   each page goes through an outside AI service that charges per page. This
+   makes that number visible rather than a surprise on a bill.            */
+function CostEstimator() {
+  const [pagesPerDay, setPagesPerDay] = useState('30')
+  const [daysPerMonth, setDaysPerMonth] = useState('26')
+  const [ratePerPage, setRatePerPage] = useState('1.50')
+  const [billsPerPage, setBillsPerPage] = useState('3')
+
+  const pages = (Number(pagesPerDay) || 0) * (Number(daysPerMonth) || 0)
+  const monthly = pages * (Number(ratePerPage) || 0)
+  const bills = pages * (Number(billsPerPage) || 0)
+  const perBill = bills > 0 ? monthly / bills : 0
+
+  return (
+    <div className="card mb-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="section-title text-base flex items-center gap-2">
+            <IndianRupee size={15} className="text-brand" /> What the Reading Costs
+          </p>
+          <p className="section-sub max-w-3xl">
+            The dashboard, the checking screens, the name mapping and the Tally export carry no charge at all.
+            Only reading a photograph costs money, because each page passes through an outside AI service that
+            bills per page. Change the figures below to your own volume.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div><label className="label">Pages photographed per day</label>
+          <input className="input tabular-nums text-right" value={pagesPerDay} onChange={e => setPagesPerDay(e.target.value)} /></div>
+        <div><label className="label">Working days per month</label>
+          <input className="input tabular-nums text-right" value={daysPerMonth} onChange={e => setDaysPerMonth(e.target.value)} /></div>
+        <div><label className="label">Rate per page (₹)</label>
+          <input className="input tabular-nums text-right" value={ratePerPage} onChange={e => setRatePerPage(e.target.value)} /></div>
+        <div><label className="label">Bills on one page</label>
+          <input className="input tabular-nums text-right" value={billsPerPage} onChange={e => setBillsPerPage(e.target.value)} /></div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Box k="Pages per month"   v={pages.toLocaleString('en-IN')} />
+        <Box k="Bills read"        v={bills.toLocaleString('en-IN')} />
+        <Box k="Monthly cost"      v={inr(monthly)} strong />
+        <Box k="Cost per bill"     v={perBill > 0 ? '₹' + perBill.toFixed(2) : '—'} />
+      </div>
+
+      <div className="mt-4 pt-3 grid sm:grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+        <p className="text-[11px] leading-relaxed flex items-start gap-1.5" style={{ color: 'var(--text-4)' }}>
+          <Keyboard size={12} className="mt-0.5 shrink-0" />
+          Typing the entries by hand stays free and always will. The reading is an optional time-saver, not something
+          the dashboard depends on.
+        </p>
+        <p className="text-[11px] leading-relaxed flex items-start gap-1.5" style={{ color: 'var(--text-4)' }}>
+          <FileSpreadsheet size={12} className="mt-0.5 shrink-0" />
+          Printed supplier invoices read more cheaply and more accurately than handwriting, so those can be switched on
+          first at a lower rate.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Box({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+  return (
+    <div className="rounded-lg p-3.5" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+      <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>{k}</p>
+      <p className={cn('mt-0.5 tabular-nums font-bold', strong ? 'text-xl text-brand' : 'text-base')}
+        style={strong ? undefined : { color: 'var(--text-1)' }}>{v}</p>
+    </div>
   )
 }
 
