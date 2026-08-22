@@ -202,3 +202,50 @@ export const CUT_PIECES: CutPiece[] = [
 
 /** Items with a UOM rule, for the master listing. */
 export const MASTER_ITEMS = P.filter(p => uomOf(p.code))
+
+/* ── 6. Product naming ──────────────────────────────────────────────────
+   The same section is called different things by different people. The
+   mill prints one description, the shop counter uses a short form, the
+   customer expects the name he ordered against. One master record holds
+   them all, and each document picks the name it should print.           */
+
+export interface NameRow {
+  code: string
+  /** master name — used in stock, reports and every internal screen */
+  internal: string
+  /** printed on the sales tax invoice the customer receives */
+  printInvoice: string
+  /** printed on the delivery challan and purchase DC */
+  printDC: string
+  /** short form the counter staff write and speak */
+  counter: string
+  /** every other spelling the extractor should recognise as this item */
+  aliases: string[]
+}
+
+export const PRODUCT_NAMES: NameRow[] = [
+  { code:'VSA-SL-2T-OF', internal:'2 Track Sliding Outer Frame', printInvoice:'Aluminium Sliding Window Outer Frame — 2 Track', printDC:'2T OUTER FRAME 12FT',  counter:'2T Frame',   aliases:['2 TRK OUTER FRM','2T OF','2 TRACK FRAME','OUTER FRAME 2T'] },
+  { code:'VSA-SL-2T-SH', internal:'2 Track Sliding Shutter',     printInvoice:'Aluminium Sliding Window Shutter — 2 Track',     printDC:'2T SHUTTER 12FT',      counter:'2T Shutter', aliases:['2 TRK SHUTTER','2T SH','SHUTTER 2 TRACK'] },
+  { code:'VSA-SL-3T-OF', internal:'3 Track Sliding Outer Frame', printInvoice:'Aluminium Sliding Window Outer Frame — 3 Track', printDC:'3T OUTER FRAME 12FT',  counter:'3T Frame',   aliases:['3 TRK OF','3T OUTER','3 TRACK FRAME'] },
+  { code:'VSA-SL-3T-SH', internal:'3 Track Sliding Shutter',     printInvoice:'Aluminium Sliding Window Shutter — 3 Track',     printDC:'3T SHUTTER 12FT',      counter:'3T Shutter', aliases:['3 TRK SHUTTER','3T SH'] },
+  { code:'VSA-SL-INTL',  internal:'Sliding Interlock Section',   printInvoice:'Aluminium Sliding Interlock Section',            printDC:'INTERLOCK SEC 12FT',   counter:'Interlock',  aliases:['INTRLOCK','INTER LOCK','I/L SECTION'] },
+  { code:'VSA-OP-OF45',  internal:'Openable Outer Frame 45mm',   printInvoice:'Aluminium Casement Window Frame — 45mm',         printDC:'OPENABLE OF 45MM',     counter:'Op Frame',   aliases:['OPENABLE FRAME','CASEMENT OF','OP OF 45'] },
+  { code:'VSA-OP-SH45',  internal:'Openable Shutter 45mm',       printInvoice:'Aluminium Casement Window Shutter — 45mm',       printDC:'OPENABLE SH 45MM',     counter:'Op Shutter', aliases:['OPENABLE SHUTTER','CASEMENT SH'] },
+  { code:'VSA-OP-BEAD',  internal:'Glazing Bead — Casement',     printInvoice:'Aluminium Glazing Bead',                         printDC:'BEAD / BEEDING 12FT',  counter:'Beading',    aliases:['BEEDING','BEADING','GLASS BEAD','BEED'] },
+  { code:'VSA-PT-BOX',   internal:'Partition Box Section 2"x1"', printInvoice:'Aluminium Partition Box Section 2" x 1"',        printDC:'BOX SEC 2X1 12FT',     counter:'Box 2x1',    aliases:['BOX SECTION','2X1 BOX','PARTITION BOX'] },
+  { code:'VSA-PT-TPAT',  internal:'T-Patti Partition Section',   printInvoice:'Aluminium T-Section for Partition',              printDC:'T PATTI 12FT',         counter:'T Patti',    aliases:['T PATTY','T-PATTI','TEE PATTI','T SECTION'] },
+  { code:'VSA-DR-FRM',   internal:'Aluminium Door Frame Section',printInvoice:'Aluminium Door Frame Section',                   printDC:'DOOR FRAME 12FT',      counter:'Door Frame', aliases:['DR FRAME','DOOR SEC'] },
+  { code:'VSA-DR-WOOD',  internal:'Door Section — Wood Finish',  printInvoice:'Aluminium Door Section — Wood Finish',           printDC:'DOOR WOOD FIN 12FT',   counter:'Wood Door',  aliases:['WOOD FINISH DOOR','WD DOOR'] },
+  { code:'VSA-LV-BLADE', internal:'Louver Blade Section',        printInvoice:'Aluminium Louver Blade',                         printDC:'LOUVER BLADE 12FT',    counter:'Louver',     aliases:['LOUVRE BLADE','LUVER','BLADE SEC'] },
+  { code:'VSA-GL-5CL',   internal:'Clear Float Glass 5mm',       printInvoice:'Clear Float Glass — 5mm',                        printDC:'GLASS 5MM PLAIN',      counter:'5mm Glass',  aliases:['GLASS 5MM','PLAIN GLASS','5 MM CLEAR'] },
+  { code:'VSA-HW-ROLL',  internal:'Sliding Roller — Bearing (pair)', printInvoice:'Sliding Window Bearing Roller (pair)',       printDC:'ROLLER BRG PKT',       counter:'Roller',     aliases:['ROLLER','BEARING ROLLER','RLR'] },
+  { code:'VSA-HW-LOCK',  internal:'Sliding Window Touch Lock',   printInvoice:'Sliding Window Touch Lock',                      printDC:'TOUCH LOCK BOX',       counter:'Lock',       aliases:['LOCK','TOUCH LOCK','WINDOW LOCK'] },
+  { code:'VSA-CN-SIL',   internal:'Silicone Sealant — Weatherproof', printInvoice:'Weatherproof Silicone Sealant',              printDC:'SILICONE WP',          counter:'Silicon',    aliases:['SILICON','SEALANT','SILICONE'] },
+  { code:'VSA-CN-GSKT',  internal:'EPDM Gasket (per mtr)',       printInvoice:'EPDM Rubber Gasket',                             printDC:'EPDM GASKET MTR',      counter:'Gasket',     aliases:['GASKET MTR','RUBBER','EPDM'] },
+]
+
+export const namesOf = (code: string) => PRODUCT_NAMES.find(n => n.code === code)
+
+/** Name to print on a given document, falling back to the master name. */
+export const nameFor = (code: string, doc: 'internal' | 'printInvoice' | 'printDC' | 'counter', fallback: string) =>
+  namesOf(code)?.[doc] ?? fallback

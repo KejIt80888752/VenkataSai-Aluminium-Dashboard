@@ -3,6 +3,7 @@ import { Printer, X } from 'lucide-react'
 import { COMPANY } from '@/data/company'
 import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
+import { nameFor } from '@/data/itemmaster'
 import type { Invoice } from '@/data/txns'
 
 /** Number → Indian words, for the "Amount in words" line on the bill. */
@@ -96,7 +97,7 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
               <tr key={l.code}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
-                  <span className="font-medium text-slate-900">{l.name}</span>
+                  <span className="font-medium text-slate-900">{nameFor(l.code, 'printInvoice', l.name)}</span>
                   <span className="text-slate-500 text-[10px]"> ({l.code})</span>
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>

@@ -4,6 +4,7 @@ import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePage
 import { CHALLANS, type DC } from '@/data/challans'
 import { ROUTES, POWDER_SHADES, locName } from '@/data/locations'
 import { COATABLE, profileOf } from '@/data/sections'
+import { nameFor } from '@/data/itemmaster'
 import { fmtDate, csvDownload, cn } from '@/lib/utils'
 import { FY } from '@/data/company'
 
@@ -141,8 +142,8 @@ function ChallanView({ dc, onClose }: { dc: DC; onClose: () => void }) {
                 <tr key={l.slNo}>
                   <td className="tabular-nums">{l.slNo}</td>
                   <td>
-                    <p className="font-medium text-xs" style={{ color: 'var(--text-1)' }}>{l.name}</p>
-                    <p className="font-mono text-[10px]" style={{ color: 'var(--text-4)' }}>{l.code}</p>
+                    <p className="font-medium text-xs" style={{ color: 'var(--text-1)' }}>{nameFor(l.code, 'printDC', l.name)}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-4)' }}>{l.code} · {l.name}</p>
                   </td>
                   <td className="text-[11px] whitespace-nowrap">
                     <p>{l.batchNo}</p><p style={{ color: 'var(--text-4)' }}>{l.lotNo}</p>

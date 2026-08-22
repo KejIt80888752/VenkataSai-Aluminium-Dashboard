@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Boxes, Scale, Layers, Link2, Scissors, ArrowRightLeft, CheckCircle2, AlertTriangle } from 'lucide-react'
-import { PageHead, Stat, TableCard, SearchBox, ExportBtn, Empty } from '@/components/ui'
+import { Boxes, Scale, Layers, Scissors, ArrowRightLeft, CheckCircle2, AlertTriangle, Tags, Receipt, FileStack, Store, Plus, X } from 'lucide-react'
+import { PageHead, Stat, TableCard, SearchBox, ExportBtn, Empty, Modal } from '@/components/ui'
 import {
   UOM_RULES, KITS, WEIGHT_POOLS, allocatePool, ALIASES, CUT_PIECES,
-  kgToPieces, piecesToKg, uomOf,
+  PRODUCT_NAMES, kgToPieces, piecesToKg, uomOf, type NameRow,
 } from '@/data/itemmaster'
 import { csvDownload, fmtDate, cn } from '@/lib/utils'
 
-const TABS = ['Dual Unit', 'Kits & Combos', 'Pooled Weight', 'Name Mapping', 'Cut Pieces'] as const
+const TABS = ['Dual Unit', 'Product Names', 'Kits & Combos', 'Pooled Weight', 'Name Mapping', 'Cut Pieces'] as const
 
 export default function ItemMaster() {
   const [tab, setTab] = useState<typeof TABS[number]>('Dual Unit')
@@ -20,7 +20,7 @@ export default function ItemMaster() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Dual-Unit Items" value={String(UOM_RULES.length)} icon={ArrowRightLeft} tone="brand"  sub="Bought one way, sold another" />
         <Stat label="Kits & Combos"   value={String(KITS.length)}      icon={Layers}         tone="violet" sub={`${KITS.reduce((s, k) => s + k.components.length, 0)} components mapped`} />
-        <Stat label="Name Aliases"    value={String(ALIASES.length)}   icon={Link2}          tone="sky"    sub={`${ALIASES.filter(a => a.status === 'Needs Review').length} need review`} />
+        <Stat label="Product Names"   value={String(PRODUCT_NAMES.reduce((s, n) => s + 4 + n.aliases.length, 0))} icon={Tags} tone="sky" sub={`Across ${PRODUCT_NAMES.length} products`} />
         <Stat label="Cut Pieces Open" value={String(CUT_PIECES.filter(c => c.disposition !== 'Scrap / Melt').length)} icon={Scissors} tone="amber" sub="Back to stock or awaiting cut" />
       </div>
 
@@ -33,6 +33,7 @@ export default function ItemMaster() {
       </div>
 
       {tab === 'Dual Unit' && <DualUnit q={q} setQ={setQ} />}
+      {tab === 'Product Names' && <Names q={q} setQ={setQ} />}
       {tab === 'Kits & Combos' && <Kits />}
       {tab === 'Pooled Weight' && <Pools />}
       {tab === 'Name Mapping' && <Mapping q={q} setQ={setQ} />}
@@ -113,6 +114,144 @@ function DualUnit({ q, setQ }: { q: string; setQ: (v: string) => void }) {
       </TableCard>
       {rows.length === 0 && <Empty msg="No items match" />}
     </>
+  )
+}
+
+/* ── Product names: one item, a different name on each document ────── */
+function Names({ q, setQ }: { q: string; setQ: (v: string) => void }) {
+  const [rows, setRows] = useState<NameRow[]>(PRODUCT_NAMES)
+  const [sel, setSel] = useState<string | null>(null)
+  const [newAlias, setNewAlias] = useState('')
+
+  const shown = rows.filter(n =>
+    q === '' || [n.code, n.internal, n.printInvoice, n.printDC, n.counter, ...n.aliases]
+      .join(' ').toLowerCase().includes(q.toLowerCase()))
+
+  const set = (code: string, k: keyof NameRow, v: string) =>
+    setRows(rs => rs.map(r => (r.code === code ? { ...r, [k]: v } : r)))
+
+  const addAlias = (code: string) => {
+    if (!newAlias.trim()) return
+    setRows(rs => rs.map(r => (r.code === code ? { ...r, aliases: [...r.aliases, newAlias.trim().toUpperCase()] } : r)))
+    setNewAlias('')
+  }
+  const dropAlias = (code: string, a: string) =>
+    setRows(rs => rs.map(r => (r.code === code ? { ...r, aliases: r.aliases.filter(x => x !== a) } : r)))
+
+  const current = rows.find(r => r.code === sel)
+
+  const exportCsv = () => csvDownload('vsa-product-names.csv', [
+    ['Code', 'Internal name', 'Prints on sales invoice', 'Prints on delivery challan', 'Counter short name', 'Recognised aliases'],
+    ...shown.map(n => [n.code, n.internal, n.printInvoice, n.printDC, n.counter, n.aliases.join(' | ')]),
+  ])
+
+  return (
+    <>
+      <div className="card mb-4">
+        <p className="section-title text-base mb-1">One Product, Four Names</p>
+        <p className="section-sub mb-4 max-w-3xl">
+          The customer's invoice, the delivery challan, the shop counter and the stock reports each need the name that
+          suits them. Set them once here and every document picks the right one on its own. Anything typed into the
+          aliases box is recognised by the AI extractor as the same item.
+        </p>
+        <div className="grid sm:grid-cols-4 gap-3">
+          <Legend icon={Boxes}      k="Internal" note="Stock, reports and every screen inside the ERP" />
+          <Legend icon={Receipt}    k="Sales invoice" note="The long descriptive name the customer expects" />
+          <Legend icon={FileStack}  k="Delivery challan" note="The short mill-style description on the DC" />
+          <Legend icon={Store}      k="Counter" note="What the shop staff say and write on slips" />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        <SearchBox value={q} onChange={setQ} placeholder="Search any name or alias…" />
+        <ExportBtn onClick={exportCsv} />
+      </div>
+
+      <TableCard maxH="30rem">
+        <thead>
+          <tr><th>Code</th><th>Internal</th><th>Sales Invoice</th><th>Delivery Challan</th><th>Counter</th><th className="num">Aliases</th></tr>
+        </thead>
+        <tbody>
+          {shown.map(n => (
+            <tr key={n.code} className="cursor-pointer" onClick={() => setSel(n.code)}>
+              <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{n.code}</td>
+              <td className="font-medium text-sm" style={{ color: 'var(--text-1)' }}>{n.internal}</td>
+              <td className="text-xs max-w-[16rem]">{n.printInvoice}</td>
+              <td className="font-mono text-[11px] whitespace-nowrap">{n.printDC}</td>
+              <td className="text-xs">{n.counter}</td>
+              <td className="num tabular-nums text-xs">{n.aliases.length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </TableCard>
+      {shown.length === 0 && <Empty msg="No product matches that name" />}
+
+      <Modal open={!!current} onClose={() => setSel(null)} title={current ? `Names for ${current.code}` : ''} wide>
+        {current && (
+          <div className="space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div><label className="label">Internal name (stock & reports)</label>
+                <input className="input" value={current.internal} onChange={e => set(current.code, 'internal', e.target.value)} /></div>
+              <div><label className="label">Prints on sales invoice</label>
+                <input className="input" value={current.printInvoice} onChange={e => set(current.code, 'printInvoice', e.target.value)} /></div>
+              <div><label className="label">Prints on delivery challan</label>
+                <input className="input" value={current.printDC} onChange={e => set(current.code, 'printDC', e.target.value)} /></div>
+              <div><label className="label">Counter short name</label>
+                <input className="input" value={current.counter} onChange={e => set(current.code, 'counter', e.target.value)} /></div>
+            </div>
+
+            <div>
+              <label className="label">Recognised aliases — what the AI treats as this same item</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {current.aliases.map(a => (
+                  <span key={a} className="badge-gray font-mono !text-[11px]">
+                    {a}
+                    <button onClick={() => dropAlias(current.code, a)} className="ml-1 hover:text-red-500"><X size={10} /></button>
+                  </span>
+                ))}
+                {current.aliases.length === 0 && <span className="text-xs" style={{ color: 'var(--text-4)' }}>None yet</span>}
+              </div>
+              <div className="flex gap-2">
+                <input className="input" placeholder="Type another spelling and press Enter" value={newAlias}
+                  onChange={e => setNewAlias(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addAlias(current.code) }} />
+                <button onClick={() => addAlias(current.code)} className="btn shrink-0"><Plus size={14} /> Add</button>
+              </div>
+            </div>
+
+            <div className="rounded-lg p-4" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+              <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-1)' }}>How it will print</p>
+              <div className="space-y-2 text-xs">
+                <Preview doc="Sales tax invoice" v={current.printInvoice} />
+                <Preview doc="Delivery challan"  v={current.printDC} />
+                <Preview doc="Stock report"      v={current.internal} />
+                <Preview doc="Counter slip"      v={current.counter} />
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  )
+}
+
+function Legend({ icon: Icon, k, note }: { icon: typeof Boxes; k: string; note: string }) {
+  return (
+    <div className="rounded-lg p-3" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+      <p className="text-xs font-semibold flex items-center gap-1.5" style={{ color: 'var(--text-1)' }}>
+        <Icon size={12} className="text-brand" /> {k}
+      </p>
+      <p className="text-[11px] mt-1 leading-relaxed" style={{ color: 'var(--text-4)' }}>{note}</p>
+    </div>
+  )
+}
+
+function Preview({ doc, v }: { doc: string; v: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="w-32 shrink-0" style={{ color: 'var(--text-4)' }}>{doc}</span>
+      <span className="font-medium" style={{ color: 'var(--text-1)' }}>{v}</span>
+    </div>
   )
 }
 

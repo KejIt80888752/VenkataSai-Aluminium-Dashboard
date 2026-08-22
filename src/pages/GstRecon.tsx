@@ -5,6 +5,7 @@ import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePage
 import { ALL_RECON, RECON_SUMMARY, GSTR3B, type MatchStatus } from '@/data/gst2b'
 import { inr, inr2, inrShort, fmtDate, csvDownload, cn } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
+import GstUploadMatch from '@/components/GstUploadMatch'
 
 const STATUS_COLOR: Record<MatchStatus, string> = {
   'Matched': '#16a34a',
@@ -47,16 +48,20 @@ export default function GstRecon() {
   return (
     <div>
       <PageHead title="GST Reconciliation" sub={`GSTR-2B against the purchase register, and GSTR-3B against the ledger · ${COMPANY.gstin}`}>
-        <Select value={view} onChange={setView} options={['2B vs Purchase Register', '3B vs Ledger']} className="min-w-[13rem]" />
-        <ExportBtn onClick={exportCsv} />
+        <Select value={view} onChange={setView} options={['2B vs Purchase Register', '3B vs Ledger', 'Upload & Match Your Files']} className="min-w-[15rem]" />
+        {view !== 'Upload & Match Your Files' && <ExportBtn onClick={exportCsv} />}
       </PageHead>
 
+      {view !== 'Upload & Match Your Files' && (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Match Rate"        value={`${RECON_SUMMARY.matchRate}%`} icon={ShieldCheck} tone="green" sub={`${RECON_SUMMARY.matched} of ${RECON_SUMMARY.total} bills tie exactly`} />
         <Stat label="Credit Safe to Claim" value={inr(RECON_SUMMARY.creditSafe)} icon={IndianRupee} tone="brand" sub="Reflected in 2B at the same value" />
         <Stat label="Credit at Risk"    value={inr(RECON_SUMMARY.creditAtRisk)} icon={ShieldAlert} tone="red" sub={`${RECON_SUMMARY.missingIn2B + RECON_SUMMARY.gstinMismatch} bills not confirmed by 2B`} />
         <Stat label="Unclaimed in 2B"   value={inr(RECON_SUMMARY.creditUnclaimed)} icon={FileSearch} tone="violet" sub={`${RECON_SUMMARY.missingInBooks} bills never entered in books`} />
       </div>
+      )}
+
+      {view === 'Upload & Match Your Files' && <GstUploadMatch />}
 
       {view === '2B vs Purchase Register' && (
         <>
