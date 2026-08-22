@@ -5,18 +5,24 @@ import { DEMO_USERS, useAuth } from '@/hooks/useAuth'
 import { fmtDate } from '@/lib/utils'
 
 const MODULES = [
-  'Dashboard', 'Product Catalogue', 'Stock & Inventory', 'Stock Movement',
+  'Dashboard', 'Alerts & Reminders',
+  'Material Flow', 'Delivery Challans', 'Coating Recon', 'Coating Billing',
+  'Location Stock', 'Stock & Inventory', 'Stock Audit', 'Stock Movement',
+  'Product Catalogue', 'Item Master',
   'Quotations', 'Billing / Invoice', 'Sales Reports', 'Leads', 'Customers',
-  'Purchases', 'Suppliers', 'Outstanding', 'Profit & Loss', 'GST Reports', 'User Management', 'Settings',
+  'Purchase Orders', 'Purchase Register', 'Suppliers',
+  'AI Capture',
+  'Outstanding', 'Profit & Loss', 'GST Reports', 'GST Reconciliation',
+  'User Management', 'Settings',
 ]
 
 /** Role → module access matrix used by the app's route guard. */
 const MATRIX: Record<string, string[]> = {
   Admin: MODULES,
   Manager: MODULES.filter(m => !['User Management'].includes(m)),
-  'Sales Executive': ['Dashboard', 'Product Catalogue', 'Stock & Inventory', 'Quotations', 'Billing / Invoice', 'Sales Reports', 'Leads', 'Customers', 'Outstanding'],
-  'Store Keeper': ['Dashboard', 'Product Catalogue', 'Stock & Inventory', 'Stock Movement', 'Suppliers'],
-  Accountant: ['Dashboard', 'Billing / Invoice', 'Purchases', 'Outstanding', 'Profit & Loss', 'GST Reports'],
+  'Sales Executive': ['Dashboard', 'Alerts & Reminders', 'Product Catalogue', 'Location Stock', 'Stock & Inventory', 'Quotations', 'Billing / Invoice', 'Sales Reports', 'Leads', 'Customers', 'Outstanding', 'AI Capture'],
+  'Store Keeper': ['Dashboard', 'Alerts & Reminders', 'Material Flow', 'Delivery Challans', 'Coating Recon', 'Location Stock', 'Stock & Inventory', 'Stock Audit', 'Stock Movement', 'Product Catalogue', 'Item Master', 'Purchase Orders', 'Suppliers', 'AI Capture'],
+  Accountant: ['Dashboard', 'Billing / Invoice', 'Purchase Register', 'Coating Billing', 'Outstanding', 'Profit & Loss', 'GST Reports', 'GST Reconciliation', 'AI Capture'],
 }
 
 const ROSTER = Object.entries(DEMO_USERS).map(([email, u], i) => ({

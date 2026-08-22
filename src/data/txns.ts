@@ -43,7 +43,7 @@ export interface Line {
 export interface Invoice {
   id: string; no: string; date: string; dueDate: string
   clientId: string; clientName: string; gstin: string; state: string
-  poNo: string; vehicle: string; ewayBill: string
+  poNo: string; vehicle: string; ewayBill: string; remarks: string
   lines: Line[]
   taxable: number; cgst: number; sgst: number; igst: number; roundOff: number; total: number
   cogs: number
@@ -140,6 +140,10 @@ export const INVOICES: Invoice[] = MONTHS.flatMap(m => {
       poNo:     rnd() < 0.45 ? `PO-${iBetween(1000, 9999)}` : '—',
       vehicle:  `KA ${iBetween(1, 53).toString().padStart(2, '0')} ${pick(['AB','MJ','KL','CR','HG'])} ${iBetween(1000, 9999)}`,
       ewayBill: money.total > 50000 ? `${iBetween(100, 999)}${iBetween(1000000000, 9999999999)}` : '—',
+      remarks: rnd() < 0.35
+        ? pick(['Tax qty as per bundle weight', 'Cut to size at shop — end pieces retained', 'Material issued from Godown 2 (4F)',
+                'Coated lot — shade RAL9016', 'Balance qty to follow on next DC'])
+        : '—',
       lines, ...money,
       received,
       status,

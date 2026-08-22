@@ -4,7 +4,7 @@ import {
 } from 'recharts'
 import {
   IndianRupee, TrendingUp, Wallet, Warehouse, AlertTriangle,
-  CheckCircle2, PackageX, ArrowUpRight, Clock,
+  CheckCircle2, PackageX, ArrowUpRight, Clock, SprayCan, Truck, Scale, ScanLine,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Stat, useChartTheme, SERIES, Pill } from '@/components/ui'
@@ -14,6 +14,10 @@ import { P, isLow, stockValue, stockQty } from '@/data/catalogue'
 import {
   monthlySales, TOTALS, INVOICES, salesByCategory, topClients, LEADS, QUOTATIONS,
 } from '@/data/txns'
+import { COATING_TOTALS, IN_TRANSIT } from '@/data/challans'
+import { PCU_OUTSTANDING, below15Days, PURCHASE_ORDERS } from '@/data/positions'
+import { AI_SUMMARY } from '@/data/aidocs'
+import { RECON_SUMMARY } from '@/data/gst2b'
 
 export default function Dashboard() {
   const t = useChartTheme()
@@ -29,6 +33,11 @@ export default function Dashboard() {
   const wonQuotes    = QUOTATIONS.filter(q => q.status === 'Won')
   const quoteWinRate = Math.round((wonQuotes.length / QUOTATIONS.length) * 100)
 
+  const pcuPendingNos = PCU_OUTSTANDING.reduce((s, p) => s + p.nos, 0)
+  const pcuPendingKg  = +PCU_OUTSTANDING.reduce((s, p) => s + p.kg, 0).toFixed(1)
+  const transitNos    = IN_TRANSIT.reduce((s, d) => s + d.totalNos, 0)
+  const openPos       = PURCHASE_ORDERS.filter(p => p.status !== 'Closed').length
+
   const lastM = monthlySales[monthlySales.length - 2]
   const thisM = monthlySales[monthlySales.length - 1]
 
@@ -39,6 +48,9 @@ export default function Dashboard() {
     overdue.length ? { warn: true, msg: `${overdue.length} invoices overdue · ${inr(overdueAmt)} to be recovered` } : null,
     { warn: false, msg: `GST input credit of ${inr(TOTALS.inputGst)} available against output tax` },
     { warn: false, msg: `${wonQuotes.length} of ${QUOTATIONS.length} quotations converted this year (${quoteWinRate}%)` },
+    pcuPendingNos ? { warn: true, msg: `${pcuPendingNos.toLocaleString('en-IN')} pcs (${pcuPendingKg.toLocaleString('en-IN')} kg) still lying at the powder coaters` } : null,
+    below15Days.length ? { warn: true, msg: `${below15Days.length} items will not last 15 days at the current sales rate` } : null,
+    RECON_SUMMARY.creditAtRisk > 0 ? { warn: true, msg: `${inr(RECON_SUMMARY.creditAtRisk)} of input credit not yet confirmed in GSTR-2B` } : null,
   ].filter(Boolean) as { warn: boolean; msg: string }[]
 
   return (
@@ -54,6 +66,26 @@ export default function Dashboard() {
           icon={Wallet} tone="red" />
         <Stat label="Stock on Hand" value={inr(stockTotal)} sub={`${Math.round(stockKg).toLocaleString('en-IN')} kg of sections`}
           icon={Warehouse} tone="violet" />
+      </div>
+
+      {/* Material flow strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <Link to="/material-flow" className="block">
+          <Stat label="At Powder Coaters" value={`${pcuPendingNos.toLocaleString('en-IN')} nos`}
+            sub={`${pcuPendingKg.toLocaleString('en-IN')} kg across PCU1 and PCU2`} icon={SprayCan} tone="amber" />
+        </Link>
+        <Link to="/challans" className="block">
+          <Stat label="In Transit" value={`${transitNos.toLocaleString('en-IN')} nos`}
+            sub={`${IN_TRANSIT.length} challans on the road`} icon={Truck} tone="sky" />
+        </Link>
+        <Link to="/coating-recon" className="block">
+          <Stat label="Coating Weight Gain" value={`${COATING_TOTALS.gainKg.toLocaleString('en-IN')} kg`}
+            sub={`${COATING_TOTALS.outOfTolerance} jobs outside tolerance`} icon={Scale} tone="green" />
+        </Link>
+        <Link to="/ai-capture" className="block">
+          <Stat label="AI Capture" value={`${AI_SUMMARY.straightThroughPct}% auto`}
+            sub={`${AI_SUMMARY.needsReview} bills waiting for review`} icon={ScanLine} tone="violet" />
+        </Link>
       </div>
 
       {/* Charts */}
@@ -214,6 +246,8 @@ export default function Dashboard() {
               <Row label="Open leads"        value={`${openLeads.length}`} icon={Clock} />
               <Row label="Low-stock items"   value={`${lowItems.length}`}  icon={PackageX} danger={lowItems.length > 0} />
               <Row label="Supplier payable"  value={inr(TOTALS.payable)} />
+              <Row label="Open purchase orders" value={`${openPos}`} />
+              <Row label="GST match rate"    value={`${RECON_SUMMARY.matchRate}%`} />
               <Row label="As on"             value={fmtDate(TODAY)} />
             </div>
           </div>

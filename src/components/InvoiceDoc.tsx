@@ -78,6 +78,7 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
             <Meta k="Buyer PO" v={inv.poNo} />
             <Meta k="Vehicle No." v={inv.vehicle} />
             <Meta k="E-Way Bill" v={inv.ewayBill} />
+            <Meta k="Remarks" v={inv.remarks} />
           </div>
         </div>
 

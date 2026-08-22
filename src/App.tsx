@@ -19,6 +19,17 @@ import ProfitLoss   from '@/pages/ProfitLoss'
 import GstReports   from '@/pages/GstReports'
 import Users        from '@/pages/Users'
 import Settings     from '@/pages/Settings'
+import MaterialFlow    from '@/pages/MaterialFlow'
+import Challans        from '@/pages/Challans'
+import CoatingRecon    from '@/pages/CoatingRecon'
+import CoatingBilling  from '@/pages/CoatingBilling'
+import Locations       from '@/pages/Locations'
+import ItemMaster      from '@/pages/ItemMaster'
+import AiCapture       from '@/pages/AiCapture'
+import GstRecon        from '@/pages/GstRecon'
+import StockAudit      from '@/pages/StockAudit'
+import PurchaseOrders  from '@/pages/PurchaseOrders'
+import Alerts          from '@/pages/Alerts'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -49,6 +60,17 @@ function AppRoutes() {
               <Route path="/gst-reports"   element={<GstReports   />} />
               <Route path="/users"         element={<Users        />} />
               <Route path="/settings"      element={<Settings     />} />
+              <Route path="/material-flow"   element={<MaterialFlow   />} />
+              <Route path="/challans"        element={<Challans       />} />
+              <Route path="/coating-recon"   element={<CoatingRecon   />} />
+              <Route path="/coating-billing" element={<CoatingBilling />} />
+              <Route path="/locations"       element={<Locations      />} />
+              <Route path="/item-master"     element={<ItemMaster     />} />
+              <Route path="/ai-capture"      element={<AiCapture      />} />
+              <Route path="/gst-recon"       element={<GstRecon       />} />
+              <Route path="/stock-audit"     element={<StockAudit     />} />
+              <Route path="/purchase-orders" element={<PurchaseOrders />} />
+              <Route path="/alerts"          element={<Alerts         />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>

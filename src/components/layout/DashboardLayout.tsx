@@ -20,6 +20,17 @@ export const TITLES: Record<string, string> = {
   '/gst-reports':    'GST Reports',
   '/users':          'User Management',
   '/settings':       'Settings',
+  '/material-flow':   'Material Flow',
+  '/challans':        'Delivery Challans',
+  '/coating-recon':   'Coating Reconciliation',
+  '/coating-billing': 'Powder Coating Billing',
+  '/locations':       'Location Stock',
+  '/item-master':     'Item Master',
+  '/ai-capture':      'AI Document Capture',
+  '/gst-recon':       'GST Reconciliation',
+  '/stock-audit':     'Stock Audit',
+  '/purchase-orders': 'Purchase Orders',
+  '/alerts':          'Alerts & Reminders',
 }
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
