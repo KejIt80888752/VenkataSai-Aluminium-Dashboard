@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { FileStack, Plus, Trash2, Truck, Scale, Columns3, Save, X } from 'lucide-react'
+import { FileStack, Plus, Trash2, Truck, Scale, Columns3, Save, X, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Modal } from '@/components/ui'
 import { CHALLANS, type DC } from '@/data/challans'
 import { ROUTES, POWDER_SHADES, locName } from '@/data/locations'
@@ -8,23 +8,25 @@ import { nameFor } from '@/data/itemmaster'
 import { fmtDate, csvDownload, cn } from '@/lib/utils'
 import { FY } from '@/data/company'
 
-/* ── Grid row used by the parallel entry sheet ─────────────────────── */
+/* ── Grid row — same columns, same order, as the paper despatch sheet ── */
 interface Row {
   id: number
   code: string
+  wtRange: string
+  netWeightKg: string
+  cutLengthFt: string
+  pieces: string
   batchNo: string
   lotNo: string
   bundles: string
   qtyPerBundle: string
-  cutLengthFt: string
-  totalWeightKg: string
   remarksTaxQty: string
   custom: Record<string, string>
 }
 
 const blankRow = (id: number): Row => ({
-  id, code: '', batchNo: '', lotNo: '', bundles: '', qtyPerBundle: '',
-  cutLengthFt: '12', totalWeightKg: '', remarksTaxQty: '', custom: {},
+  id, code: '', wtRange: '', netWeightKg: '', cutLengthFt: '12', pieces: '',
+  batchNo: '', lotNo: '', bundles: '', qtyPerBundle: '', remarksTaxQty: '', custom: {},
 })
 
 const num = (v: string) => (v.trim() === '' ? 0 : Number(v) || 0)
@@ -180,12 +182,13 @@ function ChallanView({ dc, onClose }: { dc: DC; onClose: () => void }) {
 /* ── Excel-style parallel entry ────────────────────────────────────── */
 function ParallelEntry({ onClose }: { onClose: () => void }) {
   const [head, setHead] = useState({
-    routeId: 'M1-PCU1', date: '2026-08-20', vehicleNo: '', driver: '',
+    routeId: 'M1-PCU1', date: '2026-08-20', poNo: '', vehicleNo: '', driver: '',
     shadeCode: 'RAL9016', ewayBill: '', againstDc: '', remarks: '',
   })
   const [rows, setRows] = useState<Row[]>([blankRow(1), blankRow(2), blankRow(3)])
   const [customCols, setCustomCols] = useState<string[]>([])
   const [newCol, setNewCol] = useState('')
+  const [sheetTotal, setSheetTotal] = useState('')
   const [saved, setSaved] = useState(false)
 
   const set = (id: number, k: keyof Row, v: string) =>
@@ -196,46 +199,70 @@ function ParallelEntry({ onClose }: { onClose: () => void }) {
   const addRow = () => setRows(rs => [...rs, blankRow(Math.max(0, ...rs.map(r => r.id)) + 1)])
   const delRow = (id: number) => setRows(rs => (rs.length > 1 ? rs.filter(r => r.id !== id) : rs))
 
-  /** Everything derived is computed live, exactly as the sheet would. */
+  /**
+   * Everything derived computes live. Pieces can be typed straight from the
+   * sheet; where the challan gives bundles instead, they multiply out. The
+   * kg-per-foot figure is the useful cross-check — an extruded section runs
+   * in a narrow band, so a stray digit in the weight or the piece count
+   * shows up immediately.
+   */
   const calc = (r: Row) => {
-    const totalNos = num(r.bundles) * num(r.qtyPerBundle)
-    const wt = num(r.totalWeightKg)
+    const fromBundles = num(r.bundles) * num(r.qtyPerBundle)
+    const totalNos = r.pieces.trim() !== '' ? num(r.pieces) : fromBundles
+    const wt = num(r.netWeightKg)
     const cut = num(r.cutLengthFt)
     const prof = profileOf(r.code)
+    const std = COATABLE.find(p => p.code === r.code)
+    const stdPerFt = std && std.lengthFt ? std.kgPerLength / std.lengthFt : 0
+    const perPiece = totalNos ? +(wt / totalNos).toFixed(3) : 0
+    const perFt = totalNos && cut ? +(wt / totalNos / cut).toFixed(3) : 0
+    const drift = stdPerFt > 0 && perFt > 0 ? (perFt - stdPerFt) / stdPerFt : 0
     return {
-      totalNos,
+      totalNos, fromBundles,
       bundleWt: num(r.bundles) ? +(wt / num(r.bundles)).toFixed(2) : 0,
-      perPiece: totalNos ? +(wt / totalNos).toFixed(3) : 0,
+      perPiece, perFt, stdPerFt,
+      suspect: Math.abs(drift) > 0.4,
+      driftPct: +(drift * 100).toFixed(0),
       sqft: prof ? +(totalNos * cut * prof.sqftPerFt).toFixed(1) : 0,
     }
   }
 
   const totals = rows.reduce((a, r) => {
     const c = calc(r)
-    return { nos: a.nos + c.totalNos, kg: +(a.kg + num(r.totalWeightKg)).toFixed(1), sqft: +(a.sqft + c.sqft).toFixed(1) }
+    return { nos: a.nos + c.totalNos, kg: +(a.kg + num(r.netWeightKg)).toFixed(3), sqft: +(a.sqft + c.sqft).toFixed(1) }
   }, { nos: 0, kg: 0, sqft: 0 })
 
-  const filled = rows.filter(r => r.code && num(r.bundles) > 0)
+  const filled = rows.filter(r => r.code && num(r.netWeightKg) > 0)
+  const suspects = rows.filter(r => r.code && calc(r).suspect).length
 
-  const exportSheet = () => csvDownload('vsa-dc-entry.csv', [
-    ['DC Entry', head.routeId, head.date, head.vehicleNo],
-    [], ['Sl No', 'Section Code', 'Batch', 'Lot', 'Bundles', 'Qty/Bundle', 'Total Nos', 'Cut Length', 'Total Wt', 'Bundle Wt', 'Per Piece', 'Sqft', 'Remarks', ...customCols],
+  /** The sheet carries its own total — compare, the way the storekeeper would. */
+  const stated = num(sheetTotal)
+  const tallyDiff = stated > 0 ? +(totals.kg - stated).toFixed(3) : null
+
+  const exportSheet = () => csvDownload('vsa-despatch-sheet.csv', [
+    ['Despatch sheet', head.routeId, head.date, 'P.O. No', head.poNo, 'Vehicle', head.vehicleNo],
+    [], ['Sl No', 'Particulars', 'Weight Range', 'Net Weight', 'Length', 'No. of Pieces',
+         'Batch', 'Lot', 'Bundles', 'Qty/Bundle', 'Bundle Wt', 'Per Piece', 'Kg/Ft', 'Sqft', 'Remarks', ...customCols],
     ...rows.map((r, i) => {
       const c = calc(r)
-      return [i + 1, r.code, r.batchNo, r.lotNo, r.bundles, r.qtyPerBundle, c.totalNos, r.cutLengthFt,
-        r.totalWeightKg, c.bundleWt, c.perPiece, c.sqft, r.remarksTaxQty, ...customCols.map(cc => r.custom[cc] ?? '')]
+      return [i + 1, r.code, r.wtRange, r.netWeightKg, r.cutLengthFt, c.totalNos,
+        r.batchNo, r.lotNo, r.bundles, r.qtyPerBundle, c.bundleWt, c.perPiece, c.perFt, c.sqft,
+        r.remarksTaxQty, ...customCols.map(cc => r.custom[cc] ?? '')]
     }),
+    [], ['TOTAL', '', '', totals.kg, '', totals.nos],
   ])
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="max-w-[78rem] mx-auto rounded-xl shadow-2xl my-6"
+      <div onClick={e => e.stopPropagation()} className="max-w-[82rem] mx-auto rounded-xl shadow-2xl my-6"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)' }}>
 
         <div className="flex items-center justify-between px-5 py-3.5" style={{ borderBottom: '1px solid var(--border-2)' }}>
           <div>
-            <p className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>Parallel DC Entry</p>
-            <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>Type across the sheet — totals, bundle weight, per-piece weight and sqft compute as you go</p>
+            <p className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>Despatch Sheet — Parallel Entry</p>
+            <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+              Same columns, same order as the paper sheet. Type across; pieces, weights and area compute as you go.
+            </p>
           </div>
           <button onClick={onClose} style={{ color: 'var(--text-4)' }}><X size={18} /></button>
         </div>
@@ -248,10 +275,10 @@ function ParallelEntry({ onClose }: { onClose: () => void }) {
             </select></div>
           <div><label className="label">Date</label>
             <input type="date" className="input" value={head.date} onChange={e => setHead(h => ({ ...h, date: e.target.value }))} /></div>
+          <div><label className="label">P.O. No</label>
+            <input className="input" placeholder="As on the sheet" value={head.poNo} onChange={e => setHead(h => ({ ...h, poNo: e.target.value }))} /></div>
           <div><label className="label">Vehicle No</label>
             <input className="input" placeholder="KA 05 MJ 4471" value={head.vehicleNo} onChange={e => setHead(h => ({ ...h, vehicleNo: e.target.value }))} /></div>
-          <div><label className="label">Driver</label>
-            <input className="input" placeholder="Driver name" value={head.driver} onChange={e => setHead(h => ({ ...h, driver: e.target.value }))} /></div>
           <div><label className="label">Powder Shade</label>
             <select className="input" value={head.shadeCode} onChange={e => setHead(h => ({ ...h, shadeCode: e.target.value }))}>
               {POWDER_SHADES.map(s => <option key={s.code} value={s.code}>{s.name} ({s.code})</option>)}
@@ -270,18 +297,18 @@ function ParallelEntry({ onClose }: { onClose: () => void }) {
             <thead>
               <tr>
                 <th className="w-8">Sl</th>
-                <th className="min-w-[13rem]">Profile Section</th>
-                <th className="min-w-[8rem]">Batch</th>
-                <th className="min-w-[8rem]">Lot</th>
-                <th className="num w-20">Bundles</th>
-                <th className="num w-20">Qty/Bdl</th>
-                <th className="num w-20">Total Nos</th>
-                <th className="num w-20">Cut Len</th>
-                <th className="num w-24">Total Wt</th>
-                <th className="num w-20">Bundle Wt</th>
+                <th className="min-w-[13rem]">Particulars</th>
+                <th className="num w-20">Wt Range</th>
+                <th className="num w-24">Net Weight</th>
+                <th className="num w-20">Length</th>
+                <th className="num w-20">Pieces</th>
                 <th className="num w-20">Per Pc</th>
+                <th className="num w-20">Kg / Ft</th>
+                <th className="min-w-[7rem]">Batch</th>
+                <th className="num w-16">Bdls</th>
+                <th className="num w-16">Qty/Bdl</th>
                 <th className="num w-20">Sqft</th>
-                <th className="min-w-[10rem]">Remarks (Tax Qty)</th>
+                <th className="min-w-[9rem]">Remarks</th>
                 {customCols.map(c => <th key={c} className="min-w-[8rem]">{c}</th>)}
                 <th className="w-8" />
               </tr>
@@ -298,17 +325,26 @@ function ParallelEntry({ onClose }: { onClose: () => void }) {
                         {COATABLE.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
                       </select>
                     </td>
-                    <Cellin v={r.batchNo}        on={v => set(r.id, 'batchNo', v)}        ph="BT/2608/xxx" />
-                    <Cellin v={r.lotNo}          on={v => set(r.id, 'lotNo', v)}          ph="LOT-2608-xxx" />
-                    <Cellin v={r.bundles}        on={v => set(r.id, 'bundles', v)}        ph="0" right />
-                    <Cellin v={r.qtyPerBundle}   on={v => set(r.id, 'qtyPerBundle', v)}   ph="0" right />
-                    <td className="num tabular-nums text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{c.totalNos || '—'}</td>
-                    <Cellin v={r.cutLengthFt}    on={v => set(r.id, 'cutLengthFt', v)}    ph="12" right />
-                    <Cellin v={r.totalWeightKg}  on={v => set(r.id, 'totalWeightKg', v)}  ph="0.0" right />
-                    <td className="num tabular-nums text-xs" style={{ color: 'var(--text-3)' }}>{c.bundleWt || '—'}</td>
+                    <Cellin v={r.wtRange}      on={v => set(r.id, 'wtRange', v)}      ph="—"    right />
+                    <Cellin v={r.netWeightKg}  on={v => set(r.id, 'netWeightKg', v)}  ph="0.000" right />
+                    <Cellin v={r.cutLengthFt}  on={v => set(r.id, 'cutLengthFt', v)}  ph="12"   right />
+                    <Cellin v={r.pieces}       on={v => set(r.id, 'pieces', v)}       ph={c.fromBundles ? String(c.fromBundles) : '0'} right />
                     <td className="num tabular-nums text-xs" style={{ color: 'var(--text-3)' }}>{c.perPiece || '—'}</td>
+                    <td className="num tabular-nums text-xs">
+                      {c.perFt
+                        ? <span className={cn('font-medium', c.suspect && 'text-amber-600')}
+                            title={c.suspect
+                              ? `Standard for this section is about ${c.stdPerFt.toFixed(3)} kg/ft — this line is ${c.driftPct > 0 ? '+' : ''}${c.driftPct}% off. Check the weight or the piece count.`
+                              : 'Within the normal band for this section'}>
+                            {c.perFt}{c.suspect && ' ⚠'}
+                          </span>
+                        : '—'}
+                    </td>
+                    <Cellin v={r.batchNo}      on={v => set(r.id, 'batchNo', v)}      ph="BT/2608/xxx" />
+                    <Cellin v={r.bundles}      on={v => set(r.id, 'bundles', v)}      ph="—" right />
+                    <Cellin v={r.qtyPerBundle} on={v => set(r.id, 'qtyPerBundle', v)} ph="—" right />
                     <td className="num tabular-nums text-xs" style={{ color: 'var(--text-3)' }}>{c.sqft || '—'}</td>
-                    <Cellin v={r.remarksTaxQty}  on={v => set(r.id, 'remarksTaxQty', v)}  ph="—" />
+                    <Cellin v={r.remarksTaxQty} on={v => set(r.id, 'remarksTaxQty', v)} ph="—" />
                     {customCols.map(cc => (
                       <Cellin key={cc} v={r.custom[cc] ?? ''} on={v => setCustom(r.id, cc, v)} ph="—" />
                     ))}
@@ -319,16 +355,33 @@ function ParallelEntry({ onClose }: { onClose: () => void }) {
                 )
               })}
               <tr style={{ background: 'var(--bg-card2)' }}>
-                <td colSpan={6} className="font-bold text-xs" style={{ color: 'var(--text-1)' }}>Total ({filled.length} lines)</td>
-                <td className="num tabular-nums font-bold text-xs" style={{ color: 'var(--text-1)' }}>{totals.nos || '—'}</td>
-                <td />
+                <td colSpan={3} className="font-bold text-xs" style={{ color: 'var(--text-1)' }}>Total ({filled.length} lines)</td>
                 <td className="num tabular-nums font-bold text-xs" style={{ color: 'var(--text-1)' }}>{totals.kg || '—'}</td>
-                <td colSpan={2} />
+                <td />
+                <td className="num tabular-nums font-bold text-xs" style={{ color: 'var(--text-1)' }}>{totals.nos || '—'}</td>
+                <td colSpan={5} />
                 <td className="num tabular-nums font-bold text-xs" style={{ color: 'var(--text-1)' }}>{totals.sqft || '—'}</td>
                 <td colSpan={1 + customCols.length + 1} />
               </tr>
             </tbody>
           </table>
+        </div>
+
+        {/* Cross-check against the total written on the sheet */}
+        <div className="flex flex-wrap items-center gap-3 px-5 py-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+          <label className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>Total written on the sheet</label>
+          <input className="input !w-32 !py-1.5 text-right tabular-nums" placeholder="595.560"
+            value={sheetTotal} onChange={e => setSheetTotal(e.target.value)} />
+          {tallyDiff !== null && (
+            <span className={cn('badge', Math.abs(tallyDiff) < 0.005 ? 'badge-green' : 'badge-red')}>
+              {Math.abs(tallyDiff) < 0.005
+                ? <><CheckCircle2 size={11} /> Tallies exactly</>
+                : <><AlertTriangle size={11} /> Off by {tallyDiff > 0 ? '+' : ''}{tallyDiff} kg — check a line</>}
+            </span>
+          )}
+          {suspects > 0 && (
+            <span className="badge-yellow"><AlertTriangle size={11} /> {suspects} line{suspects > 1 ? 's' : ''} outside the normal kg/ft band</span>
+          )}
         </div>
 
         {/* Footer */}
