@@ -2,9 +2,26 @@ import { useState, useMemo } from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { Users, Target, IndianRupee, Globe } from 'lucide-react'
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, useChartTheme, SERIES } from '@/components/ui'
-import { LEADS } from '@/data/txns'
+import { LEADS, type Lead } from '@/data/txns'
 import { inr, inrShort, fmtDate, csvDownload } from '@/lib/utils'
 import { COMPANY } from '@/data/company'
+
+import { useCrud } from '@/lib/store'
+import { CrudBar, RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
+
+const FIELDS: Field[] = [
+  { key: 'date',        label: 'Date', type: 'date', required: true },
+  { key: 'name',        label: 'Name', required: true },
+  { key: 'phone',       label: 'Phone', required: true },
+  { key: 'area',        label: 'Area' },
+  { key: 'source',      label: 'Source', type: 'select', options: ['Website Enquiry', 'Walk-in', 'Referral', 'WhatsApp', 'Google Search', 'Facebook'] },
+  { key: 'owner',       label: 'Followed up by' },
+  { key: 'requirement', label: 'Requirement', type: 'textarea' },
+  { key: 'estValue',    label: 'Estimated value', type: 'number' },
+  { key: 'stage',       label: 'Stage', type: 'select', options: ['New', 'Contacted', 'Quoted', 'Converted', 'Dropped'] },
+]
+
+const idOf = (l: Lead) => l.id
 
 const STAGES = ['New', 'Contacted', 'Quoted', 'Converted', 'Dropped'] as const
 
@@ -13,14 +30,17 @@ export default function Leads() {
   const [stage, setStage] = useState('All Stages')
   const [src, setSrc]     = useState('All Sources')
   const t = useChartTheme()
+  const [edit, setEdit] = useState<Lead | null>(null)
+  const crud = useCrud<Lead>('leads', LEADS, idOf)
+  const list = crud.rows
 
-  const sources = useMemo(() => ['All Sources', ...new Set(LEADS.map(l => l.source))], [])
+  const sources = useMemo(() => ['All Sources', ...new Set(list.map(l => l.source))], [list])
 
-  const rows = useMemo(() => LEADS.filter(l =>
+  const rows = useMemo(() => list.filter(l =>
     (stage === 'All Stages' || l.stage === stage) &&
     (src === 'All Sources'  || l.source === src) &&
     (q === '' || `${l.name} ${l.area} ${l.requirement} ${l.owner}`.toLowerCase().includes(q.toLowerCase())),
-  ), [q, stage, src])
+  ), [list, q, stage, src])
 
   const paged = usePaged(rows, 12)
 
@@ -42,6 +62,9 @@ export default function Leads() {
     <div>
       <PageHead title="Lead Generation" sub={`Enquiries from ${COMPANY.website.replace('https://', '')}, walk-ins, WhatsApp and referrals`}>
         <ExportBtn onClick={exportCsv} />
+        <CrudBar noun="Lead" fields={FIELDS} changes={crud.changes} onRestore={crud.restore}
+          onAdd={rec => crud.add(asLead(rec))}
+          onImport={recs => crud.addMany(recs.map((r, i) => asLead(r, i)))} />
       </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
@@ -97,14 +120,16 @@ export default function Leads() {
 
       <TableCard>
         <thead>
-          <tr><th>Date</th><th>Lead</th><th>Area</th><th>Source</th><th>Requirement</th><th className="num">Est. Value</th><th>Owner</th><th>Stage</th></tr>
+          <tr><th>Date</th><th>Lead</th><th>Area</th><th>Source</th><th>Requirement</th><th className="num">Est. Value</th><th>Owner</th><th>Stage</th><th /></tr>
         </thead>
         <tbody>
           {paged.slice.map(l => (
             <tr key={l.id}>
               <td className="whitespace-nowrap text-xs">{fmtDate(l.date)}</td>
               <td>
-                <p className="font-medium" style={{ color: 'var(--text-1)' }}>{l.name}</p>
+                <p className="font-medium" style={{ color: 'var(--text-1)' }}>
+                  <EditedDot isNew={crud.isNew(l.id)} isEdited={crud.isEdited(l.id)} />{l.name}
+                </p>
                 <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{l.phone}</p>
               </td>
               <td className="text-xs whitespace-nowrap">{l.area}</td>
@@ -113,12 +138,29 @@ export default function Leads() {
               <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>{inr(l.estValue)}</td>
               <td className="text-xs whitespace-nowrap">{l.owner}</td>
               <td><Pill s={l.stage} /></td>
+              <td><RowActions label={l.name} onEdit={() => setEdit(l)} onDelete={() => crud.remove(l.id)} /></td>
             </tr>
           ))}
         </tbody>
       </TableCard>
+      <RecordModal open={!!edit} title={`Edit ${edit?.name ?? ''}`} fields={FIELDS}
+        initial={edit as Rec | null}
+        onSave={rec => { if (edit) crud.update(edit.id, rec as Partial<Lead>); setEdit(null) }}
+        onClose={() => setEdit(null)}
+        onDelete={() => { if (edit) crud.remove(edit.id); setEdit(null) }} />
+
       {rows.length === 0 && <Empty msg="No leads match these filters" />}
       <Pager {...paged} />
     </div>
   )
+}
+
+function asLead(r: Rec, i = 0): Lead {
+  return {
+    id: `L-${Date.now().toString(36)}${i}`,
+    date: r.date || new Date().toISOString().slice(0, 10),
+    stage: r.stage || 'New',
+    ...r,
+    estValue: Number(r.estValue) || 0,
+  } as Lead
 }

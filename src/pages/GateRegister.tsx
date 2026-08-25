@@ -4,8 +4,30 @@ import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Empty, Modal }
 import { GATE_PASSES, GATES, type GatePass, type GateStatus } from '@/data/operations'
 import { inr, kg, fmtDate, csvDownload, cn } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
+import { useCrud } from '@/lib/store'
+import { CrudBar, RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
 
 const STATUSES: GateStatus[] = ['Billed', 'On Delivery Challan', 'Not Billed', 'Returnable — Not Back']
+
+const FIELDS: Field[] = [
+  { key: 'no',        label: 'Gate pass no', required: true },
+  { key: 'date',      label: 'Date', type: 'date', required: true },
+  { key: 'time',      label: 'Time out', hint: 'As on the gate clock, e.g. 14:35' },
+  { key: 'gate',      label: 'Gate', type: 'select', options: GATES.map(g => g.id) },
+  { key: 'party',     label: 'Party', required: true },
+  { key: 'vehicle',   label: 'Vehicle no' },
+  { key: 'section',   label: 'Section', half: false },
+  { key: 'nos',       label: 'Pieces', type: 'number' },
+  { key: 'weightKg',  label: 'Weight (kg)', type: 'number' },
+  { key: 'value',     label: 'Stock value', type: 'number' },
+  { key: 'linkedDoc', label: 'Document against it', hint: 'Invoice or delivery challan number' },
+  { key: 'status',    label: 'Status', type: 'select', options: STATUSES },
+  { key: 'camera',    label: 'Camera' },
+  { key: 'guard',     label: 'Guard on duty' },
+]
+
+const idOf = (g: GatePass) => g.no
+
 
 const badgeFor = (s: GateStatus) =>
   s === 'Billed' ? 'badge-green'
@@ -20,15 +42,18 @@ export default function GateRegister() {
   const [gate, setGate] = useState('All Gates')
   const [status, setStatus] = useState('All Status')
   const [open, setOpen] = useState<GatePass | null>(null)
+  const [edit, setEdit] = useState<GatePass | null>(null)
+  const crud = useCrud<GatePass>('gate-passes', GATE_PASSES, idOf)
+  const list = crud.rows
 
-  const rows = GATE_PASSES.filter(g =>
+  const rows = list.filter(g =>
     (gate === 'All Gates' || g.gateLabel === gate) &&
     (status === 'All Status' || g.status === status) &&
     (q === '' || `${g.no} ${g.party} ${g.vehicle} ${g.linkedDoc} ${g.section}`.toLowerCase().includes(q.toLowerCase())),
   )
 
-  const unaccounted = GATE_PASSES.filter(isUnaccounted)
-  const notBack = GATE_PASSES.filter(g => g.status === 'Returnable — Not Back')
+  const unaccounted = list.filter(isUnaccounted)
+  const notBack = list.filter(g => g.status === 'Returnable — Not Back')
 
   const exportCsv = () => csvDownload('vsa-gate-register.csv', [
     [`Gate register — material out against documents · ${COMPANY.name}`, FY],
@@ -46,17 +71,20 @@ export default function GateRegister() {
         <Select value={gate} onChange={setGate} options={['All Gates', ...GATES.map(g => g.label)]} className="min-w-[13rem]" />
         <Select value={status} onChange={setStatus} options={['All Status', ...STATUSES]} className="min-w-[12rem]" />
         <ExportBtn onClick={exportCsv} />
+        <CrudBar noun="Gate Pass" fields={FIELDS} changes={crud.changes} onRestore={crud.restore}
+          onAdd={rec => crud.add(asPass(rec))}
+          onImport={recs => crud.addMany(recs.map((r, i) => asPass(r, i)))} />
       </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label="Loads Out" value={String(GATE_PASSES.length)} icon={DoorOpen} tone="brand"
-          sub={`${kg(GATE_PASSES.reduce((s, g) => s + g.weightKg, 0))} across three gates`} />
+        <Stat label="Loads Out" value={String(list.length)} icon={DoorOpen} tone="brand"
+          sub={`${kg(list.reduce((s, g) => s + g.weightKg, 0))} across three gates`} />
         <Stat label="Left Without a Bill" value={String(unaccounted.length)} icon={ShieldAlert}
           tone={unaccounted.length ? 'red' : 'green'}
           sub={unaccounted.length ? `${inr(unaccounted.reduce((s, g) => s + g.value, 0))} unaccounted` : 'Everything documented'} />
         <Stat label="Returnable Not Back" value={String(notBack.length)} icon={Truck}
           tone={notBack.length ? 'amber' : 'green'} sub="Went out on a returnable pass" />
-        <Stat label="Value Moved" value={inr(GATE_PASSES.reduce((s, g) => s + g.value, 0))} icon={IndianRupee}
+        <Stat label="Value Moved" value={inr(list.reduce((s, g) => s + g.value, 0))} icon={IndianRupee}
           tone="violet" sub="Stock value across all passes" />
       </div>
 
@@ -99,12 +127,14 @@ export default function GateRegister() {
       <TableCard maxH="32rem">
         <thead>
           <tr><th>Pass No</th><th>Date</th><th>Time</th><th>Gate</th><th>Party</th><th>Vehicle</th>
-            <th className="num">Weight</th><th className="num">Value</th><th>Document</th><th>Status</th></tr>
+            <th className="num">Weight</th><th className="num">Value</th><th>Document</th><th>Status</th><th /></tr>
         </thead>
         <tbody>
           {rows.map(g => (
             <tr key={g.no} className="cursor-pointer" onClick={() => setOpen(g)}>
-              <td className="font-medium whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{g.no}</td>
+              <td className="font-medium whitespace-nowrap" style={{ color: 'var(--text-1)' }}>
+                <EditedDot isNew={crud.isNew(g.no)} isEdited={crud.isEdited(g.no)} />{g.no}
+              </td>
               <td className="text-xs whitespace-nowrap">{fmtDate(g.date)}</td>
               <td className="text-xs tabular-nums">{g.time}</td>
               <td className="text-xs whitespace-nowrap">{g.gate}</td>
@@ -115,11 +145,20 @@ export default function GateRegister() {
                 style={{ color: isUnaccounted(g) ? 'var(--red)' : 'var(--text-1)' }}>{inr(g.value)}</td>
               <td className="text-xs whitespace-nowrap">{g.linkedDoc}</td>
               <td><span className={badgeFor(g.status)}>{g.status}</span></td>
+              <td onClick={e => e.stopPropagation()}>
+                <RowActions label={g.no} onEdit={() => setEdit(g)} onDelete={() => crud.remove(g.no)} />
+              </td>
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan={10}><Empty msg="No gate passes match" /></td></tr>}
+          {rows.length === 0 && <tr><td colSpan={11}><Empty msg="No gate passes match" /></td></tr>}
         </tbody>
       </TableCard>
+
+      <RecordModal open={!!edit} title={`Edit ${edit?.no ?? ''}`} fields={FIELDS}
+        initial={edit as Rec | null}
+        onSave={rec => { if (edit) crud.update(edit.no, asPassPatch(rec)); setEdit(null) }}
+        onClose={() => setEdit(null)}
+        onDelete={() => { if (edit) crud.remove(edit.no); setEdit(null) }} />
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open ? `${open.no} — gate pass` : ''}>
         {open && (
@@ -170,3 +209,20 @@ const F = ({ k, v }: { k: string; v: string }) => (
   <div><dt className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>{k}</dt>
     <dd className="mt-0.5" style={{ color: 'var(--text-1)' }}>{v}</dd></div>
 )
+
+const asPassPatch = (r: Rec): Partial<GatePass> => ({
+  ...r,
+  gateLabel: GATES.find(g => g.id === r.gate)?.label ?? r.gate,
+  nos: Number(r.nos) || 0, weightKg: Number(r.weightKg) || 0, value: Number(r.value) || 0,
+})
+
+function asPass(r: Rec, _i = 0): GatePass {
+  const date = r.date || new Date().toISOString().slice(0, 10)
+  const time = r.time || new Date().toTimeString().slice(0, 5)
+  const gate = r.gate || GATES[0].id
+  return {
+    status: 'Billed', linkedDoc: '—', camera: GATES.find(g => g.id === gate)?.cams[0] ?? '',
+    ...asPassPatch(r), date, time, gate,
+    clipRef: `${gate}-${date.replace(/-/g, '')}-${time.replace(':', '')}`,
+  } as GatePass
+}

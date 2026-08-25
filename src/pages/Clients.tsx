@@ -4,6 +4,25 @@ import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePage
 import { CLIENTS, type Client } from '@/data/parties'
 import { INVOICES } from '@/data/txns'
 import { inr, fmtDate, csvDownload } from '@/lib/utils'
+import { useCrud } from '@/lib/store'
+import { CrudBar, RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
+
+const FIELDS: Field[] = [
+  { key: 'name',        label: 'Customer name', required: true, half: false },
+  { key: 'type',        label: 'Type', type: 'select', options: ['B2B Fabricator', 'Builder / Contractor', 'Dealer', 'B2C Retail'] },
+  { key: 'contact',     label: 'Contact person' },
+  { key: 'phone',       label: 'Phone', required: true },
+  { key: 'email',       label: 'Email' },
+  { key: 'gstin',       label: 'GSTIN', hint: 'Leave blank for retail buyers' },
+  { key: 'area',        label: 'Area' },
+  { key: 'state',       label: 'State' },
+  { key: 'creditDays',  label: 'Credit days', type: 'number', hint: '0 for cash customers' },
+  { key: 'creditLimit', label: 'Credit limit', type: 'number' },
+  { key: 'since',       label: 'Customer since', type: 'date' },
+  { key: 'status',      label: 'Status', type: 'select', options: ['Active', 'Dormant', 'On Hold'] },
+]
+
+const idOf = (c: Client) => c.id
 
 const TYPES = ['All Types', 'B2B Fabricator', 'Builder / Contractor', 'Dealer', 'B2C Retail']
 
@@ -11,6 +30,9 @@ export default function Clients() {
   const [q, setQ]     = useState('')
   const [type, setType] = useState('All Types')
   const [sel, setSel] = useState<Client | null>(null)
+  const [edit, setEdit] = useState<Client | null>(null)
+  const crud = useCrud<Client>('clients', CLIENTS, idOf)
+  const list = crud.rows
 
   /** Per-customer ledger rolled up from the invoice book. */
   const stats = useMemo(() => {
@@ -24,10 +46,10 @@ export default function Clients() {
     return m
   }, [])
 
-  const rows = useMemo(() => CLIENTS.filter(c =>
+  const rows = useMemo(() => list.filter(c =>
     (type === 'All Types' || c.type === type) &&
     (q === '' || `${c.name} ${c.contact} ${c.area} ${c.gstin}`.toLowerCase().includes(q.toLowerCase())),
-  ).sort((a, b) => (stats.get(b.id)?.billed ?? 0) - (stats.get(a.id)?.billed ?? 0)), [q, type, stats])
+  ).sort((a, b) => (stats.get(b.id)?.billed ?? 0) - (stats.get(a.id)?.billed ?? 0)), [list, q, type, stats])
 
   const paged = usePaged(rows, 10)
   const totalBilled = [...stats.values()].reduce((s, e) => s + e.billed, 0)
@@ -46,6 +68,9 @@ export default function Clients() {
     <div>
       <PageHead title="Customers" sub="Fabricators, builders, dealers and retail buyers on the books">
         <ExportBtn onClick={exportCsv} />
+        <CrudBar noun="Customer" fields={FIELDS} changes={crud.changes} onRestore={crud.restore}
+          onAdd={rec => crud.add(asClient(rec, list))}
+          onImport={recs => crud.addMany(recs.map((r, i) => asClient(r, list, i)))} />
       </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
@@ -62,7 +87,7 @@ export default function Clients() {
 
       <TableCard>
         <thead>
-          <tr><th>Customer</th><th>Type</th><th>Area</th><th className="num">Credit</th><th className="num">Billed</th><th className="num">Outstanding</th><th>Status</th></tr>
+          <tr><th>Customer</th><th>Type</th><th>Area</th><th className="num">Credit</th><th className="num">Billed</th><th className="num">Outstanding</th><th>Status</th><th /></tr>
         </thead>
         <tbody>
           {paged.slice.map(c => {
@@ -71,7 +96,9 @@ export default function Clients() {
             return (
               <tr key={c.id} className="cursor-pointer" onClick={() => setSel(c)}>
                 <td>
-                  <p className="font-medium" style={{ color: 'var(--text-1)' }}>{c.name}</p>
+                  <p className="font-medium" style={{ color: 'var(--text-1)' }}>
+                    <EditedDot isNew={crud.isNew(c.id)} isEdited={crud.isEdited(c.id)} />{c.name}
+                  </p>
                   <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{c.contact} · {c.phone}</p>
                 </td>
                 <td className="text-xs whitespace-nowrap">{c.type}</td>
@@ -80,11 +107,20 @@ export default function Clients() {
                 <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>{inr(s?.billed ?? 0)}</td>
                 <td className={`num tabular-nums ${due > 0 ? 'text-red-500 font-medium' : ''}`}>{due > 0 ? inr(due) : '—'}</td>
                 <td><Pill s={c.status} /></td>
+                <td onClick={e => e.stopPropagation()}>
+                  <RowActions label={c.name} onEdit={() => setEdit(c)} onDelete={() => crud.remove(c.id)} />
+                </td>
               </tr>
             )
           })}
         </tbody>
       </TableCard>
+      <RecordModal open={!!edit} title={`Edit ${edit?.name ?? ''}`} fields={FIELDS}
+        initial={edit as Rec | null}
+        onSave={rec => { if (edit) crud.update(edit.id, rec as Partial<Client>); setEdit(null) }}
+        onClose={() => setEdit(null)}
+        onDelete={() => { if (edit) crud.remove(edit.id); setEdit(null) }} />
+
       {rows.length === 0 && <Empty msg="No customers match these filters" />}
       <Pager {...paged} />
 
@@ -150,4 +186,16 @@ function Mini({ k, v, danger }: { k: string; v: string; danger?: boolean }) {
         style={danger ? undefined : { color: 'var(--text-1)' }}>{v}</p>
     </div>
   )
+}
+
+/** A typed-in customer still needs an id the invoice book can point at. */
+function asClient(r: Rec, existing: Client[], i = 0): Client {
+  return {
+    id: `C${String(existing.length + 1 + i).padStart(2, '0')}-${Date.now().toString(36).slice(-4)}`,
+    since: r.since || new Date().toISOString().slice(0, 10),
+    status: r.status || 'Active',
+    ...r,
+    creditDays: Number(r.creditDays) || 0,
+    creditLimit: Number(r.creditLimit) || 0,
+  } as Client
 }

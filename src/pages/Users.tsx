@@ -3,6 +3,12 @@ import { UserCog, ShieldCheck, KeyRound, Users as UsersIcon, Check, X } from 'lu
 import { PageHead, Stat, TableCard, Pill, Modal } from '@/components/ui'
 import { DEMO_USERS, useAuth } from '@/hooks/useAuth'
 import { fmtDate } from '@/lib/utils'
+import { useCrud } from '@/lib/store'
+import { CrudBar, RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
+
+interface StaffUser { email: string; name: string; role: string; lastLogin: string; status: string }
+
+const idOf = (u: StaffUser) => u.email
 
 const MODULES = [
   'Dashboard', 'Alerts & Reminders',
@@ -34,13 +40,28 @@ const ROSTER = Object.entries(DEMO_USERS).map(([email, u], i) => ({
 export default function Users() {
   const { user } = useAuth()
   const [role, setRole] = useState<string | null>(null)
+  const [edit, setEdit] = useState<StaffUser | null>(null)
+
+  const FIELDS: Field[] = [
+    { key: 'name',      label: 'Name', required: true },
+    { key: 'email',     label: 'Email / login', required: true },
+    { key: 'role',      label: 'Role', type: 'select', options: Object.keys(MATRIX) },
+    { key: 'lastLogin', label: 'Last login', type: 'date' },
+    { key: 'status',    label: 'Status', type: 'select', options: ['Active', 'Suspended'] },
+  ]
+
+  const crud = useCrud<StaffUser>('users', ROSTER, idOf)
+  const staff = crud.rows
 
   return (
     <div>
-      <PageHead title="User Management" sub="Staff logins and role-based module access" />
+      <PageHead title="User Management" sub="Staff logins and role-based module access">
+        <CrudBar noun="User" fields={FIELDS} changes={crud.changes} onRestore={crud.restore}
+          onAdd={rec => crud.add({ lastLogin: new Date().toISOString().slice(0, 10), status: 'Active', ...rec } as StaffUser)} />
+      </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label="Active Users" value={String(ROSTER.length)}          icon={UsersIcon}   tone="brand"  sub="With dashboard logins" />
+        <Stat label="Active Users" value={String(staff.length)}          icon={UsersIcon}   tone="brand"  sub="With dashboard logins" />
         <Stat label="Roles Defined" value={String(Object.keys(MATRIX).length)} icon={ShieldCheck} tone="sky" sub="Access templates" />
         <Stat label="Modules"      value={String(MODULES.length)}         icon={UserCog}     tone="violet" sub="Permission-controlled" />
         <Stat label="Your Role"    value={user?.role ?? '—'}              icon={KeyRound}    tone="green"  sub={user?.email ?? ''} />
@@ -51,19 +72,28 @@ export default function Users() {
           <p className="section-title text-base mb-1">Staff Accounts</p>
           <p className="section-sub mb-3">Demo credentials are listed on the sign-in screen</p>
           <TableCard maxH="24rem">
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last Login</th><th>Status</th><th /></tr></thead>
             <tbody>
-              {ROSTER.map(u => (
+              {staff.map(u => (
                 <tr key={u.email}>
-                  <td className="font-medium" style={{ color: 'var(--text-1)' }}>{u.name}</td>
+                  <td className="font-medium" style={{ color: 'var(--text-1)' }}>
+                    <EditedDot isNew={crud.isNew(u.email)} isEdited={crud.isEdited(u.email)} />{u.name}
+                  </td>
                   <td className="text-xs">{u.email}</td>
                   <td><span className="badge-brand">{u.role}</span></td>
                   <td className="text-xs whitespace-nowrap">{fmtDate(u.lastLogin)}</td>
                   <td><Pill s={u.status} /></td>
+                  <td><RowActions label={u.name} onEdit={() => setEdit(u)} onDelete={() => crud.remove(u.email)} /></td>
                 </tr>
               ))}
             </tbody>
           </TableCard>
+
+          <RecordModal open={!!edit} title={`Edit ${edit?.name ?? ''}`} fields={FIELDS}
+            initial={edit as Rec | null}
+            onSave={rec => { if (edit) crud.update(edit.email, rec as Partial<StaffUser>); setEdit(null) }}
+            onClose={() => setEdit(null)}
+            onDelete={() => { if (edit) crud.remove(edit.email); setEdit(null) }} />
         </div>
 
         <div>
