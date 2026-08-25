@@ -3,8 +3,9 @@ import { Building2, MapPin, Phone, Mail, Globe, Clock, Landmark, FileText, Moon,
 import { PageHead } from '@/components/ui'
 import { useDarkMode } from '@/hooks/useDarkMode'
 import { COMPANY, FY } from '@/data/company'
+import SecurityBackup from '@/components/SecurityBackup'
 
-const TABS = ['Business Profile', 'Tax & Billing', 'Preferences'] as const
+const TABS = ['Business Profile', 'Tax & Billing', 'Security & Backup', 'Preferences'] as const
 
 export default function Settings() {
   const [tab, setTab] = useState<typeof TABS[number]>('Business Profile')
@@ -93,6 +94,8 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      {tab === 'Security & Backup' && <SecurityBackup />}
 
       {tab === 'Preferences' && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

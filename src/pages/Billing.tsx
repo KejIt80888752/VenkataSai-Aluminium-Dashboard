@@ -7,27 +7,31 @@ import { inr, fmtDate, csvDownload } from '@/lib/utils'
 import { FY } from '@/data/company'
 
 const MONTH_OPTS = ['All Months', ...MONTHS.map(m => m.label)]
+/* Whatever the counter has actually written, offered as a filter. */
+const REMARK_OPTS = ['All Remarks', ...[...new Set(INVOICES.map(i => i.remarks))].filter(r => r !== '—').sort(), 'No remark']
 const monthOf = (d: string) => MONTHS.find(m => d.startsWith(m.key))?.label ?? ''
 
 export default function Billing() {
   const [q, setQ]         = useState('')
   const [status, setStatus] = useState('All Status')
   const [month, setMonth]   = useState('All Months')
+  const [remark, setRemark] = useState('All Remarks')
   const [doc, setDoc]       = useState<Invoice | null>(null)
 
   const rows = useMemo(() => INVOICES.filter(i =>
     (status === 'All Status' || i.status === status) &&
     (month === 'All Months' || monthOf(i.date) === month) &&
-    (q === '' || `${i.no} ${i.clientName} ${i.poNo}`.toLowerCase().includes(q.toLowerCase())),
-  ).sort((a, b) => b.date.localeCompare(a.date)), [q, status, month])
+    (remark === 'All Remarks' || (remark === 'No remark' ? i.remarks === '—' : i.remarks === remark)) &&
+    (q === '' || `${i.no} ${i.clientName} ${i.poNo} ${i.remarks}`.toLowerCase().includes(q.toLowerCase())),
+  ).sort((a, b) => b.date.localeCompare(a.date)), [q, status, month, remark])
 
   const paged = usePaged(rows, 12)
   const filteredTotal = rows.reduce((s, i) => s + i.total, 0)
   const overdue = INVOICES.filter(i => i.status === 'Overdue')
 
   const exportCsv = () => csvDownload('vsa-invoice-register.csv', [
-    ['Invoice No', 'Date', 'Due Date', 'Customer', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Received', 'Balance', 'Status'],
-    ...rows.map(i => [i.no, i.date, i.dueDate, i.clientName, i.gstin, i.taxable, i.cgst, i.sgst, i.igst, i.total, i.received, i.total - i.received, i.status]),
+    ['Invoice No', 'Date', 'Due Date', 'Customer', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Received', 'Balance', 'Remarks', 'Status'],
+    ...rows.map(i => [i.no, i.date, i.dueDate, i.clientName, i.gstin, i.taxable, i.cgst, i.sgst, i.igst, i.total, i.received, i.total - i.received, i.remarks, i.status]),
   ])
 
   return (
@@ -44,9 +48,10 @@ export default function Billing() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <SearchBox value={q} onChange={setQ} placeholder="Search invoice no, customer, PO…" />
+        <SearchBox value={q} onChange={setQ} placeholder="Search invoice, customer, PO, remark…" />
         <Select value={status} onChange={setStatus} options={['All Status', 'Paid', 'Partial', 'Unpaid', 'Overdue']} />
         <Select value={month} onChange={setMonth} options={MONTH_OPTS} />
+        <Select value={remark} onChange={setRemark} options={REMARK_OPTS} className="min-w-[14rem]" />
         <span className="ml-auto self-center text-xs" style={{ color: 'var(--text-4)' }}>
           Filtered value: <span className="font-semibold" style={{ color: 'var(--text-1)' }}>{inr(filteredTotal)}</span>
         </span>
@@ -56,7 +61,7 @@ export default function Billing() {
         <thead>
           <tr>
             <th>Invoice</th><th>Date</th><th>Customer</th><th className="num">Taxable</th>
-            <th className="num">GST</th><th className="num">Total</th><th className="num">Balance</th><th>Status</th><th />
+            <th className="num">GST</th><th className="num">Total</th><th className="num">Balance</th><th>Remarks</th><th>Status</th><th />
           </tr>
         </thead>
         <tbody>
@@ -71,6 +76,8 @@ export default function Billing() {
               <td className={`num tabular-nums ${i.total - i.received > 0 ? 'text-red-500 font-medium' : ''}`}>
                 {i.total - i.received > 0 ? inr(i.total - i.received) : '—'}
               </td>
+              <td className="text-xs max-w-[13rem] truncate" title={i.remarks}
+                style={{ color: i.remarks === '—' ? 'var(--text-4)' : 'var(--text-3)' }}>{i.remarks}</td>
               <td><Pill s={i.status} /></td>
               <td>
                 <button onClick={() => setDoc(i)} className="btn-ghost !px-2 !py-1 text-xs" title="View invoice">

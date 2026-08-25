@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +19,8 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/challans',         icon: FileStack,       label: 'Delivery Challans' },
   { to: '/coating-recon',    icon: Scale,           label: 'Coating Recon'     },
   { to: '/coating-billing',  icon: SprayCan,        label: 'Coating Billing'   },
+  { to: '/returns',          icon: Undo2,           label: 'Returns to Mill'   },
+  { to: '/gate-register',    icon: DoorOpen,        label: 'Gate Register'     },
   { group: 'Stock' },
   { to: '/locations',        icon: MapPin,          label: 'Location Stock'    },
   { to: '/inventory',        icon: Warehouse,       label: 'Stock & Inventory' },
@@ -29,6 +31,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { group: 'Sales' },
   { to: '/quotation',        icon: FileText,        label: 'Quotations'        },
   { to: '/billing',          icon: Receipt,         label: 'Billing / Invoice' },
+  { to: '/quick-bill',       icon: Mic,             label: 'Quick Bill (Voice)'},
   { to: '/sales-reports',    icon: TrendingUp,      label: 'Sales Reports'     },
   { to: '/leads',            icon: Users,           label: 'Lead Generation'   },
   { to: '/clients',          icon: Building2,       label: 'Customers'         },
@@ -36,10 +39,12 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/purchase-orders',  icon: ClipboardList,   label: 'Purchase Orders'   },
   { to: '/purchases',        icon: ShoppingBag,     label: 'Purchase Register' },
   { to: '/suppliers',        icon: Truck,           label: 'Suppliers'         },
+  { to: '/supplier-recon',   icon: Scale,           label: 'Supplier Statement'},
   { group: 'AI & Automation' },
   { to: '/ai-capture',       icon: ScanLine,        label: 'AI Capture'        },
   { group: 'Finance' },
   { to: '/outstanding',      icon: CreditCard,      label: 'Outstanding'       },
+  { to: '/bank',             icon: Landmark,        label: 'Bank & Receipts'   },
   { to: '/profit-loss',      icon: BarChart2,       label: 'Profit & Loss'     },
   { to: '/gst-reports',      icon: FileSpreadsheet, label: 'GST Reports'       },
   { to: '/gst-recon',        icon: ShieldCheck,     label: 'GST Reconciliation'},

@@ -140,8 +140,12 @@ export const INVOICES: Invoice[] = MONTHS.flatMap(m => {
       poNo:     rnd() < 0.45 ? `PO-${iBetween(1000, 9999)}` : '—',
       vehicle:  `KA ${iBetween(1, 53).toString().padStart(2, '0')} ${pick(['AB','MJ','KL','CR','HG'])} ${iBetween(1000, 9999)}`,
       ewayBill: money.total > 50000 ? `${iBetween(100, 999)}${iBetween(1000000000, 9999999999)}` : '—',
-      remarks: rnd() < 0.35
-        ? pick(['Tax qty as per bundle weight', 'Cut to size at shop — end pieces retained', 'Material issued from Godown 2 (4F)',
+      // Free text the counter writes on a bill. Salesman names go here too,
+      // which is how the office later pulls up one man's bills.
+      remarks: rnd() < 0.72
+        ? pick(['Siva Reddy — sales bill', 'Siva Reddy — sales bill', 'Murali — counter sale',
+                'Prakash — site delivery', 'Tax qty as per bundle weight',
+                'Cut to size at shop — end pieces retained', 'Material issued from Godown 2 (4F)',
                 'Coated lot — shade RAL9016', 'Balance qty to follow on next DC'])
         : '—',
       lines, ...money,

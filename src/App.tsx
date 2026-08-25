@@ -30,6 +30,11 @@ import GstRecon        from '@/pages/GstRecon'
 import StockAudit      from '@/pages/StockAudit'
 import PurchaseOrders  from '@/pages/PurchaseOrders'
 import Alerts          from '@/pages/Alerts'
+import SupplierRecon   from '@/pages/SupplierRecon'
+import Returns         from '@/pages/Returns'
+import GateRegister    from '@/pages/GateRegister'
+import BankRecon       from '@/pages/BankRecon'
+import QuickBill       from '@/pages/QuickBill'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -71,6 +76,11 @@ function AppRoutes() {
               <Route path="/stock-audit"     element={<StockAudit     />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/alerts"          element={<Alerts         />} />
+              <Route path="/supplier-recon"  element={<SupplierRecon  />} />
+              <Route path="/returns"         element={<Returns        />} />
+              <Route path="/gate-register"   element={<GateRegister   />} />
+              <Route path="/bank"            element={<BankRecon      />} />
+              <Route path="/quick-bill"      element={<QuickBill       />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>
