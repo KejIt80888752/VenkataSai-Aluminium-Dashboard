@@ -37,6 +37,7 @@ import BankRecon       from '@/pages/BankRecon'
 import QuickBill       from '@/pages/QuickBill'
 import GateCheck       from '@/pages/GateCheck'
 import Payments        from '@/pages/Payments'
+import CoaterBillRecon from '@/pages/CoaterBillRecon'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -85,6 +86,7 @@ function AppRoutes() {
               <Route path="/quick-bill"      element={<QuickBill       />} />
               <Route path="/gate-check"      element={<GateCheck       />} />
               <Route path="/payments"        element={<Payments        />} />
+              <Route path="/coater-bill"     element={<CoaterBillRecon />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>

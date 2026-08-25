@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +19,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/challans',         icon: FileStack,       label: 'Delivery Challans' },
   { to: '/coating-recon',    icon: Scale,           label: 'Coating Recon'     },
   { to: '/coating-billing',  icon: SprayCan,        label: 'Coating Billing'   },
+  { to: '/coater-bill',      icon: FileSearch,      label: "Coater's Bill Recon"},
   { to: '/returns',          icon: Undo2,           label: 'Returns to Mill'   },
   { to: '/gate-check',       icon: ShieldCheck,     label: 'Gate Verification' },
   { to: '/gate-register',    icon: DoorOpen,        label: 'Gate Register'     },
