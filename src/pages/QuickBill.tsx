@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import {
-  Mic, MicOff, ScanBarcode, Trash2, Plus, Receipt, CircleAlert, Check, Volume2,
+  Mic, MicOff, ScanBarcode, Trash2, Plus, Receipt, CircleAlert, Check, Volume2, Wallet,
 } from 'lucide-react'
 import { PageHead, Stat, Select, TableCard, Empty, Modal } from '@/components/ui'
 import { P } from '@/data/catalogue'
@@ -43,6 +43,10 @@ export default function QuickBill() {
   const [voiceMsg, setVoiceMsg] = useState('')
   const [scanLog, setScanLog] = useState<{ scanner: string; code: string; ok: boolean; at: string }[]>([])
   const [done, setDone] = useState(false)
+  /* Payment is taken on the same screen as the bill — there is no second
+     place to go looking for a receipt. */
+  const [mode, setMode] = useState('Credit')
+  const [paidNow, setPaidNow] = useState('')
 
   const addLine = (code: string, pcs: number, via: string) => {
     const p = P.find(x => x.code.toUpperCase() === code.toUpperCase())
@@ -133,6 +137,10 @@ export default function QuickBill() {
     const tax = +rows.reduce((s, r) => s + r.tax, 0).toFixed(2)
     return { rows, taxable, tax, total: Math.round(taxable + tax) }
   }, [lines])
+
+  const received = Math.min(Number(paidNow) || 0, totals.total)
+  const balance  = totals.total - received
+  const payStatus = balance <= 0 ? 'Paid' : received > 0 ? 'Partial' : 'Unpaid'
 
   return (
     <div>
@@ -297,13 +305,57 @@ export default function QuickBill() {
             <F k="Remarks" v={remarks || '—'} />
             <F k="Bill total" v={inr(totals.total)} />
           </dl>
+
+          {/* ── Receipt, on the same screen as the bill ─────────────── */}
+          <div className="rounded-lg p-3.5" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-wide mb-2.5 flex items-center gap-1.5"
+              style={{ color: 'var(--text-4)' }}>
+              <Wallet size={12} /> Payment taken now
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label">How it was paid</label>
+                <select className="input w-full" value={mode} onChange={e => setMode(e.target.value)}>
+                  {['Credit', 'Cash', 'UPI', 'Card / POS', 'NEFT / RTGS', 'Cheque'].map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Amount received</label>
+                <input className="input tabular-nums text-right" value={paidNow} placeholder="0"
+                  onChange={e => setPaidNow(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-2.5">
+              <button className="btn-ghost !py-1 !text-[11px]" onClick={() => setPaidNow(String(totals.total))}>
+                Full {inr(totals.total)}
+              </button>
+              <button className="btn-ghost !py-1 !text-[11px]" onClick={() => setPaidNow('')}>Nothing now</button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 mt-3 pt-2.5" style={{ borderTop: '1px solid var(--border-2)' }}>
+              <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+                Balance after this receipt
+              </span>
+              <span className="flex items-center gap-2">
+                <span className="tabular-nums font-semibold text-sm" style={{ color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>
+                  {inr(balance)}
+                </span>
+                <span className={payStatus === 'Paid' ? 'badge-green' : payStatus === 'Partial' ? 'badge-yellow' : 'badge-red'}>
+                  {payStatus}
+                </span>
+              </span>
+            </div>
+          </div>
           <p className="text-[11px] pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
             On the live system this posts a GST tax invoice for {COMPANY.name}, reduces stock at the counter it was
-            scanned from, and files the remark so the bill can be pulled up by salesman later.
+            scanned from, records the {inr(received)} receipt against it, and files the remark so the bill can be
+            pulled up by salesman later.{' '}
+            {mode === 'UPI' && 'A UPI code carrying this bill number can be shown from the Payments screen, and the bill closes itself the moment the money lands.'}
           </p>
           <div className="flex justify-end gap-2">
             <button className="btn-outline" onClick={() => setDone(false)}>Back</button>
-            <button className="btn" onClick={() => { setLines([]); setScanLog([]); setHeard(''); setDone(false) }}>
+            <button className="btn" onClick={() => { setLines([]); setScanLog([]); setHeard(''); setPaidNow(''); setMode('Credit'); setDone(false) }}>
               <Check size={14} /> Post and start a new bill
             </button>
           </div>

@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +20,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/coating-recon',    icon: Scale,           label: 'Coating Recon'     },
   { to: '/coating-billing',  icon: SprayCan,        label: 'Coating Billing'   },
   { to: '/returns',          icon: Undo2,           label: 'Returns to Mill'   },
+  { to: '/gate-check',       icon: ShieldCheck,     label: 'Gate Verification' },
   { to: '/gate-register',    icon: DoorOpen,        label: 'Gate Register'     },
   { group: 'Stock' },
   { to: '/locations',        icon: MapPin,          label: 'Location Stock'    },
@@ -44,6 +45,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/ai-capture',       icon: ScanLine,        label: 'AI Capture'        },
   { group: 'Finance' },
   { to: '/outstanding',      icon: CreditCard,      label: 'Outstanding'       },
+  { to: '/payments',         icon: QrCode,          label: 'Payments'          },
   { to: '/bank',             icon: Landmark,        label: 'Bank & Receipts'   },
   { to: '/profit-loss',      icon: BarChart2,       label: 'Profit & Loss'     },
   { to: '/gst-reports',      icon: FileSpreadsheet, label: 'GST Reports'       },

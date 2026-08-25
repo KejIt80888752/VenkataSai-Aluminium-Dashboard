@@ -6,10 +6,17 @@ import { UOM_RULES } from '@/data/itemmaster'
 import { csvDownload, cn } from '@/lib/utils'
 import { fmtDate } from '@/lib/utils'
 import { TODAY } from '@/data/company'
+import {
+  useAdjustments, RaiseAdjustment, ApprovalQueue, AdjustmentBadge, type Adjustment,
+} from '@/components/StockApprovals'
+
+const keyOf = (r: { code: string; location: string }) => `${r.code}|${r.location}`
 
 export default function StockAudit() {
   const [applied, setApplied] = useState<string[]>([])
   const [locF, setLocF] = useState('All Locations')
+  const [raise, setRaise] = useState<Parameters<typeof RaiseAdjustment>[0]['row']>(null)
+  const adj = useAdjustments()
 
   const rows = STOCK_CHECK.filter(r => locF === 'All Locations' || r.location === locF)
   const autoRows = rows.filter(r => r.weightDrift)
@@ -88,9 +95,11 @@ export default function StockAudit() {
         </div>
       </div>
 
+      <ApprovalQueue items={adj.items} onDecide={adj.decide} />
+
       {/* ── Full sheet ─────────────────────────────────────────────── */}
       <p className="section-title text-base mb-1">Count Sheet</p>
-      <p className="section-sub mb-3">{manualRows.length} lines need a manual adjustment entry</p>
+      <p className="section-sub mb-3">{manualRows.length} lines differ — each needs a reason and the owner\u2019s approval before the book moves</p>
       <TableCard maxH="30rem">
         <thead>
           <tr><th>Item</th><th>Loc</th><th className="num">Book Pcs</th><th className="num">Counted</th><th className="num">Diff</th>
@@ -115,16 +124,25 @@ export default function StockAudit() {
                 {Math.abs(r.diffKg) < 0.05 ? '—' : (r.diffKg > 0 ? '+' : '') + r.diffKg}
               </td>
               <td>
-                <span className={
-                  r.action === 'No action' ? 'badge-green'
-                  : r.action.startsWith('Auto') ? 'badge-purple' : 'badge-yellow'}>
-                  {r.action === 'No action' ? <><CheckCircle2 size={11} /> Tallied</> : <><AlertTriangle size={11} /> {r.action}</>}
-                </span>
+                {r.diffPcs === 0
+                  ? <span className="badge-green"><CheckCircle2 size={11} /> Tallied</span>
+                  : adj.statusOf(keyOf(r))
+                    ? <AdjustmentBadge status={adj.statusOf(keyOf(r))} />
+                    : <button className="badge-yellow hover:brightness-95 transition"
+                        onClick={() => setRaise({
+                          key: keyOf(r), code: r.code, name: r.name, location: r.location,
+                          bookPcs: r.bookPcs, countedPcs: r.countedPcs, diffPcs: r.diffPcs, diffKg: r.diffKg,
+                        })}>
+                        <AlertTriangle size={11} /> Raise correction
+                      </button>}
               </td>
             </tr>
           ))}
         </tbody>
       </TableCard>
+
+      <RaiseAdjustment open={!!raise} row={raise} onClose={() => setRaise(null)}
+        onRaise={(a: Adjustment) => adj.raise(a)} />
 
       {/* ── Lot / valuation policy ─────────────────────────────────── */}
       <div className="card mt-5">
