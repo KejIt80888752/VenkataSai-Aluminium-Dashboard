@@ -6,6 +6,14 @@ import {
 import { PageHead, Stat, Select, TableCard, Empty, Modal } from '@/components/ui'
 import { P } from '@/data/catalogue'
 import { CLIENTS } from '@/data/parties'
+import { INVOICES } from '@/data/txns'
+
+/* ── Sheet goods carry a shade that moves between production batches ───────
+   Two ACP sheets off different batches will not match on a wall, and it is
+   only seen after they are up. The batch has to be on the bill line. */
+const isBatched = (code: string) => code.startsWith('VSA-ACP') || code.startsWith('VSA-CHQ')
+const BATCHES = ['B-2411', 'B-2503', 'B-2508', 'B-2601']
+const batchFor = (code: string, n: number) => BATCHES[(code.length + n) % BATCHES.length]
 import { inr, inr2, kg, cn } from '@/lib/utils'
 import { COMPANY } from '@/data/company'
 import { parseSpoken } from '@/lib/speech'
@@ -67,6 +75,8 @@ interface BillLine {
   packed: boolean
   /** what the scale said, when the counter weighs instead of counting */
   weighedKg: number | null
+  /** production batch — only carried on sheet goods, where shade moves */
+  batch: string | null
 }
 
 export default function QuickBill() {
@@ -106,11 +116,14 @@ export default function QuickBill() {
     const p = P.find(x => x.code.toUpperCase() === code.toUpperCase())
     if (!p) return false
     setLines(ls => {
-      const hit = ls.find(l => l.code === p.code)
+      // Sheet goods stay on their own line, because each bundle comes off its
+      // own batch and the batch has to stay attached to what was sold.
+      const hit = isBatched(p.code) ? undefined : ls.find(l => l.code === p.code)
       if (hit) return ls.map(l => l.code === p.code ? { ...l, pcs: l.pcs + pcs } : l)
       const line: BillLine = {
-        key: `${p.code}-${Date.now()}`, code: p.code, name: p.name, category: p.category, pcs,
+        key: `${p.code}-${Date.now()}-${ls.length}`, code: p.code, name: p.name, category: p.category, pcs,
         ratePerKg: p.ratePerKg, kgPerLength: p.kgPerLength, gst: p.gst, via, packed: false, weighedKg: null,
+        batch: isBatched(p.code) ? batchFor(p.code, ls.length) : null,
       }
       // Aluminium sits above everything else unless the counter moves it.
       if (!isAlu(p.category)) return [...ls, line]
@@ -205,6 +218,36 @@ export default function QuickBill() {
       light, shortKg, shortValue: Math.round(light.reduce((s, r) => s + (r.expectedKg - r.kgs) * r.ratePerKg, 0)),
     }
   }, [lines])
+
+  /* Same sheet, two batches — the shade will not match on the wall. */
+  const shadeClash = useMemo(() => {
+    const byCode = new Map<string, Set<string>>()
+    for (const l of lines) {
+      if (!l.batch) continue
+      const set = byCode.get(l.code) ?? new Set<string>()
+      set.add(l.batch); byCode.set(l.code, set)
+    }
+    return [...byCode.entries()]
+      .filter(([, set]) => set.size > 1)
+      .map(([code, set]) => ({
+        code, name: lines.find(l => l.code === code)?.name ?? code, batches: [...set],
+      }))
+  }, [lines])
+
+  /* What this customer already owes, against what they are allowed. */
+  const credit = useMemo(() => {
+    const c = CLIENTS.find(x => x.name === customer)
+    if (!c) return null
+    const outstanding = INVOICES
+      .filter(i => i.clientId === c.id)
+      .reduce((s, i) => s + Math.max(0, i.total - i.received), 0)
+    const after = outstanding + totals.total
+    return {
+      name: c.name, limit: c.creditLimit, days: c.creditDays, outstanding, after,
+      over: c.creditLimit > 0 && after > c.creditLimit,
+      overBy: Math.max(0, after - c.creditLimit),
+    }
+  }, [customer, totals.total])
 
   const received = Math.min(Number(paidNow) || 0, totals.total)
   const balance  = totals.total - received
@@ -359,6 +402,57 @@ export default function QuickBill() {
         </div>
       </div>
 
+      {/* ── Checks that fire while the bill is still open ──────────── */}
+      {(credit?.over || shadeClash.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          {credit?.over && (
+            <div className="card" style={{ borderColor: 'var(--red)' }}>
+              <p className="section-title text-base mb-1 flex items-center gap-2">
+                <TriangleAlert size={15} style={{ color: 'var(--red)' }} /> Credit Limit Exceeded
+              </p>
+              <p className="section-sub mb-3">
+                {credit.name} is on {credit.days} days credit. This bill takes them past what they are allowed.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <Fig k="Credit limit" v={inr(credit.limit)} />
+                <Fig k="Already owing" v={inr(credit.outstanding)} />
+                <Fig k="After this bill" v={inr(credit.after)} tone="red" />
+              </div>
+              <p className="text-[11px] mt-3 pt-2.5" style={{ color: 'var(--red)', borderTop: '1px solid var(--border-2)' }}>
+                Over the limit by {inr(credit.overBy)}. The bill can still be raised — this is a warning, not a block —
+                but the owner sees it on the exceptions list.
+              </p>
+            </div>
+          )}
+
+          {shadeClash.length > 0 && (
+            <div className="card" style={{ borderColor: 'var(--amber, #f59e0b)' }}>
+              <p className="section-title text-base mb-1 flex items-center gap-2">
+                <TriangleAlert size={15} style={{ color: 'var(--amber, #f59e0b)' }} /> Different Batches on One Bill
+              </p>
+              <p className="section-sub mb-3">
+                Shade moves between production batches. Two batches of the same sheet will not match once they
+                are up on a wall.
+              </p>
+              <div className="space-y-2">
+                {shadeClash.map(c => (
+                  <div key={c.code} className="rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2"
+                    style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                    <span className="text-sm min-w-0 truncate" style={{ color: 'var(--text-1)' }}>{c.name}</span>
+                    <span className="flex gap-1.5 shrink-0">
+                      {c.batches.map(b => <span key={b} className="badge-yellow font-mono">{b}</span>)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] mt-3 pt-2.5" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
+                Either bill one batch, or tell the customer in writing before it goes out.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {totals.light.length > 0 && (
         <div className="card mb-4" style={{ borderColor: 'var(--red)' }}>
           <p className="section-title text-base mb-1 flex items-center gap-2">
@@ -400,7 +494,7 @@ export default function QuickBill() {
       <TableCard maxH="24rem">
         <thead>
           <tr><th className="text-center">Packed</th><th>Code</th><th>Section</th><th>Added By</th>
-            <th className="num">Pieces</th><th className="num">Should Weigh</th><th className="num">Weighed</th>
+            <th>Batch</th><th className="num">Pieces</th><th className="num">Should Weigh</th><th className="num">Weighed</th>
             <th className="num">Rate/Kg</th><th className="num">Amount</th><th>Order</th><th /></tr>
         </thead>
         <tbody>
@@ -414,6 +508,15 @@ export default function QuickBill() {
               <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{l.code}</td>
               <td className="text-xs max-w-[16rem] truncate" title={l.name}>{l.name}</td>
               <td><span className={l.via === 'Voice' ? 'badge-purple' : l.via === 'Typed' ? 'badge-gray' : 'badge-blue'}>{l.via}</span></td>
+              <td>
+                {l.batch === null ? <span className="text-xs" style={{ color: 'var(--text-4)' }}>—</span> : (
+                  <select className="input !w-24 !py-1 !text-xs" value={l.batch}
+                    style={shadeClash.some(c => c.code === l.code) ? { borderColor: 'var(--amber, #f59e0b)' } : undefined}
+                    onChange={e => setLines(ls => ls.map(x => x.key === l.key ? { ...x, batch: e.target.value } : x))}>
+                    {BATCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                )}
+              </td>
               <td className="num">
                 <input type="number" min={1} className="input !w-20 !py-1 text-right tabular-nums !text-xs"
                   value={l.pcs}
@@ -448,7 +551,7 @@ export default function QuickBill() {
               </td>
             </tr>
           ))}
-          {lines.length === 0 && <tr><td colSpan={11}><Empty msg="Type, speak or scan to start the bill" /></td></tr>}
+          {lines.length === 0 && <tr><td colSpan={12}><Empty msg="Type, speak or scan to start the bill" /></td></tr>}
         </tbody>
       </TableCard>
 
@@ -536,6 +639,14 @@ function ManualScan({ onScan }: { onScan: (scanner: string, code: string) => voi
     </div>
   )
 }
+
+const Fig = ({ k, v, tone }: { k: string; v: string; tone?: string }) => (
+  <div className="rounded-lg p-2.5" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+    <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>{k}</p>
+    <p className="text-sm font-bold tabular-nums mt-0.5"
+      style={{ color: tone === 'red' ? 'var(--red)' : 'var(--text-1)' }}>{v}</p>
+  </div>
+)
 
 const F = ({ k, v }: { k: string; v: string }) => (
   <div><dt className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>{k}</dt>
