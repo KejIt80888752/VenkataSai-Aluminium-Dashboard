@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +33,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/item-master',      icon: Boxes,           label: 'Item Master'       },
   { group: 'Sales' },
   { to: '/quotation',        icon: FileText,        label: 'Quotations'        },
+  { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
   { to: '/billing',          icon: Receipt,         label: 'Billing / Invoice' },
   { to: '/quick-bill',       icon: Mic,             label: 'Quick Bill (Voice)'},
   { to: '/sales-reports',    icon: TrendingUp,      label: 'Sales Reports'     },
