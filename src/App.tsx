@@ -42,6 +42,9 @@ import WeightLots      from '@/pages/WeightLots'
 import PriceWatch      from '@/pages/PriceWatch'
 import Projects        from '@/pages/Projects'
 import Proforma        from '@/pages/Proforma'
+import Ledgers         from '@/pages/Ledgers'
+import CutList         from '@/pages/CutList'
+import Warehouse       from '@/pages/Warehouse'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -95,6 +98,9 @@ function AppRoutes() {
               <Route path="/price-watch"     element={<PriceWatch      />} />
               <Route path="/projects"        element={<Projects        />} />
               <Route path="/proforma"        element={<Proforma        />} />
+              <Route path="/books"           element={<Ledgers         />} />
+              <Route path="/cut-list"        element={<CutList         />} />
+              <Route path="/warehouse"       element={<Warehouse       />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>

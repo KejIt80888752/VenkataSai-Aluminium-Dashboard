@@ -19,6 +19,7 @@ const FIELDS: Field[] = [
   { key: 'clientName', label: 'Customer', required: true },
   { key: 'gstin',      label: 'GSTIN' },
   { key: 'poNo',       label: 'PO number' },
+  { key: 'shipTo',     label: 'Delivery address', half: false },
   { key: 'vehicle',    label: 'Vehicle' },
   { key: 'ewayBill',   label: 'E-way bill' },
   { key: 'received',   label: 'Amount received', type: 'number' },
@@ -31,6 +32,9 @@ const idOf = (i: Invoice) => i.no
 const MONTH_OPTS = ['All Months', ...MONTHS.map(m => m.label)]
 /* Whatever the counter has actually written, offered as a filter. */
 const REMARK_OPTS = ['All Remarks', ...[...new Set(INVOICES.map(i => i.remarks))].filter(r => r !== '—').sort(), 'No remark']
+const SHIP_OPTS   = ['All Addresses', ...[...new Set(INVOICES.map(i => i.shipTo))].sort()]
+/* HSN is on the lines, not the header — a bill can carry several. */
+const HSN_OPTS    = ['All HSN', ...[...new Set(INVOICES.flatMap(i => i.lines.map(l => l.hsn)))].sort()]
 const monthOf = (d: string) => MONTHS.find(m => d.startsWith(m.key))?.label ?? ''
 
 export default function Billing() {
@@ -38,6 +42,8 @@ export default function Billing() {
   const [status, setStatus] = useState('All Status')
   const [month, setMonth]   = useState('All Months')
   const [remark, setRemark] = useState('All Remarks')
+  const [ship, setShip]     = useState('All Addresses')
+  const [hsn, setHsn]       = useState('All HSN')
   const [doc, setDoc]       = useState<Invoice | null>(null)
   const [edit, setEdit]     = useState<Invoice | null>(null)
   const crud = useCrud<Invoice>('invoices', INVOICES, idOf)
@@ -47,16 +53,18 @@ export default function Billing() {
     (status === 'All Status' || i.status === status) &&
     (month === 'All Months' || monthOf(i.date) === month) &&
     (remark === 'All Remarks' || (remark === 'No remark' ? i.remarks === '—' : i.remarks === remark)) &&
-    (q === '' || `${i.no} ${i.clientName} ${i.poNo} ${i.remarks}`.toLowerCase().includes(q.toLowerCase())),
-  ).sort((a, b) => b.date.localeCompare(a.date)), [list, q, status, month, remark])
+    (ship === 'All Addresses' || i.shipTo === ship) &&
+    (hsn === 'All HSN' || i.lines.some(l => l.hsn === hsn)) &&
+    (q === '' || `${i.no} ${i.clientName} ${i.poNo} ${i.remarks} ${i.shipTo}`.toLowerCase().includes(q.toLowerCase())),
+  ).sort((a, b) => b.date.localeCompare(a.date)), [list, q, status, month, remark, ship, hsn])
 
   const paged = usePaged(rows, 12)
   const filteredTotal = rows.reduce((s, i) => s + i.total, 0)
   const overdue = list.filter(i => i.status === 'Overdue')
 
   const exportCsv = () => csvDownload('vsa-invoice-register.csv', [
-    ['Invoice No', 'Date', 'Due Date', 'Customer', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Received', 'Balance', 'Remarks', 'Status'],
-    ...rows.map(i => [i.no, i.date, i.dueDate, i.clientName, i.gstin, i.taxable, i.cgst, i.sgst, i.igst, i.total, i.received, i.total - i.received, i.remarks, i.status]),
+    ['Invoice No', 'Date', 'Due Date', 'Customer', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Received', 'Balance', 'Delivery Address', 'Remarks', 'Status'],
+    ...rows.map(i => [i.no, i.date, i.dueDate, i.clientName, i.gstin, i.taxable, i.cgst, i.sgst, i.igst, i.total, i.received, i.total - i.received, i.shipTo, i.remarks, i.status]),
   ])
 
   return (
@@ -79,10 +87,12 @@ export default function Billing() {
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <SearchBox value={q} onChange={setQ} placeholder="Search invoice, customer, PO, remark…" />
+        <SearchBox value={q} onChange={setQ} placeholder="Search invoice, customer, PO, remark, address…" />
         <Select value={status} onChange={setStatus} options={['All Status', 'Paid', 'Partial', 'Unpaid', 'Overdue']} />
         <Select value={month} onChange={setMonth} options={MONTH_OPTS} />
         <Select value={remark} onChange={setRemark} options={REMARK_OPTS} className="min-w-[14rem]" />
+        <Select value={ship} onChange={setShip} options={SHIP_OPTS} className="min-w-[13rem]" />
+        <Select value={hsn} onChange={setHsn} options={HSN_OPTS} />
         <span className="ml-auto self-center text-xs" style={{ color: 'var(--text-4)' }}>
           Filtered value: <span className="font-semibold" style={{ color: 'var(--text-1)' }}>{inr(filteredTotal)}</span>
         </span>

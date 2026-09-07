@@ -2,6 +2,12 @@ import { useState, useMemo } from 'react'
 import { Building2, Users, IndianRupee, CreditCard, Phone, Mail, MapPin } from 'lucide-react'
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, Modal } from '@/components/ui'
 import { CLIENTS, type Client } from '@/data/parties'
+import { useAuth } from '@/hooks/useAuth'
+
+/* The customer's number is the one thing a salesman can walk out with, so it
+   is shown only to the people who own the relationship. */
+const MAY_SEE_CONTACT = ['Admin', 'Manager', 'Accountant']
+const maskPhone = (p: string) => p.replace(/\d(?=\d{4})/g, '•')
 import { INVOICES } from '@/data/txns'
 import { inr, fmtDate, csvDownload } from '@/lib/utils'
 import { useCrud } from '@/lib/store'
@@ -27,6 +33,8 @@ const idOf = (c: Client) => c.id
 const TYPES = ['All Types', 'B2B Fabricator', 'Builder / Contractor', 'Dealer', 'B2C Retail']
 
 export default function Clients() {
+  const { user } = useAuth()
+  const seeContact = MAY_SEE_CONTACT.includes(user?.role ?? '')
   const [q, setQ]     = useState('')
   const [type, setType] = useState('All Types')
   const [sel, setSel] = useState<Client | null>(null)
@@ -59,7 +67,7 @@ export default function Clients() {
     ['Name', 'Type', 'Contact', 'Phone', 'Email', 'GSTIN', 'Area', 'State', 'Credit Days', 'Credit Limit', 'Billed', 'Received', 'Outstanding', 'Status'],
     ...rows.map(c => {
       const s = stats.get(c.id)
-      return [c.name, c.type, c.contact, c.phone, c.email, c.gstin, c.area, c.state, c.creditDays, c.creditLimit,
+      return [c.name, c.type, c.contact, seeContact ? c.phone : maskPhone(c.phone), seeContact ? c.email : '',  c.gstin, c.area, c.state, c.creditDays, c.creditLimit,
         s?.billed ?? 0, s?.received ?? 0, (s?.billed ?? 0) - (s?.received ?? 0), c.status]
     }),
   ])
@@ -99,7 +107,9 @@ export default function Clients() {
                   <p className="font-medium" style={{ color: 'var(--text-1)' }}>
                     <EditedDot isNew={crud.isNew(c.id)} isEdited={crud.isEdited(c.id)} />{c.name}
                   </p>
-                  <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{c.contact} · {c.phone}</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+                    {c.contact} · {seeContact ? c.phone : maskPhone(c.phone)}
+                  </p>
                 </td>
                 <td className="text-xs whitespace-nowrap">{c.type}</td>
                 <td className="text-xs whitespace-nowrap">{c.area}</td>
@@ -137,8 +147,12 @@ export default function Clients() {
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3 text-sm">
-                <p className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}><Phone size={14} className="text-brand" /> {sel.phone}</p>
-                <p className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}><Mail size={14} className="text-brand" /> {sel.email}</p>
+                <p className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
+                  <Phone size={14} className="text-brand" /> {seeContact ? sel.phone : maskPhone(sel.phone)}
+                </p>
+                <p className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
+                  <Mail size={14} className="text-brand" /> {seeContact ? sel.email : '— hidden —'}
+                </p>
                 <p className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}><MapPin size={14} className="text-brand" /> {sel.area}, {sel.state}</p>
                 <p style={{ color: 'var(--text-2)' }}><span style={{ color: 'var(--text-4)' }}>GSTIN: </span>{sel.gstin}</p>
               </div>

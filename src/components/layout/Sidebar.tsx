@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -25,6 +25,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/gate-register',    icon: DoorOpen,        label: 'Gate Register'     },
   { group: 'Stock' },
   { to: '/locations',        icon: MapPin,          label: 'Location Stock'    },
+  { to: '/warehouse',        icon: Grid3x3,         label: 'Warehouse Map'     },
   { to: '/inventory',        icon: Warehouse,       label: 'Stock & Inventory' },
   { to: '/lots',             icon: Layers3,         label: 'Weight Ranges'     },
   { to: '/stock-audit',      icon: ClipboardCheck,  label: 'Stock Audit'       },
@@ -34,7 +35,9 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { group: 'Sales' },
   { to: '/quotation',        icon: FileText,        label: 'Quotations'        },
   { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
+  { to: '/cut-list',         icon: Scissors,        label: 'Cut List'          },
   { to: '/billing',          icon: Receipt,         label: 'Billing / Invoice' },
+  { to: '/books',            icon: BookOpen,        label: 'Books (Est / GST)' },
   { to: '/quick-bill',       icon: Mic,             label: 'Quick Bill (Voice)'},
   { to: '/sales-reports',    icon: TrendingUp,      label: 'Sales Reports'     },
   { to: '/leads',            icon: Users,           label: 'Lead Generation'   },

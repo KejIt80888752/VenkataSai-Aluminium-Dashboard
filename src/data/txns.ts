@@ -44,6 +44,8 @@ export interface Invoice {
   id: string; no: string; date: string; dueDate: string
   clientId: string; clientName: string; gstin: string; state: string
   poNo: string; vehicle: string; ewayBill: string; remarks: string
+  /** where it was actually delivered, which is often not the billing address */
+  shipTo: string
   lines: Line[]
   taxable: number; cgst: number; sgst: number; igst: number; roundOff: number; total: number
   cogs: number
@@ -138,6 +140,11 @@ export const INVOICES: Invoice[] = MONTHS.flatMap(m => {
       date, dueDate: due,
       clientId: client.id, clientName: client.name, gstin: client.gstin, state: client.state,
       poNo:     rnd() < 0.45 ? `PO-${iBetween(1000, 9999)}` : '—',
+      // Half the loads go to a site rather than to the customer's own address.
+      shipTo:   rnd() < 0.5
+        ? pick(['Site — Whitefield', 'Site — Hoskote', 'Site — Sarjapur Road', 'Site — Devanahalli',
+                'Shop delivery — K R Puram counter'])
+        : `${client.area}, ${client.state}`,
       vehicle:  `KA ${iBetween(1, 53).toString().padStart(2, '0')} ${pick(['AB','MJ','KL','CR','HG'])} ${iBetween(1000, 9999)}`,
       ewayBill: money.total > 50000 ? `${iBetween(100, 999)}${iBetween(1000000000, 9999999999)}` : '—',
       // Free text the counter writes on a bill. Salesman names go here too,
