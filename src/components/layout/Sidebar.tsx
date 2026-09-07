@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -26,6 +26,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { group: 'Stock' },
   { to: '/locations',        icon: MapPin,          label: 'Location Stock'    },
   { to: '/inventory',        icon: Warehouse,       label: 'Stock & Inventory' },
+  { to: '/lots',             icon: Layers3,         label: 'Weight Ranges'     },
   { to: '/stock-audit',      icon: ClipboardCheck,  label: 'Stock Audit'       },
   { to: '/movements',        icon: ArrowLeftRight,  label: 'Stock Movement'    },
   { to: '/products',         icon: Package,         label: 'Product Catalogue' },
@@ -48,6 +49,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/outstanding',      icon: CreditCard,      label: 'Outstanding'       },
   { to: '/payments',         icon: QrCode,          label: 'Payments'          },
   { to: '/bank',             icon: Landmark,        label: 'Bank & Receipts'   },
+  { to: '/price-watch',      icon: TrendingUp,      label: 'Cost & Selling'    },
   { to: '/profit-loss',      icon: BarChart2,       label: 'Profit & Loss'     },
   { to: '/gst-reports',      icon: FileSpreadsheet, label: 'GST Reports'       },
   { to: '/gst-recon',        icon: ShieldCheck,     label: 'GST Reconciliation'},

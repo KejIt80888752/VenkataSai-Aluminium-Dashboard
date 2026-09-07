@@ -38,6 +38,8 @@ import QuickBill       from '@/pages/QuickBill'
 import GateCheck       from '@/pages/GateCheck'
 import Payments        from '@/pages/Payments'
 import CoaterBillRecon from '@/pages/CoaterBillRecon'
+import WeightLots      from '@/pages/WeightLots'
+import PriceWatch      from '@/pages/PriceWatch'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -87,6 +89,8 @@ function AppRoutes() {
               <Route path="/gate-check"      element={<GateCheck       />} />
               <Route path="/payments"        element={<Payments        />} />
               <Route path="/coater-bill"     element={<CoaterBillRecon />} />
+              <Route path="/lots"            element={<WeightLots      />} />
+              <Route path="/price-watch"     element={<PriceWatch      />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>
