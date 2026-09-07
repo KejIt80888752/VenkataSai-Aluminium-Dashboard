@@ -51,6 +51,9 @@ export const TITLES: Record<string, string> = {
   '/audit-log':       'Audit Log',
   '/salesmen':        'Salesmen',
   '/valuation':       'Stock Valuation',
+  '/contra':          'Contra & Diverted',
+  '/pack-goods':      'Pack & Loose Goods',
+  '/shortage-order':  'Shortage Order',
 }
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {

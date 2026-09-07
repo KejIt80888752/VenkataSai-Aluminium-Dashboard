@@ -4,6 +4,18 @@ import { PageHead } from '@/components/ui'
 import { useDarkMode } from '@/hooks/useDarkMode'
 import { COMPANY, FY } from '@/data/company'
 import SecurityBackup from '@/components/SecurityBackup'
+import { useState as useNumberState } from 'react'
+
+/* ── Point 20: the series a bill number is drawn from ─────────────────────
+   Some offices want the year and the book in the number; this one wants
+   plain running numbers. Both are here, and the sample shows what the next
+   bill will actually be called before anything is changed. */
+const SERIES = [
+  { id: 'plain',  label: 'Plain running number', pattern: '{n}',                sample: '184' },
+  { id: 'padded', label: 'Padded to four digits', pattern: '{nnnn}',            sample: '0184' },
+  { id: 'fy',     label: 'With the financial year', pattern: 'VSA/{fy}/{nnnn}', sample: 'VSA/26-27/0184' },
+  { id: 'book',   label: 'With the book', pattern: '{book}/{fy}/{nnnn}',        sample: 'EST/26-27/0184' },
+] as const
 
 const TABS = ['Business Profile', 'Tax & Billing', 'Security & Backup', 'Preferences'] as const
 
@@ -97,6 +109,8 @@ export default function Settings() {
 
       {tab === 'Security & Backup' && <SecurityBackup />}
 
+      {tab === 'Tax & Billing' && <Numbering />}
+
       {tab === 'Preferences' && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="card">
@@ -143,6 +157,56 @@ function Kv({ k, v, big }: { k: string; v: string; big?: boolean }) {
     <div className="flex justify-between gap-4">
       <dt style={{ color: 'var(--text-4)' }}>{k}</dt>
       <dd className={`text-right font-medium ${big ? '' : 'text-xs'}`} style={{ color: 'var(--text-1)' }}>{v}</dd>
+    </div>
+  )
+}
+
+/* ── Bill numbering ─────────────────────────────────────────────────────── */
+function Numbering() {
+  const [series, setSeries] = useNumberState<string>('fy')
+  const [next, setNext] = useNumberState('184')
+  const picked = SERIES.find(s => s.id === series)!
+
+  const preview = picked.pattern
+    .replace('{book}', 'EST')
+    .replace('{fy}', '26-27')
+    .replace('{nnnn}', String(Number(next) || 0).padStart(4, '0'))
+    .replace('{n}', String(Number(next) || 0))
+
+  return (
+    <div className="card mt-4">
+      <p className="section-title text-base mb-1">Bill Numbering</p>
+      <p className="section-sub mb-4 max-w-3xl">
+        You asked for plain numbers. Pick the series here and every book follows it — sales, estimate,
+        proforma and delivery challan each keep their own running count.
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Series</label>
+          <select className="input w-full" value={series} onChange={e => setSeries(e.target.value)}>
+            {SERIES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          <label className="label mt-3">Next number</label>
+          <input className="input w-full text-right tabular-nums" value={next}
+            onChange={e => setNext(e.target.value)} />
+          <p className="text-[11px] mt-1" style={{ color: 'var(--text-4)' }}>
+            A number already used cannot be given out again, so this only moves forward.
+          </p>
+        </div>
+
+        <div className="rounded-lg p-4 flex flex-col justify-center"
+          style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+          <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>
+            The next bill will be called
+          </p>
+          <p className="text-2xl font-bold font-mono mt-1" style={{ color: 'var(--brand)' }}>{preview}</p>
+          <p className="text-[11px] mt-2" style={{ color: 'var(--text-4)' }}>
+            GST does not mind which of these you use, as long as the series runs without a gap and starts
+            again at the top of each financial year.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

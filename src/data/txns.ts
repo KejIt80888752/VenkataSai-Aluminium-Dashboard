@@ -261,6 +261,15 @@ export interface Lead {
   estValue: number
   stage: 'New' | 'Contacted' | 'Quoted' | 'Converted' | 'Dropped'
   owner: string
+  /** Trading and turnkey are chased differently, so they are kept apart. */
+  kind: 'Trading' | 'Turnkey'
+  /** who the enquiry really comes from — a builder is followed up unlike a homeowner */
+  segment: 'Builder' | 'Architect' | 'Contractor' | 'Fabricator' | 'Homeowner'
+  architect: string
+  measuredOn: string
+  nextFollowUp: string
+  followUpDays: number
+  attachments: string[]
 }
 
 const LEAD_NAMES = ['Harish Babu','Sunitha Rao','Mohammed Arif','Praveen Kumar','Deepa Shetty','Ravi Teja','Nithin Gowda','Ayesha Khan','Srikanth M','Lokesh N','Bhavana R','Gopal Krishna','Zaheer Ahmed','Manoj Pillai']
@@ -286,6 +295,17 @@ export const LEADS: Lead[] = Array.from({ length: 22 }, (_, i) => {
     estValue: Math.round(between(18000, 640000) / 1000) * 1000,
     stage: (r < .18 ? 'New' : r < .40 ? 'Contacted' : r < .64 ? 'Quoted' : r < .84 ? 'Converted' : 'Dropped') as Lead['stage'],
     owner: pick(OWNERS),
+    // A window job for a builder is chased differently from a counter sale.
+    kind: (i % 3 === 0 ? 'Turnkey' : 'Trading') as Lead['kind'],
+    segment: pick(['Builder', 'Architect', 'Contractor', 'Fabricator', 'Homeowner'] as const),
+    architect: i % 4 === 1 ? pick(['Studio Anantha', 'Kadam & Rao Associates', 'Design Cell', 'Ar. Meera N']) : '—',
+    measuredOn: r < .55 ? iso(m.key, iBetween(1, m.days)) : '',
+    nextFollowUp: addDays(iso(m.key, iBetween(1, m.days)), iBetween(-6, 14)),
+    followUpDays: pick([3, 7, 14]),
+    attachments: [
+      ...(r < .5 ? ['Window schedule.pdf'] : []),
+      ...(r < .3 ? ['Site photo 1.jpg', 'Site photo 2.jpg'] : []),
+    ],
   }
 }).sort((a, b) => b.date.localeCompare(a.date))
 

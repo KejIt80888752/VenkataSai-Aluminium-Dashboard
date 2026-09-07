@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -33,6 +33,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/products',         icon: Package,         label: 'Product Catalogue' },
   { to: '/item-master',      icon: Boxes,           label: 'Item Master'       },
   { to: '/barcodes',         icon: ScanBarcode,     label: 'Barcodes & Labels' },
+  { to: '/pack-goods',       icon: PackageOpen,     label: 'Pack & Loose Goods'},
   { group: 'Sales' },
   { to: '/quotation',        icon: FileText,        label: 'Quotations'        },
   { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
@@ -47,6 +48,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/projects',         icon: HardHat,         label: 'Turnkey Projects'  },
   { group: 'Purchase' },
   { to: '/purchase-orders',  icon: ClipboardList,   label: 'Purchase Orders'   },
+  { to: '/shortage-order',   icon: PackageX,        label: 'Shortage Order'    },
   { to: '/purchases',        icon: ShoppingBag,     label: 'Purchase Register' },
   { to: '/suppliers',        icon: Truck,           label: 'Suppliers'         },
   { to: '/supplier-recon',   icon: Scale,           label: 'Supplier Statement'},
@@ -56,6 +58,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/outstanding',      icon: CreditCard,      label: 'Outstanding'       },
   { to: '/payments',         icon: QrCode,          label: 'Payments'          },
   { to: '/bank',             icon: Landmark,        label: 'Bank & Receipts'   },
+  { to: '/contra',           icon: Split,           label: 'Contra & Diverted' },
   { to: '/price-watch',      icon: TrendingUp,      label: 'Cost & Selling'    },
   { to: '/valuation',        icon: Boxes,           label: 'Stock Valuation'   },
   { to: '/profit-loss',      icon: BarChart2,       label: 'Profit & Loss'     },

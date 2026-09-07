@@ -49,6 +49,9 @@ import Barcodes        from '@/pages/Barcodes'
 import AuditLog        from '@/pages/AuditLog'
 import Salesmen        from '@/pages/Salesmen'
 import Valuation       from '@/pages/Valuation'
+import Contra          from '@/pages/Contra'
+import PackGoods       from '@/pages/PackGoods'
+import ShortageOrder   from '@/pages/ShortageOrder'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -109,6 +112,9 @@ function AppRoutes() {
               <Route path="/audit-log"       element={<AuditLog        />} />
               <Route path="/salesmen"        element={<Salesmen        />} />
               <Route path="/valuation"       element={<Valuation       />} />
+              <Route path="/contra"          element={<Contra          />} />
+              <Route path="/pack-goods"      element={<PackGoods       />} />
+              <Route path="/shortage-order"  element={<ShortageOrder   />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>
