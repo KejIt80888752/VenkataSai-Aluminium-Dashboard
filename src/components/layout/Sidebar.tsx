@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -32,6 +32,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/movements',        icon: ArrowLeftRight,  label: 'Stock Movement'    },
   { to: '/products',         icon: Package,         label: 'Product Catalogue' },
   { to: '/item-master',      icon: Boxes,           label: 'Item Master'       },
+  { to: '/barcodes',         icon: ScanBarcode,     label: 'Barcodes & Labels' },
   { group: 'Sales' },
   { to: '/quotation',        icon: FileText,        label: 'Quotations'        },
   { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
@@ -40,6 +41,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/books',            icon: BookOpen,        label: 'Books (Est / GST)' },
   { to: '/quick-bill',       icon: Mic,             label: 'Quick Bill (Voice)'},
   { to: '/sales-reports',    icon: TrendingUp,      label: 'Sales Reports'     },
+  { to: '/salesmen',         icon: Trophy,          label: 'Salesmen'          },
   { to: '/leads',            icon: Users,           label: 'Lead Generation'   },
   { to: '/clients',          icon: Building2,       label: 'Customers'         },
   { to: '/projects',         icon: HardHat,         label: 'Turnkey Projects'  },
@@ -55,11 +57,13 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/payments',         icon: QrCode,          label: 'Payments'          },
   { to: '/bank',             icon: Landmark,        label: 'Bank & Receipts'   },
   { to: '/price-watch',      icon: TrendingUp,      label: 'Cost & Selling'    },
+  { to: '/valuation',        icon: Boxes,           label: 'Stock Valuation'   },
   { to: '/profit-loss',      icon: BarChart2,       label: 'Profit & Loss'     },
   { to: '/gst-reports',      icon: FileSpreadsheet, label: 'GST Reports'       },
   { to: '/gst-recon',        icon: ShieldCheck,     label: 'GST Reconciliation'},
   { group: 'Admin' },
   { to: '/users',            icon: UserCog,         label: 'User Management'   },
+  { to: '/audit-log',        icon: History,         label: 'Audit Log'         },
   { to: '/settings',         icon: Settings,        label: 'Settings'          },
 ]
 
