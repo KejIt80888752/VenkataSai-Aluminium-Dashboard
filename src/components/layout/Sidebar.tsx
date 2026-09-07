@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -31,6 +31,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/stock-audit',      icon: ClipboardCheck,  label: 'Stock Audit'       },
   { to: '/movements',        icon: ArrowLeftRight,  label: 'Stock Movement'    },
   { to: '/products',         icon: Package,         label: 'Product Catalogue' },
+  { to: '/rate-cards',       icon: Tags,            label: 'Rate Cards'        },
   { to: '/item-master',      icon: Boxes,           label: 'Item Master'       },
   { to: '/barcodes',         icon: ScanBarcode,     label: 'Barcodes & Labels' },
   { to: '/pack-goods',       icon: PackageOpen,     label: 'Pack & Loose Goods'},

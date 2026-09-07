@@ -168,6 +168,10 @@ export interface Purchase {
   id: string; no: string; date: string; dueDate: string
   supplierId: string; supplier: string; gstin: string; state: string
   category: string
+  /** who carried it, and what the lorry cost — filtered on to settle freight */
+  logistics: string
+  lrNo: string
+  freight: number
   taxable: number; cgst: number; sgst: number; igst: number; total: number
   paid: number
   status: 'Paid' | 'Partial' | 'Unpaid' | 'Overdue'
@@ -185,6 +189,8 @@ export const PURCHASES: Purchase[] = MONTHS.flatMap(m => {
     const tax     = +(taxable * 0.18).toFixed(2)
     const inter   = s.state !== 'Karnataka'
     const total   = Math.round(taxable + tax)
+    const carrier = pick(['VRL Logistics', 'Rivigo Roadways', 'TCI Freight', 'Sri Lakshmi Transport',
+                          'Own lorry', 'Supplier delivered'] as const)
     const due     = addDays(date, s.creditDays)
     const age     = Math.floor((new Date(TODAY).getTime() - new Date(date).getTime()) / 86400000)
     const paid    = age > s.creditDays + 10 ? total
@@ -197,6 +203,10 @@ export const PURCHASES: Purchase[] = MONTHS.flatMap(m => {
       date, dueDate: due,
       supplierId: s.id, supplier: s.name, gstin: s.gstin, state: s.state,
       category: s.category,
+      logistics: carrier,
+      lrNo: carrier === 'Own lorry' || carrier === 'Supplier delivered'
+        ? '—' : `LR-${iBetween(100000, 999999)}`,
+      freight: carrier === 'Supplier delivered' ? 0 : Math.round(between(1800, 14000) / 50) * 50,
       taxable,
       cgst: inter ? 0 : +(tax / 2).toFixed(2),
       sgst: inter ? 0 : +(tax / 2).toFixed(2),

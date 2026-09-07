@@ -17,6 +17,9 @@ const FIELDS: Field[] = [
   { key: 'gstin',    label: 'Supplier GSTIN' },
   { key: 'state',    label: 'State' },
   { key: 'category', label: 'Category' },
+  { key: 'logistics',label: 'Logistics company', hint: 'Who carried it' },
+  { key: 'lrNo',     label: 'LR number' },
+  { key: 'freight',  label: 'Freight paid', type: 'number' },
   { key: 'taxable',  label: 'Taxable value', type: 'number', required: true },
   { key: 'cgst',     label: 'CGST', type: 'number' },
   { key: 'sgst',     label: 'SGST', type: 'number' },
@@ -33,6 +36,7 @@ export default function Purchases() {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All Status')
   const [sup, setSup] = useState('All Suppliers')
+  const [carrier, setCarrier] = useState('All Carriers')
   const t = useChartTheme()
   const [edit, setEdit] = useState<Purchase | null>(null)
   const crud = useCrud<Purchase>('purchases', PURCHASES, idOf)
@@ -41,8 +45,9 @@ export default function Purchases() {
   const rows = useMemo(() => list.filter(p =>
     (status === 'All Status' || p.status === status) &&
     (sup === 'All Suppliers' || p.supplier === sup) &&
-    (q === '' || `${p.no} ${p.supplier} ${p.category}`.toLowerCase().includes(q.toLowerCase())),
-  ).sort((a, b) => b.date.localeCompare(a.date)), [list, q, status, sup])
+    (carrier === 'All Carriers' || p.logistics === carrier) &&
+    (q === '' || `${p.no} ${p.supplier} ${p.category} ${p.logistics} ${p.lrNo}`.toLowerCase().includes(q.toLowerCase())),
+  ).sort((a, b) => b.date.localeCompare(a.date)), [list, q, status, sup, carrier])
 
   const paged = usePaged(rows, 12)
   const totalKg = list.reduce((s, p) => s + p.weightKg, 0)
@@ -53,14 +58,24 @@ export default function Purchases() {
   })).sort((a, b) => b.value - a.value)
 
   const exportCsv = () => csvDownload('vsa-purchase-register.csv', [
-    ['Bill No', 'Date', 'Due Date', 'Supplier', 'GSTIN', 'Category', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Paid', 'Balance', 'Status'],
-    ...rows.map(p => [p.no, p.date, p.dueDate, p.supplier, p.gstin, p.category, p.taxable, p.cgst, p.sgst, p.igst, p.total, p.paid, p.total - p.paid, p.status]),
+    ['Bill No', 'Date', 'Due Date', 'Supplier', 'GSTIN', 'Category', 'Logistics', 'LR No', 'Freight',
+     'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Paid', 'Balance', 'Status'],
+    ...rows.map(p => [p.no, p.date, p.dueDate, p.supplier, p.gstin, p.category, p.logistics, p.lrNo, p.freight,
+                      p.taxable, p.cgst, p.sgst, p.igst, p.total, p.paid, p.total - p.paid, p.status]),
+    [], ['Freight by carrier'], ['Logistics', 'Loads', 'Freight'],
+    ...[...new Set(rows.map(r => r.logistics))].map(c => [
+      c, rows.filter(r => r.logistics === c).length,
+      rows.filter(r => r.logistics === c).reduce((a, r) => a + r.freight, 0),
+    ]),
   ])
 
   return (
     <div>
       <PageHead title="Purchase Register" sub={`Inward bills from extrusion mills, stockists and hardware agencies · ${FY}`}>
         <ExportBtn onClick={exportCsv} />
+        <Select value={carrier} onChange={setCarrier}
+          options={['All Carriers', ...[...new Set(PURCHASES.map(p => p.logistics))].sort()]}
+          className="min-w-[13rem]" />
         <CrudBar noun="Purchase Bill" fields={FIELDS} changes={crud.changes} onRestore={crud.restore}
           onAdd={rec => crud.add(asPurchase(rec))}
           onImport={recs => crud.addMany(recs.map((r, i) => asPurchase(r, i)))} />
@@ -109,9 +124,37 @@ export default function Purchases() {
         <Select value={sup} onChange={setSup} options={['All Suppliers', ...SUPPLIERS.map(s => s.name)]} />
       </div>
 
+      <div className="card mb-5">
+        <p className="section-title text-base mb-1">Freight by Carrier</p>
+        <p className="section-sub mb-3">
+          What each transporter has carried and what they have been paid — the reason the filter exists
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {[...new Set(PURCHASES.map(p => p.logistics))].sort().map(c => {
+            const loads = list.filter(p => p.logistics === c)
+            const freight = loads.reduce((a, p) => a + p.freight, 0)
+            const picked = carrier === c
+            return (
+              <button key={c} onClick={() => setCarrier(picked ? 'All Carriers' : c)}
+                className="text-left rounded-lg p-2.5 transition-colors"
+                style={{
+                  background: 'var(--bg-card2)',
+                  border: `1px solid ${picked ? 'var(--brand)' : 'var(--border-2)'}`,
+                }}>
+                <p className="text-[11px] leading-tight truncate" style={{ color: 'var(--text-2)' }}>{c}</p>
+                <p className="text-sm font-bold tabular-nums mt-0.5" style={{ color: 'var(--text-1)' }}>
+                  {freight ? inr(freight) : '—'}
+                </p>
+                <p className="text-[10px]" style={{ color: 'var(--text-4)' }}>{loads.length} loads</p>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <TableCard>
         <thead>
-          <tr><th>Bill No</th><th>Date</th><th>Supplier</th><th>Category</th><th className="num">Taxable</th><th className="num">Total</th><th className="num">Balance</th><th>Status</th><th /></tr>
+          <tr><th>Bill No</th><th>Date</th><th>Supplier</th><th>Carried By</th><th>Category</th><th className="num">Taxable</th><th className="num">Total</th><th className="num">Balance</th><th>Status</th><th /></tr>
         </thead>
         <tbody>
           {paged.slice.map(p => (
@@ -121,6 +164,10 @@ export default function Purchases() {
               </td>
               <td className="whitespace-nowrap text-xs">{fmtDate(p.date)}</td>
               <td className="max-w-[15rem] truncate">{p.supplier}</td>
+              <td className="text-xs whitespace-nowrap">
+                {p.logistics}
+                {p.lrNo !== '—' && <span className="block text-[10px]" style={{ color: 'var(--text-4)' }}>{p.lrNo}</span>}
+              </td>
               <td className="text-xs whitespace-nowrap">{p.category}</td>
               <td className="num tabular-nums">{inr(p.taxable)}</td>
               <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>{inr(p.total)}</td>
@@ -151,6 +198,7 @@ function asPurchase(r: Rec, i = 0): Purchase {
   return {
     id: `P-${Date.now().toString(36)}${i}`,
     supplierId: '', items: 1,
+    logistics: r.logistics || 'Own lorry', lrNo: r.lrNo || '—', freight: Number(r.freight) || 0,
     date: r.date || new Date().toISOString().slice(0, 10),
     status: r.status || 'Unpaid',
     ...r,

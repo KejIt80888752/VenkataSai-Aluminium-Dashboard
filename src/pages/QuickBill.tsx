@@ -17,6 +17,7 @@ const batchFor = (code: string, n: number) => BATCHES[(code.length + n) % BATCHE
 import { inr, inr2, kg, cn } from '@/lib/utils'
 import { COMPANY } from '@/data/company'
 import { parseSpoken } from '@/lib/speech'
+import { rateFor } from '@/data/rates'
 
 /* Typing is the counter's first way in, so the search has to forgive how they
    type: no spaces, no dashes, no quote marks. "TBC3" must find TBC-3'. */
@@ -77,6 +78,10 @@ interface BillLine {
   weighedKg: number | null
   /** production batch — only carried on sheet goods, where shade moves */
   batch: string | null
+  /** a rate the counter typed over the one the rate card gave */
+  rateOverride: number | null
+  /** the unit the rate card counts quantity in */
+  unit: string
 }
 
 export default function QuickBill() {
@@ -124,6 +129,7 @@ export default function QuickBill() {
         key: `${p.code}-${Date.now()}-${ls.length}`, code: p.code, name: p.name, category: p.category, pcs,
         ratePerKg: p.ratePerKg, kgPerLength: p.kgPerLength, gst: p.gst, via, packed: false, weighedKg: null,
         batch: isBatched(p.code) ? batchFor(p.code, ls.length) : null,
+        rateOverride: null, unit: p.unit,
       }
       // Aluminium sits above everything else unless the counter moves it.
       if (!isAlu(p.category)) return [...ls, line]
@@ -199,13 +205,26 @@ export default function QuickBill() {
   }
 
   const totals = useMemo(() => {
+    const type = CLIENTS.find(c => c.name === customer)?.type ?? 'B2C Retail'
+
     const rows = lines.map(l => {
       // What these pieces ought to weigh, from the section's own standard.
       const expectedKg = +(l.pcs * l.kgPerLength).toFixed(2)
       const kgs = l.weighedKg !== null ? l.weighedKg : expectedKg
       const gapPct = expectedKg > 0 ? +(((kgs - expectedKg) / expectedKg) * 100).toFixed(1) : 0
-      const amount = +(kgs * l.ratePerKg).toFixed(2)
-      return { ...l, expectedKg, kgs, gapPct, amount, tax: +(amount * l.gst / 100).toFixed(2) }
+
+      // The rate card decides, on this customer and this quantity.
+      const applied = rateFor(l.code, l.unit === 'kg' ? kgs : l.pcs, type)
+      const cardRate = applied?.rate ?? l.ratePerKg
+      const rate = l.rateOverride !== null ? l.rateOverride : cardRate
+      const belowFloor = applied ? rate < applied.floor : false
+      const discountPct = cardRate > 0 ? +(((cardRate - rate) / cardRate) * 100).toFixed(1) : 0
+
+      const amount = +(kgs * rate).toFixed(2)
+      return {
+        ...l, expectedKg, kgs, gapPct, amount, rate, cardRate, applied, belowFloor, discountPct,
+        tax: +(amount * l.gst / 100).toFixed(2),
+      }
     })
     const taxable = +rows.reduce((s, r) => s + r.amount, 0).toFixed(2)
     const tax = +rows.reduce((s, r) => s + r.tax, 0).toFixed(2)
@@ -213,11 +232,15 @@ export default function QuickBill() {
     // a weight nobody checked.
     const light = rows.filter(r => r.gapPct < -4)
     const shortKg = +light.reduce((s, r) => s + (r.expectedKg - r.kgs), 0).toFixed(2)
+    const underFloor = rows.filter(r => r.belowFloor)
+    const discounted = rows.filter(r => r.discountPct > 0.05)
     return {
       rows, taxable, tax, total: Math.round(taxable + tax),
-      light, shortKg, shortValue: Math.round(light.reduce((s, r) => s + (r.expectedKg - r.kgs) * r.ratePerKg, 0)),
+      light, shortKg, shortValue: Math.round(light.reduce((s, r) => s + (r.expectedKg - r.kgs) * r.rate, 0)),
+      underFloor, discounted,
+      givenAway: Math.round(discounted.reduce((s, r) => s + (r.cardRate - r.rate) * r.kgs, 0)),
     }
-  }, [lines])
+  }, [lines, customer])
 
   /* Same sheet, two batches — the shade will not match on the wall. */
   const shadeClash = useMemo(() => {
@@ -453,6 +476,39 @@ export default function QuickBill() {
         </div>
       )}
 
+      {totals.underFloor.length > 0 && (
+        <div className="card mb-4" style={{ borderColor: 'var(--red)' }}>
+          <p className="section-title text-base mb-1 flex items-center gap-2">
+            <TriangleAlert size={15} style={{ color: 'var(--red)' }} /> Below the Floor on
+            {' '}{totals.underFloor.length} {totals.underFloor.length === 1 ? 'Line' : 'Lines'}
+          </p>
+          <p className="section-sub mb-3">
+            A salesman may work down to the floor and no further. These need the owner to let them through,
+            and it is recorded against whoever raised the bill.
+          </p>
+          <div className="space-y-1.5">
+            {totals.underFloor.map(l => (
+              <div key={l.key} className="rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-3"
+                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <span className="text-sm min-w-0 truncate" style={{ color: 'var(--text-1)' }}>{l.name}</span>
+                <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>
+                  {l.applied?.name} rate {inr2(l.cardRate)} · floor {inr2(l.applied?.floor ?? 0)} ·
+                  <span className="font-semibold ml-1" style={{ color: 'var(--red)' }}>given {inr2(l.rate)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {totals.discounted.length > 0 && totals.underFloor.length === 0 && (
+        <p className="text-[11.5px] mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
+          <TriangleAlert size={12} style={{ color: 'var(--amber, #f59e0b)' }} />
+          Discount given on {totals.discounted.length} {totals.discounted.length === 1 ? 'line' : 'lines'} —
+          {' '}{inr(totals.givenAway)} off the card rate, all of it above the floor.
+        </p>
+      )}
+
       {totals.light.length > 0 && (
         <div className="card mb-4" style={{ borderColor: 'var(--red)' }}>
           <p className="section-title text-base mb-1 flex items-center gap-2">
@@ -495,7 +551,7 @@ export default function QuickBill() {
         <thead>
           <tr><th className="text-center">Packed</th><th>Code</th><th>Section</th><th>Added By</th>
             <th>Batch</th><th className="num">Pieces</th><th className="num">Should Weigh</th><th className="num">Weighed</th>
-            <th className="num">Rate/Kg</th><th className="num">Amount</th><th>Order</th><th /></tr>
+            <th>Rate Applied</th><th className="num">Rate</th><th className="num">Amount</th><th>Order</th><th /></tr>
         </thead>
         <tbody>
           {totals.rows.map(l => (
@@ -532,7 +588,30 @@ export default function QuickBill() {
                     setLines(ls => ls.map(x => x.key === l.key ? { ...x, weighedKg: v === '' ? null : Number(v) } : x))
                   }} />
               </td>
-              <td className="num tabular-nums text-xs">{inr2(l.ratePerKg)}</td>
+              <td>
+                {l.applied ? (
+                  <span className="whitespace-nowrap">
+                    <span className={l.applied.level === 4 ? 'badge-purple' : l.applied.level === 3 ? 'badge-blue'
+                      : l.applied.level === 2 ? 'badge-yellow' : 'badge-gray'}>{l.applied.name}</span>
+                    {l.discountPct > 0.05 && (
+                      <span className="block text-[10px] mt-0.5"
+                        style={{ color: l.belowFloor ? 'var(--red)' : 'var(--text-4)' }}>
+                        −{l.discountPct}% given
+                      </span>
+                    )}
+                  </span>
+                ) : <span className="text-xs" style={{ color: 'var(--text-4)' }}>—</span>}
+              </td>
+              <td className="num">
+                <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                  value={l.rateOverride ?? ''} placeholder={String(l.cardRate)}
+                  style={l.belowFloor ? { borderColor: 'var(--red)', color: 'var(--red)' } : undefined}
+                  title={l.applied ? `Card rate ${inr2(l.cardRate)} · floor ${inr2(l.applied.floor)}` : ''}
+                  onChange={e => {
+                    const v = e.target.value.trim()
+                    setLines(ls => ls.map(x => x.key === l.key ? { ...x, rateOverride: v === '' ? null : Number(v) } : x))
+                  }} />
+              </td>
               <td className="num tabular-nums font-medium" style={{ color: 'var(--text-1)' }}>{inr2(l.amount)}</td>
               <td>
                 <span className="flex gap-0.5">
@@ -551,7 +630,7 @@ export default function QuickBill() {
               </td>
             </tr>
           ))}
-          {lines.length === 0 && <tr><td colSpan={12}><Empty msg="Type, speak or scan to start the bill" /></td></tr>}
+          {lines.length === 0 && <tr><td colSpan={13}><Empty msg="Type, speak or scan to start the bill" /></td></tr>}
         </tbody>
       </TableCard>
 
