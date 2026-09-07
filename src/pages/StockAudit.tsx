@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { ClipboardCheck, Scale, Wand2, AlertTriangle, CheckCircle2, Layers } from 'lucide-react'
 import { PageHead, Stat, ExportBtn, TableCard, Select } from '@/components/ui'
 import { STOCK_CHECK, CHECK_SUMMARY } from '@/data/positions'
@@ -6,6 +6,8 @@ import { UOM_RULES } from '@/data/itemmaster'
 import { csvDownload, cn } from '@/lib/utils'
 import { fmtDate } from '@/lib/utils'
 import { TODAY } from '@/data/company'
+import CountByScan, { type Counted } from '@/components/CountByScan'
+import { LOCATION_STOCK } from '@/data/positions'
 import {
   useAdjustments, RaiseAdjustment, ApprovalQueue, AdjustmentBadge, type Adjustment,
 } from '@/components/StockApprovals'
@@ -17,6 +19,31 @@ export default function StockAudit() {
   const [locF, setLocF] = useState('All Locations')
   const [raise, setRaise] = useState<Parameters<typeof RaiseAdjustment>[0]['row']>(null)
   const adj = useAdjustments()
+  const [scanAt, setScanAt] = useState('GD1')
+
+  /* What the book says at the location being counted, so the scan can be
+     held against it — but only once the counting is finished. */
+  const bookAt = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const r of STOCK_CHECK.filter(x => x.location === scanAt)) m[r.code] = r.bookPcs
+    for (const l of LOCATION_STOCK) if (!(l.code in m)) m[l.code] = 0
+    return m
+  }, [scanAt])
+
+  /* A scanned count raises the same correction a written one would. */
+  const fromScan = (rows: Counted[]) => {
+    const now = new Date().toISOString().slice(0, 10)
+    for (const c of rows) {
+      const book = bookAt[c.code] ?? 0
+      if (book === c.pcs) continue
+      adj.raise({
+        key: `${c.code}|${scanAt}`, code: c.code, name: c.name, location: scanAt,
+        bookPcs: book, countedPcs: c.pcs, diffPcs: c.pcs - book, diffKg: 0,
+        reason: 'Counted by scanning', note: 'Raised from the scan sheet, not typed',
+        raisedBy: 'Counted at the rack', raisedAt: now, status: 'Pending Approval',
+      })
+    }
+  }
 
   const rows = STOCK_CHECK.filter(r => locF === 'All Locations' || r.location === locF)
   const autoRows = rows.filter(r => r.weightDrift)
@@ -94,6 +121,8 @@ export default function StockAudit() {
           </table>
         </div>
       </div>
+
+      <CountByScan location={scanAt} onLocation={setScanAt} book={bookAt} onFinish={fromScan} />
 
       <ApprovalQueue items={adj.items} onDecide={adj.decide} />
 

@@ -53,6 +53,7 @@ import Contra          from '@/pages/Contra'
 import PackGoods       from '@/pages/PackGoods'
 import ShortageOrder   from '@/pages/ShortageOrder'
 import RateCards       from '@/pages/RateCards'
+import PurchaseDC      from '@/pages/PurchaseDC'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -117,6 +118,7 @@ function AppRoutes() {
               <Route path="/pack-goods"      element={<PackGoods       />} />
               <Route path="/shortage-order"  element={<ShortageOrder   />} />
               <Route path="/rate-cards"      element={<RateCards       />} />
+              <Route path="/purchase-dc"     element={<PurchaseDC      />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>
