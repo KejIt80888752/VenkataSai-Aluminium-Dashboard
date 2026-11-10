@@ -56,6 +56,7 @@ export const TITLES: Record<string, string> = {
   '/shortage-order':  'Shortage Order',
   '/rate-cards':      'Rate Cards',
   '/purchase-dc':     'Purchase Despatch Sheet',
+  '/coat-book':       'Coating Book',
 }
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
