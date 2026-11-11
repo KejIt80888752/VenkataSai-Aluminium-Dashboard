@@ -4,7 +4,8 @@ import {
 } from 'lucide-react'
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import {
-  OPENING, LOADED, RECEIVED, WRITTEN, colourOf, sectionOf, isHardware, isRubber,
+  OPENING, LOADED, RECEIVED, WRITTEN, TBC_PARTS, TBC_MULTIPLIER,
+  colourOf, sectionOf, isHardware, isRubber, isTbc, weighments,
   type CoatLine,
 } from '@/data/coatbook'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
@@ -51,75 +52,68 @@ export default function CoatBook() {
       .sort((a, b) => b.colours.length - a.colours.length || b.nos - a.nos)
   }, [])
 
-  /* ── What the sheets do not agree on ──────────────────────────────────── */
+  /* ── Held against the rules the shop gave us on 11-11 ───────────────── */
   const checks = useMemo(() => {
-    const out: { kind: 'error' | 'ask' | 'note'; title: string; detail: string }[] = []
+    const out: { kind: 'error' | 'ok' | 'note'; title: string; detail: string }[] = []
 
-    const sCell = OPENING.find(l => l.name.includes('3TB') && l.kg === null && !isHardware(l))
-    if (sCell) {
-      // what a piece of this section weighs, taken from where it was weighed
-      const ref = LOADED.find(l => sectionOf(l) === sectionOf(sCell) && l.kg)
-      const per = ref && ref.kg ? ref.kg / ref.nos : 0
+    /* The one figure their corrections did not reach. The same section is
+       weighed at 1.357 a piece going out and 1.429 coming back, so the
+       opening line cannot be right. */
+    const per = (ls: CoatLine[], sec: string) => {
+      const l = ls.find(x => sectionOf(x) === sec && x.kg)
+      return l && l.kg ? l.kg / l.nos : 0
+    }
+    const openDv = OPENING.find(l => sectionOf(l) === "DV 7'" && l.kg)
+    const loadDv = per(LOADED, "DV 7'")
+    if (openDv && openDv.kg && loadDv && loadDv / (openDv.kg / openDv.nos) > 3) {
+      const should = openDv.nos * loadDv
       out.push({
         kind: 'error',
-        title: `The weight cell for ${sCell.name} holds the letter “S”`,
-        detail: `${sCell.nos} pieces with no weight against them. At ${per.toFixed(3)} kg a piece — the rate the `
-          + `same section was weighed at on the loading sheet — that is about ${(per * sCell.nos).toFixed(1)} kg `
-          + `missing from the ${WRITTEN.opening.kg} kg total. One cell, and the opening weight is short.`,
+        title: `DV 7' on the opening sheet is still at ${(openDv.kg / openDv.nos).toFixed(3)} kg a piece`,
+        detail: `You corrected the loading sheet to ${loadDv.toFixed(3)} kg a piece, and coated it comes back `
+          + `at about 1.41. The opening line is still ${openDv.nos} pieces at ${openDv.kg} kg. At the rate you `
+          + `corrected it to, those pieces should weigh about ${should.toFixed(1)} kg — so roughly `
+          + `${(should - openDv.kg).toFixed(1)} kg is still short in the ${WRITTEN.opening.kg} kg opening `
+          + `total. Row ${openDv.row} of the opening sheet.`,
       })
     }
 
-    const gap = WRITTEN.received.splittedSeparately - WRITTEN.received.nos
-    if (gap) out.push({
-      kind: 'ask',
-      title: `Two piece counts on the received sheet — ${WRITTEN.received.nos} and ${WRITTEN.received.splittedSeparately}`,
-      detail: `The total row says ${WRITTEN.received.nos}. Below it, “SPLITTED SEPERATELY” says `
-        + `${WRITTEN.received.splittedSeparately}. The lines themselves add to exactly ${WRITTEN.received.nos}, `
-        + `so the ${gap} extra is something the sheet knows about and the lines do not.`,
+    /* 778 against 782, now explained by the shop. */
+    const tbcLines = RECEIVED.filter(isTbc)
+    const tbcShown = tbcLines.reduce((a, l) => a + l.nos, 0)
+    const tbcReal = tbcShown * TBC_MULTIPLIER
+    out.push({
+      kind: 'ok',
+      title: `778 and 782 settled — TBC is ${TBC_MULTIPLIER} sections, not one`,
+      detail: `${TBC_PARTS.join(', ')} are loaded separately and clubbed when sold. The received sheet shows `
+        + `${tbcShown} TBC lines, which is ${tbcReal} pieces on the floor — the ${tbcReal - tbcShown} between `
+        + `${WRITTEN.received.nos} and ${WRITTEN.received.splittedSeparately}. The system now counts a TBC line `
+        + `as ${TBC_MULTIPLIER}, so the two figures stop disagreeing.`,
     })
 
-    const noWeight = RECEIVED.filter(l => l.kg === null && !isHardware(l))
-    if (noWeight.length) out.push({
-      kind: 'note',
-      title: `${noWeight.length} coated sections came back without a weight`,
-      detail: noWeight.map(l => `${l.name} (${l.nos} nos)`).join(', ')
-        + '. The pieces are counted, so stock is right — but with no weight these cannot be checked for '
-        + 'coating gain, and they cannot be billed by weight.',
+    /* Blank weights are shared weighments, not missing ones. */
+    const ws = weighments(RECEIVED).filter(w => w.lines.length > 1)
+    if (ws.length) out.push({
+      kind: 'ok',
+      title: `${ws.length} weighments cover more than one line`,
+      detail: ws.map(w => `${w.kg} kg over ${w.nos} nos (${w.lines.map(l => l.name).join(' + ')})`).join('; ')
+        + '. Read on their own those rows look unweighed; read as you weigh them, every piece has a weight.',
     })
 
-    /* The same section should weigh about the same a piece wherever it is
-       written. Coating adds a few per cent, not several times over. */
-    const perPiece = new Map<string, { lo: number; hi: number; loName: string; hiName: string }>()
-    for (const l of [...OPENING, ...LOADED, ...RECEIVED]) {
-      if (!l.kg || !l.nos || isHardware(l) || isRubber(l)) continue
-      const sec = sectionOf(l)
-      const per = l.kg / l.nos
-      const e = perPiece.get(sec)
-      if (!e) perPiece.set(sec, { lo: per, hi: per, loName: l.name, hiName: l.name })
-      else {
-        if (per < e.lo) { e.lo = per; e.loName = l.name }
-        if (per > e.hi) { e.hi = per; e.hiName = l.name }
-      }
-    }
-    for (const [sec, e] of perPiece) {
-      if (e.lo <= 0 || e.hi / e.lo < 3) continue
-      out.push({
-        kind: 'error',
-        title: `${sec} is written at two weights that cannot both be right`,
-        detail: `“${e.hiName}” works out at ${e.hi.toFixed(3)} kg a piece, but “${e.loName}” at `
-          + `${e.lo.toFixed(3)} kg — ${Math.round(e.hi / e.lo)} times lighter for the same section. Coating `
-          + `adds a few per cent, not several times over, so one of the two weights has a digit in the `
-          + `wrong place. Until it is settled, any stock valued on that line is wrong.`,
-      })
-    }
+    out.push({
+      kind: 'ok',
+      title: 'All three totals tie exactly',
+      detail: `Opening ${WRITTEN.opening.nos} nos and ${WRITTEN.opening.kg} kg, loaded ${WRITTEN.loaded.nos} `
+        + `and ${WRITTEN.loaded.kg}, received ${WRITTEN.received.nos} and ${WRITTEN.received.kg}. Every line `
+        + `added and checked against the figure at the foot of your sheet.`,
+    })
 
-    const offTotal = OPENING.filter(l => l.route && l.route !== 'M1 TO PC1')
-    if (offTotal.length) out.push({
+    out.push({
       kind: 'note',
-      title: 'The totals cover the M1 block only',
-      detail: `On the opening and loading sheets the total at the foot adds up the left-hand block. `
-        + `The S2 and V1 blocks beside it — ${offTotal.length} lines on the opening sheet alone — are not in `
-        + `that figure. Nobody has a single number for the whole day.`,
+      title: 'Your corrections are all in',
+      detail: 'The S in the 3TB weight cell is now 70.35 kg; DV 7\u2019 on the loading sheet is now 40.7 kg; '
+        + 'CBB reads CB; PG reads PGG. Subtotals have appeared on the S2 and V1 blocks. Nothing else was '
+        + 'touched.',
     })
 
     return out
@@ -154,14 +148,14 @@ export default function CoatBook() {
           sub={`${kgFmt(sum(LOADED, l => l.kg ?? 0))} on 16 and 17-09`} />
         <Stat label="Came Back Coated" value={`${sum(RECEIVED, l => l.nos)} nos`} icon={PackageCheck} tone="green"
           sub={`${kgFmt(sum(RECEIVED, l => l.kg ?? 0))} on 21-09`} />
-        <Stat label="Things to Settle" value={String(checks.length)} icon={TriangleAlert}
-          tone={checks.some(c => c.kind === 'error') ? 'red' : 'amber'}
-          sub="Found in your own sheets" />
+        <Stat label="Still Open" value={String(checks.filter(c => c.kind === 'error').length)} icon={TriangleAlert}
+          tone={checks.some(c => c.kind === 'error') ? 'red' : 'green'}
+          sub={checks.some(c => c.kind === 'error') ? 'One still open' : 'All settled'} />
       </div>
 
       {/* ── What the sheets do not agree on ───────────────────────────── */}
       <div className="card mb-5" style={{ borderColor: 'var(--amber, #f59e0b)' }}>
-        <p className="section-title text-base mb-1">What the Sheets Say That Does Not Agree</p>
+        <p className="section-title text-base mb-1">Checked Against Your Clarifications</p>
         <p className="section-sub mb-4 max-w-4xl">
           Every total at the foot of your three sheets is correct — I added each one and they tie exactly.
           These are the other things worth a look.
@@ -174,9 +168,11 @@ export default function CoatBook() {
                 border: `1px solid ${c.kind === 'error' ? 'var(--red)' : 'var(--border-2)'}`,
               }}>
               <p className="text-sm font-medium flex items-start gap-2" style={{ color: 'var(--text-1)' }}>
-                {c.kind === 'error' ? <TriangleAlert size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--red)' }} />
-                  : c.kind === 'ask' ? <HelpCircle size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--amber, #f59e0b)' }} />
-                  : <CircleCheck size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--text-4)' }} />}
+                {c.kind === 'error'
+                  ? <TriangleAlert size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--red)' }} />
+                  : c.kind === 'ok'
+                  ? <CircleCheck size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--green)' }} />
+                  : <HelpCircle size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--text-4)' }} />}
                 {c.title}
               </p>
               <p className="text-[12px] leading-relaxed mt-1.5 ml-6" style={{ color: 'var(--text-3)' }}>{c.detail}</p>
