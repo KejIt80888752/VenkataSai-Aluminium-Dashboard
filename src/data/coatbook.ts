@@ -58,7 +58,7 @@ export const OPENING: CoatLine[] = [
   { code: 'VRU-007', name: '12 MM O RUBBER TVS', nos: 50.0, kg: null, unit: 'KGS', route: 'V1 TO PC1', row: 16 },
   { code: '19529', name: 'W/O DOOR BOTTOM 12\'', nos: 34.0, kg: 127.9, unit: null, route: 'M1 TO PC1', row: 17 },
   { code: 'VRU-006', name: '10 MM O RUBBER TVS', nos: 50.0, kg: null, unit: 'KGS', route: 'V1 TO PC1', row: 17 },
-  { code: '19543', name: 'W/O DV 7\'', nos: 48.0, kg: 1.6, unit: null, route: 'M1 TO PC1', row: 18 },
+  { code: '19543', name: 'W/O DV 7\'', nos: 48.0, kg: 65.0, unit: null, route: 'M1 TO PC1', row: 18 },
   { code: 'VRU-238', name: 'SMALL F RUBBER EPDM', nos: 25.0, kg: null, unit: 'KGS', route: 'V1 TO PC1', row: 18 },
   { code: 'VRU-108', name: 'BIG F RUBBER EPDM', nos: 10.0, kg: null, unit: 'KGS', route: 'V1 TO PC1', row: 19 },
 ]
@@ -116,6 +116,9 @@ export const RECEIVED: CoatLine[] = [
 ]
 
 export const WRITTEN = {
+  /* The figure written at the foot of their opening sheet. It still carries
+     the old 1.6 against DV 7'; the 65 kg they sent on 11-11 has gone into
+     the line above but not yet into their own total. */
   opening:  { nos: 1476, kg: 1083.03 },
   loaded:   { nos: 727,  kg: 686.50 },
   received: { nos: 778,  kg: 717.90, splittedSeparately: 782 },

@@ -56,27 +56,37 @@ export default function CoatBook() {
   const checks = useMemo(() => {
     const out: { kind: 'error' | 'ok' | 'note'; title: string; detail: string }[] = []
 
-    /* The one figure their corrections did not reach. The same section is
-       weighed at 1.357 a piece going out and 1.429 coming back, so the
-       opening line cannot be right. */
-    const per = (ls: CoatLine[], sec: string) => {
-      const l = ls.find(x => sectionOf(x) === sec && x.kg)
-      return l && l.kg ? l.kg / l.nos : 0
-    }
+    /* DV 7' was the last one open. The shop sent 65 kg for those 48 pieces
+       on 11-11, which puts it alongside the other two readings of the same
+       section. Their own sheet total has not caught up with it yet. */
     const openDv = OPENING.find(l => sectionOf(l) === "DV 7'" && l.kg)
-    const loadDv = per(LOADED, "DV 7'")
-    if (openDv && openDv.kg && loadDv && loadDv / (openDv.kg / openDv.nos) > 3) {
-      const should = openDv.nos * loadDv
+    const loadDv = LOADED.find(l => sectionOf(l) === "DV 7'" && l.kg)
+    const recvDv = RECEIVED.find(l => sectionOf(l) === "DV 7'" && l.kg)
+    if (openDv?.kg && loadDv?.kg && recvDv?.kg) {
+      const a = openDv.kg / openDv.nos, b = loadDv.kg / loadDv.nos, c2 = recvDv.kg / recvDv.nos
+      const spread = (Math.max(a, b, c2) - Math.min(a, b, c2)) / Math.min(a, b, c2) * 100
       out.push({
-        kind: 'error',
-        title: `DV 7' on the opening sheet is still at ${(openDv.kg / openDv.nos).toFixed(3)} kg a piece`,
-        detail: `You corrected the loading sheet to ${loadDv.toFixed(3)} kg a piece, and coated it comes back `
-          + `at about 1.41. The opening line is still ${openDv.nos} pieces at ${openDv.kg} kg. At the rate you `
-          + `corrected it to, those pieces should weigh about ${should.toFixed(1)} kg — so roughly `
-          + `${(should - openDv.kg).toFixed(1)} kg is still short in the ${WRITTEN.opening.kg} kg opening `
-          + `total. Row ${openDv.row} of the opening sheet.`,
+        kind: 'ok',
+        title: `DV 7' settled at ${a.toFixed(3)} kg a piece`,
+        detail: `Lying ${a.toFixed(3)}, going out ${b.toFixed(3)}, coming back coated ${c2.toFixed(3)} — the `
+          + `three readings now sit within ${spread.toFixed(1)}% of each other, which is what coating gain `
+          + `looks like. Before your correction the opening line read 0.033.`,
       })
     }
+
+    /* Their opening total covers the M1 block only, so only that block can
+       be held against it. */
+    const m1 = OPENING.filter(l => l.route === 'M1 TO PC1')
+    const m1Kg = +m1.reduce((t, l) => t + (l.kg ?? 0), 0).toFixed(2)
+    const gap = +(m1Kg - WRITTEN.opening.kg).toFixed(2)
+    if (Math.abs(gap) > 0.01) out.push({
+      kind: 'error',
+      title: `Your opening sheet still totals ${WRITTEN.opening.kg} kg`,
+      detail: `With DV 7' at the ${openDv?.kg} kg you sent, the M1 lines now add to ${m1Kg} kg — `
+        + `${gap.toFixed(2)} more than the figure at the foot of the sheet, which is exactly the `
+        + `${gap.toFixed(2)} the DV line went up by. The line is corrected here; the total on your own copy `
+        + `has not caught up with it. Worth changing before that sheet is used again.`,
+    })
 
     /* 778 against 782, now explained by the shop. */
     const tbcLines = RECEIVED.filter(isTbc)
@@ -102,10 +112,10 @@ export default function CoatBook() {
 
     out.push({
       kind: 'ok',
-      title: 'All three totals tie exactly',
-      detail: `Opening ${WRITTEN.opening.nos} nos and ${WRITTEN.opening.kg} kg, loaded ${WRITTEN.loaded.nos} `
-        + `and ${WRITTEN.loaded.kg}, received ${WRITTEN.received.nos} and ${WRITTEN.received.kg}. Every line `
-        + `added and checked against the figure at the foot of your sheet.`,
+      title: 'Every line checked against the figure at the foot of your sheet',
+      detail: `Loaded ${WRITTEN.loaded.nos} nos and ${WRITTEN.loaded.kg} kg, received ${WRITTEN.received.nos} `
+        + `and ${WRITTEN.received.kg} — both tie exactly. Opening tied too, until the DV correction above `
+        + `lifted it; piece counts are unaffected at ${WRITTEN.opening.nos}.`,
     })
 
     out.push({
