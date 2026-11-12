@@ -6,7 +6,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -15,7 +15,8 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/',                 icon: LayoutDashboard, label: 'Dashboard'         },
   { to: '/alerts',           icon: BellRing,        label: 'Alerts & Reminders'},
   { group: 'Material Flow' },
-  { to: '/material-flow',    icon: Workflow,        label: 'Material Flow'     },
+  { to: '/dc-flow',          icon: Workflow,        label: 'Material Journey'  },
+  { to: '/material-flow',    icon: GitBranch,       label: 'Material Flow'     },
   { to: '/challans',         icon: FileStack,       label: 'Delivery Challans' },
   { to: '/coat-book',        icon: Palette,         label: 'Coating Book'      },
   { to: '/coating-recon',    icon: Scale,           label: 'Coating Recon'     },
