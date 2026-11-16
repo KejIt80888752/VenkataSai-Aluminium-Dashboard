@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
-  FileInput, Scale, TriangleAlert, CircleCheck, Link2, PackagePlus, Plus, Trash2, Palette,
+  FileInput, Scale, TriangleAlert, CircleCheck, Link2, PackagePlus, Plus, Trash2, Palette, Ruler,
 } from 'lucide-react'
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import {
-  SAMPLE_DC, SAMPLE_CC, ccTotals, perPiece, rangeVariance, RECEIVE_AT,
+  SAMPLE_DC, SAMPLE_CC, ccTotals, perPiece, rangeVariance, RECEIVE_AT, lengthCheck, suspectLines,
   type DcLine,
 } from '@/data/despatch'
 import { P } from '@/data/catalogue'
@@ -47,6 +47,11 @@ export default function PurchaseDC() {
     () => [...new Set(rows.map(r => r.particulars))].filter(p => !learned[norm(p)]),
     [rows, learned],
   )
+
+  /* Every line is checked against the others carrying its own code, so the
+     check follows the sheet as it is edited rather than a fixed answer. */
+  const lenCheck = (r: Row) => lengthCheck(rows, r)
+  const suspect = useMemo(() => suspectLines(rows), [rows])
 
   const patch = (sl: number, p: Partial<Row>) =>
     setRows(rs => rs.map(r => r.slNo === sl ? { ...r, ...p } : r))
@@ -121,6 +126,37 @@ export default function PurchaseDC() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Lines that disagree with their own code ────────────────────── */}
+      {suspect.length > 0 && (
+        <div className="card mb-5" style={{ borderColor: 'var(--amber, #f59e0b)' }}>
+          <p className="section-title text-base mb-1 flex items-center gap-2">
+            <Ruler size={15} style={{ color: 'var(--amber, #f59e0b)' }} />
+            {suspect.length === 1 ? 'One Line Does Not Match Its Own Code' : `${suspect.length} Lines Do Not Match Their Own Code`}
+          </p>
+          <p className="section-sub mb-3 max-w-4xl">
+            A code is one cross section, so every line carrying it should weigh the same per foot whatever
+            length it was cut to. These weigh as though they were cut to a different length.
+          </p>
+          <div className="space-y-2">
+            {suspect.map(({ line, check }) => (
+              <div key={line.slNo} className="rounded-lg p-3"
+                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <p className="text-sm" style={{ color: 'var(--text-1)' }}>
+                  Line {line.slNo} — <b className="font-mono">{line.particulars}</b>, written {line.lengthFt},
+                  {' '}{line.pieces} pieces, {line.netWeightKg} kg. At {check.kgPerFt} kg per foot that weight is
+                  {' '}<b style={{ color: 'var(--amber, #f59e0b)' }}>nearer {check.impliedFt} ft</b>
+                  {' '}({check.offPct > 0 ? '+' : ''}{check.offPct}%).
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11.5px] mt-3 pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
+            Nothing has been changed. A length guessed here would quietly spoil the weight per piece of every
+            job cut from that section afterwards, so it is shown and left for someone to check against the paper.
+          </p>
         </div>
       )}
 
@@ -219,7 +255,16 @@ export default function PurchaseDC() {
                     onChange={e => patch(r.slNo, { netWeightKg: Number(e.target.value) || 0 })} />
                 </td>
                 <td className="num">
-                  <input className="input !w-16 !py-1 text-right !text-xs" value={r.lengthFt}
+                  <input
+                    className="input !w-16 !py-1 text-right !text-xs"
+                    style={lenCheck(r)?.suspect
+                      ? { borderColor: 'var(--amber, #f59e0b)', background: 'color-mix(in srgb, var(--amber, #f59e0b) 8%, transparent)' }
+                      : undefined}
+                    title={lenCheck(r)?.suspect
+                      ? `This weight is nearer ${lenCheck(r)!.impliedFt} ft of ${r.particulars} than ${r.lengthFt}. `
+                        + `Worth checking the sheet — nothing has been changed.`
+                      : undefined}
+                    value={r.lengthFt}
                     onChange={e => patch(r.slNo, { lengthFt: e.target.value })} />
                 </td>
                 <td className="num">

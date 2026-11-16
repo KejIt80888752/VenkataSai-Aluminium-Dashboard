@@ -72,6 +72,77 @@ export const perPiece = (l: DcLine) => l.pieces > 0 ? +(l.netWeightKg / l.pieces
 export const rangeVariance = (l: DcLine) =>
   l.weightRange ? +(((perPiece(l) - l.weightRange) / l.weightRange) * 100).toFixed(1) : null
 
+export const feet = (l: DcLine) => parseFloat(l.lengthFt) || 0
+
+/* ── Does each line agree with the others of its own code? ─────────────────
+   A code is per cross section — one die, cut to many lengths — so every line
+   carrying that code must show the same weight per running foot, whatever
+   length it was cut to. Where one line disagrees with its fellows, either a
+   figure was copied wrongly or that line is not really the same section.
+
+   This catches what a nominal weight range cannot, because the depot writes
+   a range on barely one line in fourteen. It found the DV line reading 11ft
+   / 23 pieces / 28.88 kg, whose weight is nearer eight feet of material than
+   eleven. Nothing is corrected here: a guessed length would quietly spoil the
+   weight per piece of every job cut from that section afterwards.         */
+
+export interface LengthCheck {
+  /** best-fit kg per running foot across every line sharing this code */
+  kgPerFt: number
+  /** the length this line's own weight implies, against the one written */
+  impliedFt: number
+  /** how far the written weight sits from what the code's own rate predicts */
+  offPct: number
+  /** true once the gap is too wide to be mill tolerance or rounding */
+  suspect: boolean
+}
+
+/** Lines of the same code, ignoring any that cannot be measured. */
+const comparable = (lines: DcLine[], particulars: string) =>
+  lines.filter(l => l.particulars === particulars && l.pieces > 0 && feet(l) > 0)
+
+/**
+ * The code's kg/ft, taken as the median of what each of its lines shows.
+ *
+ * A least-squares fit was the obvious choice and the wrong one: a single bad
+ * line drags the fit toward itself, so the standard moves to meet the error
+ * and every honest line is then reported as off. On this sheet that marked
+ * all three DIV lines when only one is in doubt. The median ignores an
+ * outlier instead of absorbing it, so the good lines stay quiet and the odd
+ * one out stands alone — which is the whole point of the check.
+ */
+export function ratePerFoot(lines: DcLine[], particulars: string): number | null {
+  const rows = comparable(lines, particulars)
+  if (rows.length < 2) return null              // one line proves nothing
+  const rates = rows.map(l => perPiece(l) / feet(l)).sort((a, b) => a - b)
+  const mid = rates.length >> 1
+  return rates.length % 2 ? rates[mid] : (rates[mid - 1] + rates[mid]) / 2
+}
+
+/** Tolerance before a line is worth querying, as a percentage of its weight. */
+export const LENGTH_TOLERANCE_PCT = 12
+
+export function lengthCheck(lines: DcLine[], l: DcLine): LengthCheck | null {
+  const k = ratePerFoot(lines, l.particulars)
+  if (!k || l.pieces <= 0 || feet(l) <= 0) return null
+  const expected = l.pieces * feet(l) * k
+  const offPct = +(((l.netWeightKg - expected) / expected) * 100).toFixed(1)
+  return {
+    kgPerFt: +k.toFixed(4),
+    impliedFt: +(perPiece(l) / k).toFixed(1),
+    offPct,
+    suspect: Math.abs(offPct) > LENGTH_TOLERANCE_PCT,
+  }
+}
+
+/** Every line worth querying, worst first. */
+export function suspectLines(lines: DcLine[]) {
+  return lines
+    .map(l => ({ line: l, check: lengthCheck(lines, l) }))
+    .filter((r): r is { line: DcLine; check: LengthCheck } => !!r.check && r.check.suspect)
+    .sort((a, b) => Math.abs(b.check.offPct) - Math.abs(a.check.offPct))
+}
+
 /* ── The colour code sheet that travels with it ────────────────────────────
    The same load, split by the shade each piece is going to be coated in.
    PT beside a shade means it needs pre-treatment before powder.           */
