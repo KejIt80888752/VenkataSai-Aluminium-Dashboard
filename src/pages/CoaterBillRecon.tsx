@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import {
   FileSpreadsheet, Upload, X, Scale, Wand2, Link2, CircleAlert, Download, Save, Ruler, IndianRupee,
 } from 'lucide-react'
@@ -9,6 +9,7 @@ import { PCUS } from '@/data/locations'
 import { parseCsv, toNumber } from '@/lib/csv'
 import { inr, inr2, csvDownload, cn } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
+import { useAliases } from '@/lib/useAliases'
 
 /* ── Two sheets that do not look alike ─────────────────────────────────────
    A coater bills in his own layout, with his own column names and his own
@@ -65,7 +66,6 @@ function headerRow(rows: string[][]): number {
   return best
 }
 const LAYOUT_KEY = (pcu: string) => `vsa-coater-layout-${pcu}`
-const ALIAS_KEY = 'vsa-coater-aliases'
 
 export default function CoaterBillRecon() {
   const ours = useMemo(ourCoatingLines, [])
@@ -73,12 +73,11 @@ export default function CoaterBillRecon() {
 
   const [file, setFile] = useState<{ name: string; header: string[]; body: string[][] } | null>(null)
   const [map, setMap] = useState<Partial<Record<FieldKey, number>>>({})
-  const [learned, setLearned] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem(ALIAS_KEY) ?? '{}') } catch { return {} }
-  })
   const [saved, setSaved] = useState(false)
 
-  useEffect(() => { try { localStorage.setItem(ALIAS_KEY, JSON.stringify(learned)) } catch { /* blocked */ } }, [learned])
+  /* Taught names live in the shop-wide table, so a section named here is
+     already known on the purchase sheet and in the coating book. */
+  const { map: aliasMap, ours: aliasOf, teach } = useAliases('coater')
 
   const oursForPcu = ours.filter(l => l.pcu === pcu)
 
@@ -146,7 +145,8 @@ export default function CoaterBillRecon() {
   const resolve = (text: string): string | null => {
     const n = norm(text)
     if (!n) return null
-    if (learned[n]) return learned[n]
+    const taught = aliasOf(text)
+    if (taught) return taught
 
     // What the item master already knows this supplier calls it.
     const exact = ALIASES.find(a => a.kind === 'Product' && norm(a.alias) === n)
@@ -233,7 +233,7 @@ export default function CoaterBillRecon() {
 
     return { rows, gap, causes, unresolved, theirTotal: +theirs.reduce((s, t) => s + t.amount, 0).toFixed(2),
              ourTotal: +oursForPcu.reduce((s, o) => s + o.amount, 0).toFixed(2) }
-  }, [file, map, learned, oursForPcu])
+  }, [file, map, aliasMap, oursForPcu])
 
   const rememberLayout = () => {
     try { localStorage.setItem(LAYOUT_KEY(pcu), JSON.stringify(map)); setSaved(true) } catch { /* blocked */ }
@@ -349,7 +349,7 @@ export default function CoaterBillRecon() {
                     style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
                     <span className="font-mono text-xs min-w-0 truncate" style={{ color: 'var(--text-1)' }}>{u}</span>
                     <select className="input !w-64 !py-1 !text-xs shrink-0" value=""
-                      onChange={e => e.target.value && setLearned(l => ({ ...l, [norm(u)]: e.target.value }))}>
+                      onChange={e => e.target.value && teach(u, e.target.value)}>
                       <option value="">— choose our section —</option>
                       {[...new Map(oursForPcu.map(o => [o.code, o.name])).entries()].map(([c, n]) =>
                         <option key={c} value={c}>{n}</option>)}

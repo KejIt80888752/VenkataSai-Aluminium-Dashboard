@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import {
   FileInput, Scale, TriangleAlert, CircleCheck, Link2, PackagePlus, Plus, Trash2, Palette, Ruler,
 } from 'lucide-react'
@@ -10,12 +10,12 @@ import {
 import { P } from '@/data/catalogue'
 import { SUPPLIERS } from '@/data/parties'
 import { csvDownload, cn } from '@/lib/utils'
+import { useAliases } from '@/lib/useAliases'
 import { FY } from '@/data/company'
 
 /* What the supplier writes is not what our master calls it. Told once, it is
-   remembered — the same alias table the rest of the system uses. */
-const ALIAS_KEY = 'vsa-dc-aliases'
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+   remembered — in the shop-wide alias table, so the coater's bill and the
+   coating book know the same name without being taught it again. */
 
 interface Row extends DcLine { at: string }
 
@@ -28,12 +28,7 @@ export default function PurchaseDC() {
   const [ccNo, setCcNo] = useState(SAMPLE_DC.ccNo)
   const [rows, setRows] = useState<Row[]>(SAMPLE_DC.lines.map(l => ({ ...l, at: 'GD1' })))
 
-  const [learned, setLearned] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem(ALIAS_KEY) ?? '{}') } catch { return {} }
-  })
-  useEffect(() => {
-    try { localStorage.setItem(ALIAS_KEY, JSON.stringify(learned)) } catch { /* blocked */ }
-  }, [learned])
+  const { ours, teach } = useAliases('depot')
 
   const lineKg = +rows.reduce((s, l) => s + l.netWeightKg, 0).toFixed(3)
   const pieces = rows.reduce((s, l) => s + l.pieces, 0)
@@ -44,8 +39,8 @@ export default function PurchaseDC() {
   const cc = useMemo(() => ccTotals(SAMPLE_CC), [])
 
   const unknown = useMemo(
-    () => [...new Set(rows.map(r => r.particulars))].filter(p => !learned[norm(p)]),
-    [rows, learned],
+    () => [...new Set(rows.map(r => r.particulars))].filter(p => !ours(p)),
+    [rows, ours],
   )
 
   /* Every line is checked against the others carrying its own code, so the
@@ -68,7 +63,7 @@ export default function PurchaseDC() {
     ['Date', date, 'P.O. No', poNo, 'Vehicle', vehicle, 'CC', ccNo],
     [], ['Sl No', 'Particulars', 'Our Item', 'Weight Range', 'Net Weight', 'Length', 'Pieces',
          'Kg per Piece', 'Off Nominal %', 'Received At'],
-    ...rows.map(r => [r.slNo, r.particulars, learned[norm(r.particulars)] ?? '', r.weightRange ?? '',
+    ...rows.map(r => [r.slNo, r.particulars, ours(r.particulars) ?? '', r.weightRange ?? '',
       r.netWeightKg, r.lengthFt, r.pieces, perPiece(r), rangeVariance(r) ?? '', r.at]),
     [], ['Lines add to', lineKg], ['Written on the sheet', writtenKg], ['Difference', kgGap],
     ['Total pieces', pieces], ['Colour code number', ccNo],
@@ -193,7 +188,7 @@ export default function PurchaseDC() {
                 style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
                 <span className="font-mono text-sm" style={{ color: 'var(--text-1)' }}>{u}</span>
                 <select className="input !w-56 !py-1 !text-xs shrink-0" value=""
-                  onChange={e => e.target.value && setLearned(l => ({ ...l, [norm(u)]: e.target.value }))}>
+                  onChange={e => e.target.value && teach(u, e.target.value)}>
                   <option value="">— choose our section —</option>
                   {P.map(p => <option key={p.code} value={p.name}>{p.name}</option>)}
                 </select>
@@ -234,7 +229,7 @@ export default function PurchaseDC() {
           {rows.map(r => {
             const per = perPiece(r)
             const off = rangeVariance(r)
-            const mapped = learned[norm(r.particulars)]
+            const mapped = ours(r.particulars)
             return (
               <tr key={r.slNo}>
                 <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>
