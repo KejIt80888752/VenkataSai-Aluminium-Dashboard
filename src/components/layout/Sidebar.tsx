@@ -1,6 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
-import { COMPANY } from '@/data/company'
 import {
   LayoutDashboard, Package, Warehouse, ArrowLeftRight, FileText, Receipt,
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
@@ -134,13 +133,6 @@ export default function Sidebar({ open, onClose }: Props) {
           <button onClick={handleLogout} className="nav-link w-full text-red-400 hover:!text-red-600 hover:!bg-red-50 dark:hover:!bg-red-900/20">
             <LogOut size={14} /> Sign Out
           </button>
-        </div>
-
-        {/* Footer */}
-        <div className="px-4 py-2.5 shrink-0 text-center" style={{ borderTop: '1px solid var(--border-2)' }}>
-          <p className="text-[9px] uppercase tracking-widest font-medium" style={{ color: 'var(--text-4)' }}>Powered by</p>
-          <p className="text-[11px] font-semibold text-brand">KEJ IT Solutions</p>
-          <p className="text-[9px] mt-0.5" style={{ color: 'var(--text-4)' }}>GSTIN {COMPANY.gstin}</p>
         </div>
       </aside>
     </>

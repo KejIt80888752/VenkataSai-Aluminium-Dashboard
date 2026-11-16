@@ -41,7 +41,7 @@ export default function Login() {
           <p className="flex items-center gap-2"><Phone size={15} /> {COMPANY.phone}</p>
           <p className="flex items-center gap-2"><Mail size={15} /> {COMPANY.email}</p>
           <p className="pt-3 text-xs text-white/60 border-t border-white/20">
-            GSTIN {COMPANY.gstin} · Serving Bengaluru since {COMPANY.founded}
+            Serving Bengaluru since {COMPANY.founded}
           </p>
         </div>
       </div>
@@ -93,10 +93,6 @@ export default function Login() {
               ))}
             </div>
           </div>
-
-          <p className="text-center text-[10px] mt-6" style={{ color: 'var(--text-4)' }}>
-            Powered by <span className="font-semibold text-brand">KEJ IT Solutions</span>
-          </p>
         </div>
       </div>
     </div>

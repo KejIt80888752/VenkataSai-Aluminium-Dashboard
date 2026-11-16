@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment } from 'react'
 import {
   Factory, Warehouse, SprayCan, PackageCheck, ArrowRight, Scale, TriangleAlert, Palette,
+  Boxes, Building2, Ruler,
 } from 'lucide-react'
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import { SAMPLE_DC, dcTotals, perPiece } from '@/data/despatch'
@@ -8,6 +9,8 @@ import {
   OPENING, LOADED, RECEIVED, colourOf, isHardware, isRubber, weighments,
   type CoatLine,
 } from '@/data/coatbook'
+import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
+import { CROSS_SECTIONS, CUT_LENGTHS, FINISHES, variantOf, variantCount } from '@/data/variants'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 
 /* ── One page for the whole journey ────────────────────────────────────────
@@ -18,7 +21,13 @@ import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 
    PC1 is the coater. On the received sheet it is where the material came
    FROM, not where it went — which is why a coated line showing "PC1" read
-   wrongly before.                                                          */
+   wrongly before.
+
+   Confirmed by the client on 13-11-2026: M1, S2, V1 and PC1 are all parties,
+   not places. Stock sits only in Shop 1/2 and Godown 1/2. They also pointed
+   out that the 64 hardware pieces from V1 fall outside the 731, because
+   hardware is never weighed — so both counts are now shown side by side
+   instead of the kg total silently dropping them.                          */
 
 const TABS = ['The journey', 'Bought from the mill', 'Sent to the coater', 'Back in colour'] as const
 
@@ -40,6 +49,17 @@ function coveredBy(ls: CoatLine[]) {
   return { nos, kg: +kg.toFixed(2) }
 }
 
+/**
+ * Hardware and rubber from V1 travel on the same sheet but are never weighed,
+ * so they sit outside the kg totals. They are still pieces that left the yard,
+ * and the client was right to ask where they had gone — they are counted here
+ * and shown beside the aluminium rather than folded into it.
+ */
+function unweighed(ls: CoatLine[]) {
+  const rows = ls.filter(l => isHardware(l) || isRubber(l))
+  return { nos: rows.reduce((s, l) => s + l.nos, 0), rows }
+}
+
 export default function DcFlow() {
   const [tab, setTab] = useState<typeof TABS[number]>('The journey')
   const [where, setWhere] = useState('All')
@@ -47,6 +67,8 @@ export default function DcFlow() {
   const purchase = dcTotals(SAMPLE_DC)
   const sent = coveredBy(LOADED)
   const back = coveredBy(RECEIVED)
+  const sentHw = unweighed(LOADED)
+  const backHw = unweighed(RECEIVED)
   const gainKg = +(back.kg - sent.kg).toFixed(2)
   const gainPct = sent.kg ? +((gainKg / sent.kg) * 100).toFixed(2) : 0
   const shortPcs = sent.nos - back.nos
@@ -61,19 +83,19 @@ export default function DcFlow() {
     },
     {
       icon: Warehouse, tone: 'sky' as const,
-      name: 'Lying raw', sub: 'M1 · S2 · V1',
+      name: 'Lying raw', sub: 'in our shops and godowns',
       doc: 'Opening · 01-09-2026',
       lines: [`${weighed(OPENING).reduce((s, l) => s + l.nos, 0)} pieces`,
               kgFmt(+weighed(OPENING).reduce((s, l) => s + (l.kg ?? 0), 0).toFixed(1)),
               'all W/O — uncoated'],
-      note: 'Everything here still carries the W/O prefix. No colour yet.',
+      note: 'Bought from M1, S2 and V1. Those are suppliers, not places.',
     },
     {
       icon: SprayCan, tone: 'brand' as const,
-      name: 'At the coater', sub: 'PC1',
+      name: 'At the coater', sub: 'PC1 — Powder Coating 1',
       doc: 'Loaded · 16 and 17-09-2026',
-      lines: [`${sent.nos} pieces out`, kgFmt(sent.kg), 'three routes in'],
-      note: 'Sent uncoated. PC1 is where it goes, not where it is kept.',
+      lines: [`${sent.nos} pieces weighed`, kgFmt(sent.kg), `+ ${sentHw.nos} hardware, not weighed`],
+      note: 'Sent uncoated. PC1 is a supplier we send to, not a place we store in.',
     },
     {
       icon: PackageCheck, tone: 'green' as const,
@@ -108,6 +130,7 @@ export default function DcFlow() {
     ['Bought from the mill', `Despatch ${SAMPLE_DC.date}`, purchase.pieces, purchase.lineKg],
     ['Sent to the coater', 'Loaded 16/17-09', sent.nos, sent.kg],
     ['Back in colour', 'Received 21-09', back.nos, back.kg],
+    [], ['Hardware out, not weighed', sentHw.nos], ['Hardware back', backHw.nos],
     [], ['Weight put on by coating', gainKg, `${gainPct}%`],
     ['Pieces not yet back', shortPcs],
   ])
@@ -125,8 +148,8 @@ export default function DcFlow() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Bought In" value={`${purchase.pieces} pcs`} icon={Factory} tone="violet"
           sub={`${purchase.lineKg.toFixed(1)} kg on ${SAMPLE_DC.date}`} />
-        <Stat label="Out to the Coater" value={`${sent.nos} pcs`} icon={SprayCan} tone="brand"
-          sub={kgFmt(sent.kg) + ' uncoated'} />
+        <Stat label="Out to the Coater" value={`${sent.nos + sentHw.nos} pcs`} icon={SprayCan} tone="brand"
+          sub={`${sent.nos} weighed · ${sentHw.nos} hardware`} />
         <Stat label="Back in Colour" value={`${back.nos} pcs`} icon={PackageCheck} tone="green"
           sub={kgFmt(back.kg) + ' coated'} />
         <Stat label="Weight Coating Put On" value={`${gainPct > 0 ? '+' : ''}${gainPct}%`} icon={Scale}
@@ -219,6 +242,142 @@ export default function DcFlow() {
                 These are two separate sheets rather than one job card, so some of this will be material
                 still at PC1 and some will be a later lorry. It is shown so the gap is at least visible.
               </p>
+            </div>
+          </div>
+
+          {/* ── The pieces that carry no weight ────────────────────── */}
+          <div className="card mb-5">
+            <p className="section-title text-base mb-1 flex items-center gap-2">
+              <Boxes size={15} className="text-brand" /> Every Piece on the Sheet
+            </p>
+            <p className="section-sub mb-4 max-w-4xl">
+              Hardware and rubber from V1 travel on the same sheet as the aluminium but are never put on
+              the scale, so they fall outside every kg total. They are still pieces that left the yard.
+              Both counts are shown so nothing is invisible.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg p-3" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>Aluminium, weighed</p>
+                <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--text-1)' }}>{sent.nos} pcs</p>
+                <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{kgFmt(sent.kg)}</p>
+              </div>
+              <div className="rounded-lg p-3" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>Hardware from V1, not weighed</p>
+                <p className="text-xl font-bold tabular-nums" style={{ color: 'var(--text-1)' }}>{sentHw.nos} pcs</p>
+                <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>no kg on the sheet</p>
+              </div>
+              <div className="rounded-lg p-3" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <p className="text-[11px]" style={{ color: 'var(--text-3)' }}>Everything that went out</p>
+                <p className="text-xl font-bold tabular-nums text-brand">{sent.nos + sentHw.nos} pcs</p>
+                <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{sent.nos} + {sentHw.nos}</p>
+              </div>
+            </div>
+            {sentHw.rows.length > 0 && (
+              <div className="mt-3 pt-3 space-y-1" style={{ borderTop: '1px solid var(--border-2)' }}>
+                {sentHw.rows.map((l, i) => (
+                  <div key={`${l.code}-${i}`} className="flex justify-between text-[11.5px]">
+                    <span style={{ color: 'var(--text-3)' }}>{l.code} · {l.name.replace(/\s+/g, ' ')}</span>
+                    <span className="tabular-nums font-medium" style={{ color: 'var(--text-2)' }}>{l.nos} pcs</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-[11.5px] pt-1">
+                  <span style={{ color: 'var(--text-4)' }}>Came back coated</span>
+                  <span className="tabular-nums font-medium" style={{ color: 'var(--text-2)' }}>{backHw.nos} pcs</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Why the code list does not have to grow ────────────── */}
+          <div className="card mb-5">
+            <p className="section-title text-base mb-1 flex items-center gap-2">
+              <Ruler size={15} className="text-brand" /> One Code, Many Lengths
+            </p>
+            <p className="section-sub mb-4 max-w-4xl">
+              A code is per cross section — one die, cut to whatever length the job needs. Cut length and
+              colour are properties of a piece, not of a section, so they sit in their own columns instead
+              of being glued onto the code. Your list stays as long as your list of dies.
+            </p>
+
+            <div className="flex flex-wrap items-stretch gap-3 mb-4">
+              {[
+                { head: 'Section',    body: CROSS_SECTIONS.map(s => s.code).join('  ·  '), count: `${CROSS_SECTIONS.length} codes — yours, unchanged` },
+                { head: 'Cut length', body: CUT_LENGTHS.map(l => `${l}ft`).join('  ·  '),  count: `${CUT_LENGTHS.length} lengths — a column, not a code` },
+                { head: 'Finish',     body: FINISHES.map(f => f.code).join('  ·  '),       count: `${FINISHES.length} finishes — a column, not a code` },
+              ].map(c => (
+                <div key={c.head} className="flex-1 min-w-[13rem] rounded-lg p-3"
+                  style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                  <p className="text-[10px] uppercase tracking-widest font-medium mb-1.5" style={{ color: 'var(--text-4)' }}>{c.head}</p>
+                  <p className="text-[13px] font-mono font-medium mb-1.5" style={{ color: 'var(--text-1)' }}>{c.body}</p>
+                  <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{c.count}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-lg p-3 mb-3" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+              <p className="text-[11px] mb-2" style={{ color: 'var(--text-3)' }}>
+                The software forms the combination itself. Nobody types these:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  variantOf('SP', 12, 'W/O'), variantOf('SP', 12, 'CB'), variantOf('SP', 15, 'IV'),
+                  variantOf('DP', 10, 'W/O'), variantOf('DP', 14, 'PGG'), variantOf('DV', 8, 'BL'),
+                ].map(v => (
+                  <span key={v.key} className="text-[11px] font-mono px-2 py-1 rounded"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)', color: 'var(--text-2)' }}>
+                    {v.label}
+                  </span>
+                ))}
+                <span className="text-[11px] px-2 py-1" style={{ color: 'var(--text-4)' }}>… and so on</span>
+              </div>
+            </div>
+
+            <p className="text-[11.5px] pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
+              {CROSS_SECTIONS.length} sections × {CUT_LENGTHS.length} lengths × {FINISHES.length} finishes
+              = <strong style={{ color: 'var(--text-2)' }}>
+                {variantCount(CROSS_SECTIONS.length, CUT_LENGTHS.length, FINISHES.length)} stock lines
+              </strong>, counted separately — and still only {CROSS_SECTIONS.length} codes to maintain.
+              A new length or a new colour adds no code at all.
+            </p>
+          </div>
+
+          {/* ── The codes, in the client's own words ───────────────── */}
+          <div className="card mb-5">
+            <p className="section-title text-base mb-1 flex items-center gap-2">
+              <Building2 size={15} className="text-brand" /> Who Is Who
+            </p>
+            <p className="section-sub mb-4 max-w-4xl">
+              M1, S2, V1 and PC1 are parties we deal with. Only the shops and godowns are places material
+              is kept — so a route reading "M1 TO PC1" has a storage location at neither end of it.
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-medium mb-2" style={{ color: 'var(--text-4)' }}>
+                  Parties
+                </p>
+                <div className="space-y-1.5">
+                  {PARTY_CODES.map(p => (
+                    <div key={p.code} className="flex gap-3 text-[12px]">
+                      <span className="font-mono font-semibold shrink-0 w-10" style={{ color: 'var(--text-1)' }}>{p.code}</span>
+                      <span className="shrink-0 w-36" style={{ color: 'var(--text-2)' }}>{p.name}</span>
+                      <span className="truncate" style={{ color: 'var(--text-4)' }}>{p.supplies}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-medium mb-2" style={{ color: 'var(--text-4)' }}>
+                  Our locations
+                </p>
+                <div className="space-y-1.5">
+                  {LOCATION_CODES.map(l => (
+                    <div key={l.code} className="flex gap-3 text-[12px]">
+                      <span className="font-mono font-semibold shrink-0 w-20" style={{ color: 'var(--text-1)' }}>{l.code}</span>
+                      <span style={{ color: 'var(--text-2)' }}>{l.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
