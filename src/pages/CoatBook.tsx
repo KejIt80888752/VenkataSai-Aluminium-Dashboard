@@ -10,6 +10,7 @@ import {
 } from '@/data/coatbook'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 import { useAliases } from '@/lib/useAliases'
+import { SectionPicker } from '@/components/SectionPicker'
 import { joinedSections, namesFor } from '@/lib/aliases'
 import { P, sectionName } from '@/data/catalogue'
 
@@ -232,11 +233,8 @@ export default function CoatBook() {
                   <span className="font-mono text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{c.code}</span>
                   <span className="text-xs ml-2 truncate" style={{ color: 'var(--text-4)' }}>{c.name}</span>
                 </div>
-                <select className="input !w-56 !py-1 !text-xs shrink-0" value={mapped ?? ''}
-                  onChange={e => teach(c.code, e.target.value)}>
-                  <option value="">— choose our section —</option>
-                  {P.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
-                </select>
+                <SectionPicker className="w-56 shrink-0" options={P}
+                  value={mapped ?? ''} onChange={v => teach(c.code, v)} />
               </div>
             )
           })}

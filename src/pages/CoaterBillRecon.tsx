@@ -10,6 +10,7 @@ import { parseCsv, toNumber } from '@/lib/csv'
 import { inr, inr2, csvDownload, cn } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
 import { useAliases } from '@/lib/useAliases'
+import { SectionPicker } from '@/components/SectionPicker'
 
 /* ── Two sheets that do not look alike ─────────────────────────────────────
    A coater bills in his own layout, with his own column names and his own
@@ -348,12 +349,10 @@ export default function CoaterBillRecon() {
                   <div key={u} className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-2.5"
                     style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
                     <span className="font-mono text-xs min-w-0 truncate" style={{ color: 'var(--text-1)' }}>{u}</span>
-                    <select className="input !w-64 !py-1 !text-xs shrink-0" value=""
-                      onChange={e => e.target.value && teach(u, e.target.value)}>
-                      <option value="">— choose our section —</option>
-                      {[...new Map(oursForPcu.map(o => [o.code, o.name])).entries()].map(([c, n]) =>
-                        <option key={c} value={c}>{n}</option>)}
-                    </select>
+                    <SectionPicker className="w-64 shrink-0"
+                      options={[...new Map(oursForPcu.map(o => [o.code, o.name])).entries()]
+                        .map(([code, name]) => ({ code, name }))}
+                      value={aliasOf(u) ?? ''} onChange={v => teach(u, v)} />
                   </div>
                 ))}
               </div>

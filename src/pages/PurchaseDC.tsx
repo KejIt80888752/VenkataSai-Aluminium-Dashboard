@@ -11,6 +11,7 @@ import { P, sectionName } from '@/data/catalogue'
 import { SUPPLIERS } from '@/data/parties'
 import { csvDownload, cn } from '@/lib/utils'
 import { useAliases } from '@/lib/useAliases'
+import { SectionPicker } from '@/components/SectionPicker'
 import { FY } from '@/data/company'
 
 /* What the supplier writes is not what our master calls it. Told once, it is
@@ -187,11 +188,8 @@ export default function PurchaseDC() {
               <div key={u} className="flex items-center justify-between gap-3 rounded-lg p-2.5"
                 style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
                 <span className="font-mono text-sm" style={{ color: 'var(--text-1)' }}>{u}</span>
-                <select className="input !w-56 !py-1 !text-xs shrink-0" value=""
-                  onChange={e => e.target.value && teach(u, e.target.value)}>
-                  <option value="">— choose our section —</option>
-                  {P.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
-                </select>
+                <SectionPicker className="w-56 shrink-0" options={P}
+                  value={ours(u) ?? ''} onChange={c => teach(u, c)} />
               </div>
             ))}
           </div>
