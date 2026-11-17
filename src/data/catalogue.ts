@@ -100,3 +100,10 @@ export const P: Product[] = [
 export const stockQty = (p: Product) => p.unit === 'kg' ? p.stockPcs * p.kgPerLength : p.stockPcs
 export const stockValue = (p: Product) => stockQty(p) * p.costPerKg
 export const isLow = (p: Product) => p.stockPcs <= p.reorderPcs
+
+/** Display name for one of our section codes. Aliases store the code, so
+    anything showing a taught section has to turn it back into words. */
+export function sectionName(code: string | undefined): string | undefined {
+  if (!code) return undefined
+  return P.find(p => p.code === code)?.name ?? code
+}

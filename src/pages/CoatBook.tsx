@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import {
-  Palette, TruckIcon, PackageCheck, TriangleAlert, CircleCheck, Scale, Layers, HelpCircle,
+  Palette, TruckIcon, PackageCheck, TriangleAlert, CircleCheck, Scale, Layers, HelpCircle, Link2,
 } from 'lucide-react'
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import {
@@ -9,6 +9,9 @@ import {
   type CoatLine,
 } from '@/data/coatbook'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
+import { useAliases } from '@/lib/useAliases'
+import { joinedSections, namesFor } from '@/lib/aliases'
+import { P, sectionName } from '@/data/catalogue'
 
 const SHEETS = ['Opening 01-09', 'Loaded out 16/17-09', 'Received back 21-09'] as const
 
@@ -22,6 +25,24 @@ const sum = (ls: CoatLine[], f: (l: CoatLine) => number) => +ls.reduce((s, l) =>
 export default function CoatBook() {
   const [sheet, setSheet] = useState<typeof SHEETS[number]>('Received back 21-09')
   const [route, setRoute] = useState('All')
+
+  /* The coating book's numeric codes are names for sections we already have,
+     the same as the depot's short forms. Taught into the shop-wide table,
+     they let a figure cross between the purchase sheet and this one. */
+  const { map: aliasMap, ours: ourSectionFor, teach } = useAliases('coatbook')
+
+  /** Every numeric code across the three sheets, with the name beside it. */
+  const codes = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const l of [...OPENING, ...LOADED, ...RECEIVED]) {
+      if (!l.code || isHardware(l) || isRubber(l)) continue
+      if (!m.has(l.code)) m.set(l.code, l.name)
+    }
+    return [...m.entries()].map(([code, name]) => ({ code, name })).sort((a, b) => a.code.localeCompare(b.code))
+  }, [])
+
+  const unmapped = codes.filter(c => !ourSectionFor(c.code))
+  const joined = useMemo(() => joinedSections(aliasMap), [aliasMap])
 
   const lines = sheet.startsWith('Opening') ? OPENING : sheet.startsWith('Loaded') ? LOADED : RECEIVED
   const groups = useMemo(
@@ -190,6 +211,73 @@ export default function CoatBook() {
           ))}
         </div>
       </div>
+
+      {/* ── Teaching the coating codes, so the books can meet ─────────── */}
+      <div className="card mb-5" style={unmapped.length ? { borderColor: 'var(--amber, #f59e0b)' } : undefined}>
+        <p className="section-title text-base mb-1 flex items-center gap-2">
+          <Link2 size={15} className="text-brand" /> What the Coating Book Calls These
+        </p>
+        <p className="section-sub mb-4 max-w-4xl">
+          These numbers are names for sections we already hold, the same as the depot's SP and DP. Point each
+          at our section once. Taught here, it is known on the purchase sheet and the coater's bill too —
+          and that is what lets a figure travel from the mill through to the colour.
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {codes.map(c => {
+            const mapped = ourSectionFor(c.code)
+            return (
+              <div key={c.code} className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-2.5"
+                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <div className="min-w-0">
+                  <span className="font-mono text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{c.code}</span>
+                  <span className="text-xs ml-2 truncate" style={{ color: 'var(--text-4)' }}>{c.name}</span>
+                </div>
+                <select className="input !w-56 !py-1 !text-xs shrink-0" value={mapped ?? ''}
+                  onChange={e => teach(c.code, e.target.value)}>
+                  <option value="">— choose our section —</option>
+                  {P.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+                </select>
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-[11.5px] mt-3 pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
+          {unmapped.length === 0
+            ? 'Every code here is pointed at one of our sections.'
+            : `${unmapped.length} of ${codes.length} still to be pointed at a section. Until then those lines `
+              + 'cannot be matched to anything bought on a purchase sheet.'}
+        </p>
+      </div>
+
+      {/* ── Where the two books now meet ──────────────────────────────── */}
+      {joined.length > 0 && (
+        <div className="card mb-5" style={{ borderColor: 'var(--green)' }}>
+          <p className="section-title text-base mb-1 flex items-center gap-2">
+            <CircleCheck size={15} style={{ color: 'var(--green)' }} /> These Sections Now Join Up
+          </p>
+          <p className="section-sub mb-4 max-w-4xl">
+            More than one book has a name for each of these, so a piece can be followed from the depot's
+            sheet through the coating book without anybody matching it by hand.
+          </p>
+          <div className="space-y-2">
+            {joined.map(j => (
+              <div key={j.section} className="rounded-lg p-3"
+                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--text-1)' }}>{sectionName(j.section)}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {namesFor(aliasMap, j.section).map(n => (
+                    <span key={`${n.source}:${n.foreign}`} className="text-[11px] px-2 py-1 rounded font-mono"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)', color: 'var(--text-2)' }}>
+                      {n.source === 'depot' ? 'depot' : n.source === 'coater' ? "coater's bill" : 'coating book'}
+                      {' · '}{n.foreign.toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── One section, several colours ──────────────────────────────── */}
       <div className="card mb-5">

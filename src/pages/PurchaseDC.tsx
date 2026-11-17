@@ -7,7 +7,7 @@ import {
   SAMPLE_DC, SAMPLE_CC, ccTotals, perPiece, rangeVariance, RECEIVE_AT, lengthCheck, suspectLines,
   type DcLine,
 } from '@/data/despatch'
-import { P } from '@/data/catalogue'
+import { P, sectionName } from '@/data/catalogue'
 import { SUPPLIERS } from '@/data/parties'
 import { csvDownload, cn } from '@/lib/utils'
 import { useAliases } from '@/lib/useAliases'
@@ -63,7 +63,7 @@ export default function PurchaseDC() {
     ['Date', date, 'P.O. No', poNo, 'Vehicle', vehicle, 'CC', ccNo],
     [], ['Sl No', 'Particulars', 'Our Item', 'Weight Range', 'Net Weight', 'Length', 'Pieces',
          'Kg per Piece', 'Off Nominal %', 'Received At'],
-    ...rows.map(r => [r.slNo, r.particulars, ours(r.particulars) ?? '', r.weightRange ?? '',
+    ...rows.map(r => [r.slNo, r.particulars, sectionName(ours(r.particulars)) ?? '', r.weightRange ?? '',
       r.netWeightKg, r.lengthFt, r.pieces, perPiece(r), rangeVariance(r) ?? '', r.at]),
     [], ['Lines add to', lineKg], ['Written on the sheet', writtenKg], ['Difference', kgGap],
     ['Total pieces', pieces], ['Colour code number', ccNo],
@@ -190,7 +190,7 @@ export default function PurchaseDC() {
                 <select className="input !w-56 !py-1 !text-xs shrink-0" value=""
                   onChange={e => e.target.value && teach(u, e.target.value)}>
                   <option value="">— choose our section —</option>
-                  {P.map(p => <option key={p.code} value={p.name}>{p.name}</option>)}
+                  {P.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
                 </select>
               </div>
             ))}
@@ -229,7 +229,7 @@ export default function PurchaseDC() {
           {rows.map(r => {
             const per = perPiece(r)
             const off = rangeVariance(r)
-            const mapped = ours(r.particulars)
+            const mapped = sectionName(ours(r.particulars))
             return (
               <tr key={r.slNo}>
                 <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>

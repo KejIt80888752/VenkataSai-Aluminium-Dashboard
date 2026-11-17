@@ -13,6 +13,8 @@
    One store fixes that. Teach a name once, anywhere, and every page knows it
    from then on.                                                           */
 
+import { P } from '@/data/catalogue'
+
 export type Source = 'depot' | 'coater' | 'coatbook'
 
 const KEY = 'vsa-aliases'
@@ -24,7 +26,14 @@ const LEGACY: [string, Source][] = [
 ]
 
 export interface AliasMap {
-  /** normalised foreign name → our section name */
+  /**
+   * `source:normalised foreign name` → **our section code**, never its
+   * display name. Each page offered a different list and two of them stored
+   * the name while a third stored the code, so a section taught on the
+   * coater's bill could never match the same section taught on the purchase
+   * sheet and nothing ever joined. A code is one value, stable, and the same
+   * in every list; a display name is neither.
+   */
   [key: string]: string
 }
 
@@ -35,6 +44,13 @@ export const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
     not mean the same section, and quietly merging them would be a guess. */
 export const keyFor = (source: Source, foreign: string) => `${source}:${norm(foreign)}`
 
+/** A stored value that is a display name becomes its code; a code stays as
+    it is; anything unrecognised is handed back untouched rather than lost. */
+function asCode(stored: string): string {
+  if (P.some(p => p.code === stored)) return stored
+  return P.find(p => norm(p.name) === norm(stored))?.code ?? stored
+}
+
 function readRaw(): AliasMap {
   try {
     const held = JSON.parse(localStorage.getItem(KEY) ?? 'null')
@@ -42,13 +58,16 @@ function readRaw(): AliasMap {
   } catch { /* storage blocked or corrupt — fall through to the legacy read */ }
 
   /* First run since the stores were merged: fold the old ones in rather than
-     making anyone teach the same names a second time. */
+     making anyone teach the same names a second time. The purchase sheet
+     stored display names where the coater's bill stored codes, so anything
+     that reads as a name is turned back into its code on the way in — a
+     mixture of the two would join nothing, which is the bug this is for. */
   const merged: AliasMap = {}
   for (const [legacyKey, source] of LEGACY) {
     try {
       const old = JSON.parse(localStorage.getItem(legacyKey) ?? '{}') as Record<string, string>
       for (const [foreign, ours] of Object.entries(old)) {
-        if (ours) merged[keyFor(source, foreign)] = ours
+        if (ours) merged[keyFor(source, foreign)] = asCode(ours)
       }
     } catch { /* an unreadable legacy store is simply skipped */ }
   }
