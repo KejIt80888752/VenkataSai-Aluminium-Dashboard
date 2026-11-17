@@ -160,8 +160,12 @@ export default function PurchaseDC() {
       <div className="card mb-5">
         <p className="section-title text-base mb-3">Despatch Sheet</p>
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+          {/* The sheet's own supplier is always offered, so a despatch sheet
+              still names who sent it before any supplier master is loaded. */}
           <div className="lg:col-span-2"><label className="label">Supplier</label>
-            <Select value={supplier} onChange={setSupplier} options={SUPPLIERS.map(s => s.name)} className="!w-full" /></div>
+            <Select value={supplier} onChange={setSupplier}
+              options={[...new Set([supplier, ...SUPPLIERS.map(s => s.name)])].filter(Boolean)}
+              className="!w-full" /></div>
           <div><label className="label">Date</label>
             <input type="date" className="input w-full" value={date} onChange={e => setDate(e.target.value)} /></div>
           <div><label className="label">P.O. No</label>

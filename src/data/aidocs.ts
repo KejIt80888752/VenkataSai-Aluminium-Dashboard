@@ -1,3 +1,5 @@
+import { pctOf } from '@/lib/utils'
+import { SHOW_SAMPLE } from './sample'
 /* ── AI document capture ────────────────────────────────────────────────
    A photo of the counter book usually holds several customers' slips on one
    page. The extractor splits the sheet into separate bills, assigns a
@@ -63,7 +65,8 @@ export interface CapturedBill {
 }
 
 /* ── Source material ────────────────────────────────────────────────── */
-const RAW_ITEMS: [string, string, string, string, number][] = [
+const RAW_ITEMS: [string, string, string, string, number][] = SHOW_SAMPLE
+  ? ([
   // scrawl, code, master name, unit, indicative rate
   ['2 TRK OUTER FRM',   'VSA-SL-2T-OF', '2 Track Sliding Outer Frame', 'kg',  286],
   ['2 TRK SHUTTER',     'VSA-SL-2T-SH', '2 Track Sliding Shutter',     'kg',  286],
@@ -77,9 +80,11 @@ const RAW_ITEMS: [string, string, string, string, number][] = [
   ['SILICON',           'VSA-CN-SIL',   'Silicone Sealant',            'nos', 365],
   ['GASKET MTR',        'VSA-CN-GSKT',  'EPDM Gasket (per mtr)',       'nos',  14],
   ['HANDLE SS',         'VSA-HW-HAND',  'Casement Handle — SS',        'nos', 210],
-]
+])
+  : []
 
-const PARTIES: [string, string, string][] = [
+const PARTIES: [string, string, string][] = SHOW_SAMPLE
+  ? ([
   ['SRI BALAJI ALU FAB',  'C01', 'Sri Balaji Aluminium Fabricators'],
   ['PERFECT GLASS',       'C03', 'Perfect Glass & Aluminium Works'],
   ['METRO FAB',           'C07', 'Metro Aluminium Fabricators'],
@@ -88,7 +93,8 @@ const PARTIES: [string, string, string][] = [
   ['MODERN W&D',          'C11', 'Modern Windows & Doors'],
   ['CASH / COUNTER',      'C12', 'Rajesh Kumar (Retail)'],
   ['VENKATESHWARA TRD',   'C06', 'Venkateshwara Traders'],
-]
+])
+  : []
 
 const OPERATORS = ['Kavya M', 'Srinivas B', 'Ganesh P']
 
@@ -106,7 +112,8 @@ export interface Batch {
   status: 'Processed' | 'Processing' | 'Needs Review'
 }
 
-const BATCH_DEFS: [string, DocType, number, string][] = [
+const BATCH_DEFS: [string, DocType, number, string][] = SHOW_SAMPLE
+  ? ([
   ['counter-book-19aug.jpg',     'Handwritten Sale Slip',         4, '2026-08-19'],
   ['counter-book-18aug.jpg',     'Handwritten Sale Slip',         3, '2026-08-18'],
   ['jindal-invoice-8841.pdf',    'Computerised Purchase Invoice', 1, '2026-08-18'],
@@ -115,9 +122,11 @@ const BATCH_DEFS: [string, DocType, number, string][] = [
   ['counter-book-16aug.jpg',     'Handwritten Sale Slip',         5, '2026-08-16'],
   ['ozone-hardware-bill.pdf',    'Computerised Purchase Invoice', 1, '2026-08-15'],
   ['counter-book-14aug.jpg',     'Handwritten Sale Slip',         3, '2026-08-14'],
-]
+])
+  : []
 
-export const BATCHES: Batch[] = BATCH_DEFS.map(([file, docType, bills, date], i) => ({
+export const BATCHES: Batch[] = SHOW_SAMPLE
+  ? (BATCH_DEFS.map(([file, docType, bills, date], i) => ({
   id: `BAT${i + 1}`,
   file,
   uploadedAt: `${date} ${String(iBetween(9, 19)).padStart(2, '0')}:${String(iBetween(10, 59))}`,
@@ -130,12 +139,14 @@ export const BATCHES: Batch[] = BATCH_DEFS.map(([file, docType, bills, date], i)
     : 'Printed OCR + LLM',
   processingMs: iBetween(1400, 5200),
   status: i === 0 ? 'Needs Review' : 'Processed',
-}))
+})))
+  : []
 
 /* ── Split each batch into one record per customer bill ─────────────── */
 let tmpSeq = 0
 
-export const CAPTURED: CapturedBill[] = BATCHES.flatMap(b =>
+export const CAPTURED: CapturedBill[] = SHOW_SAMPLE
+  ? (BATCHES.flatMap(b =>
   Array.from({ length: b.billsFound }, (_, k) => {
     const [rawParty, partyId, partyName] = pick(PARTIES)
     const nLines = iBetween(1, 4)
@@ -204,7 +215,8 @@ export const CAPTURED: CapturedBill[] = BATCHES.flatMap(b =>
         : '—',
     }
   }),
-)
+))
+  : []
 
 /* ── Correction report: what the model keeps getting wrong ──────────── */
 export interface FieldAccuracy {
@@ -237,8 +249,10 @@ export const AI_SUMMARY = {
   autoApproved: CAPTURED.filter(c => c.status === 'Auto-Approved').length,
   needsReview: CAPTURED.filter(c => c.status === 'Needs Review').length,
   corrected: CAPTURED.filter(c => c.status === 'Corrected & Posted').length,
-  avgConfidence: +(CAPTURED.reduce((s, c) => s + c.confidence, 0) / CAPTURED.length).toFixed(1),
-  straightThroughPct: Math.round((CAPTURED.filter(c => c.status === 'Auto-Approved').length / CAPTURED.length) * 100),
+  avgConfidence: CAPTURED.length
+    ? +(CAPTURED.reduce((s, c) => s + c.confidence, 0) / CAPTURED.length).toFixed(1)
+    : 0,
+  straightThroughPct: Math.round(pctOf(CAPTURED.filter(c => c.status === 'Auto-Approved').length, CAPTURED.length)),
   trainingSamples: 1840 + CAPTURED.reduce((s, c) => s + c.corrections.length, 0),
   modelVersion: 'VSA Handwriting Model v4',
   lastTrained: '2026-08-11',

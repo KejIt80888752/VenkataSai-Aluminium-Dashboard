@@ -32,10 +32,10 @@ interface Line {
 }
 
 export default function ShortageOrder() {
-  const [supplierId, setSupplierId] = useState(SUPPLIERS[0].id)
+  const [supplierId, setSupplierId] = useState(SUPPLIERS[0]?.id ?? '')
   const [preview, setPreview] = useState(false)
 
-  const supplier = SUPPLIERS.find(s => s.id === supplierId)!
+  const supplier = SUPPLIERS.find(s => s.id === supplierId)
 
   const short = useMemo(() => P.filter(isLow), [])
 
@@ -55,12 +55,12 @@ export default function ShortageOrder() {
 
   const patch = (id: string, p: Partial<Line>) => setLines(ls => ls.map(l => l.id === id ? { ...l, ...p } : l))
 
-  const exportCsv = () => csvDownload(`shortage-order-${supplier.id}.csv`, [
+  const exportCsv = () => csvDownload(`shortage-order-${supplier?.id ?? 'none'}.csv`, [
     [`Shortage order — ${COMPANY.name}`, TODAY, FY],
-    [`To: ${supplier.name}`, supplier.gstin],
+    [`To: ${supplier?.name ?? '—'}`, supplier?.gstin ?? '—'],
     [], ['VSA Code', 'Supplier Code', 'Section', 'On Hand', 'Reorder Level', 'Order Qty',
          'Est. Kg', 'Est. Rate/Kg', 'Est. Value', 'Note'],
-    ...active.map(l => [l.code, supplierCode(l.code, supplier.id), l.name, l.onHand, l.reorder, l.qty,
+    ...active.map(l => [l.code, supplierCode(l.code, supplier?.id ?? ''), l.name, l.onHand, l.reorder, l.qty,
       +(l.qty * l.kgPerLength).toFixed(1), l.ratePerKg, Math.round(l.qty * l.kgPerLength * l.ratePerKg), l.note]),
     [], ['Total pieces', active.reduce((s, l) => s + l.qty, 0)],
     ['Total weight', weight], ['Estimated value', value],
@@ -88,16 +88,16 @@ export default function ShortageOrder() {
       </div>
 
       <div className="card mb-5">
-        <p className="section-title text-base mb-1">Sending to {supplier.name}</p>
+        <p className="section-title text-base mb-1">Sending to {supplier?.name}</p>
         <p className="section-sub">
-          {supplier.creditDays} days credit · {supplier.leadDays} days lead time · GSTIN {supplier.gstin}.
+          {supplier?.creditDays} days credit · {supplier?.leadDays} days lead time · GSTIN {supplier?.gstin}.
           Their own code sits beside ours on every line, so nobody has to work out what we meant.
         </p>
       </div>
 
       <TableCard maxH="30rem">
         <thead>
-          <tr><th>VSA Code</th><th>{supplier.id} Code</th><th>Section</th>
+          <tr><th>VSA Code</th><th>{supplier?.id} Code</th><th>Section</th>
             <th className="num">On Hand</th><th className="num">Reorder At</th><th className="num">Suggested</th>
             <th className="num">Order</th><th className="num">Kg</th><th className="num">Value</th><th>Note</th><th /></tr>
         </thead>
@@ -106,7 +106,7 @@ export default function ShortageOrder() {
             <tr key={l.id} style={l.qty === 0 ? { opacity: .45 } : undefined}>
               <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{l.code}</td>
               <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--brand)' }}>
-                {supplierCode(l.code, supplier.id)}
+                {supplierCode(l.code, supplier?.id ?? '')}
               </td>
               <td className="text-xs max-w-[15rem] truncate" title={l.name}>{l.name}</td>
               <td className="num tabular-nums text-xs"
@@ -156,9 +156,9 @@ export default function ShortageOrder() {
 
           <div>
             <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>To</p>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{supplier.name}</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{supplier?.name}</p>
             <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
-              {supplier.contact} · {supplier.phone} · GSTIN {supplier.gstin}
+              {supplier?.contact} · {supplier?.phone} · GSTIN {supplier?.gstin}
             </p>
           </div>
 
@@ -171,7 +171,7 @@ export default function ShortageOrder() {
                   <tr key={l.id}>
                     <td className="num tabular-nums text-xs">{i + 1}</td>
                     <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>
-                      {supplierCode(l.code, supplier.id)}
+                      {supplierCode(l.code, supplier?.id ?? '')}
                     </td>
                     <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-4)' }}>{l.code}</td>
                     <td className="text-xs max-w-[16rem] truncate">{l.name}</td>

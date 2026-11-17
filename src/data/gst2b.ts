@@ -1,3 +1,5 @@
+import { pctOf } from '@/lib/utils'
+import { SHOW_SAMPLE } from './sample'
 /* ── GSTR-2B / 3B reconciliation ────────────────────────────────────────
    2B is what the portal says suppliers filed. The purchase register is what
    we booked. Credit is safe only where the two agree — this file pairs them
@@ -47,7 +49,8 @@ export interface ReconRow {
 const monthOf = (d: string) => MONTHS.find(m => d.startsWith(m.key))?.label ?? ''
 
 /* Most bills tie exactly; a handful drift the way real filings do. */
-export const RECON_ROWS: ReconRow[] = PURCHASES.map((p, i) => {
+export const RECON_ROWS: ReconRow[] = SHOW_SAMPLE
+  ? (PURCHASES.map((p, i) => {
   const r = rnd()
   let status: MatchStatus = 'Matched'
   let b2Taxable = p.taxable
@@ -78,10 +81,12 @@ export const RECON_ROWS: ReconRow[] = PURCHASES.map((p, i) => {
       : 'Correct GSTIN in purchase master',
     creditAvailable: status === 'Matched',
   }
-})
+}))
+  : []
 
 /* A few invoices appear in 2B that were never entered in the books. */
-const EXTRA_IN_2B: ReconRow[] = Array.from({ length: 4 }, (_, i) => {
+const EXTRA_IN_2B: ReconRow[] = SHOW_SAMPLE
+  ? (Array.from({ length: 4 }, (_, i) => {
   const s = pick(SUPPLIERS)
   const taxable = Math.round(between(45000, 320000) / 100) * 100
   const tax = +(taxable * 0.18).toFixed(2)
@@ -100,7 +105,8 @@ const EXTRA_IN_2B: ReconRow[] = Array.from({ length: 4 }, (_, i) => {
     action: 'Locate the bill and book it — credit is available',
     creditAvailable: false,
   }
-})
+}))
+  : []
 
 export const ALL_RECON = [...RECON_ROWS, ...EXTRA_IN_2B].sort((a, b) => b.billDate.localeCompare(a.billDate))
 
@@ -116,7 +122,7 @@ export const RECON_SUMMARY = (() => {
     creditSafe: +by('Matched').reduce((s, r) => s + r.booksTax, 0).toFixed(2),
     creditAtRisk: +[...by('In Books, not in 2B'), ...by('GSTIN Mismatch')].reduce((s, r) => s + r.booksTax, 0).toFixed(2),
     creditUnclaimed: +by('In 2B, not in Books').reduce((s, r) => s + r.b2Tax, 0).toFixed(2),
-    matchRate: Math.round((by('Matched').length / ALL_RECON.length) * 100),
+    matchRate: Math.round(pctOf(by('Matched').length, ALL_RECON.length)),
   }
 })()
 
@@ -133,7 +139,8 @@ export interface Gstr3bRow {
   status: 'Reconciled' | 'Under Review' | 'Not Filed'
 }
 
-export const GSTR3B: Gstr3bRow[] = MONTHS.map((m, i) => {
+export const GSTR3B: Gstr3bRow[] = SHOW_SAMPLE
+  ? (MONTHS.map((m, i) => {
   const monthKey = m.key
   const inv = PURCHASES.filter(p => p.date.startsWith(monthKey))
   const itcBooks = +inv.reduce((s, p) => s + p.cgst + p.sgst + p.igst, 0).toFixed(2)
@@ -153,4 +160,5 @@ export const GSTR3B: Gstr3bRow[] = MONTHS.map((m, i) => {
     diff: +((outputBooks - itcBooks) - (outputFiled - itcClaimed)).toFixed(2),
     status: !filed ? 'Not Filed' : Math.abs(outputBooks - outputFiled) < 500 ? 'Reconciled' : 'Under Review',
   }
-})
+}))
+  : []

@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Four rates for the same section ───────────────────────────────────────
    A fabricator taking four hundred pieces does not pay what a homeowner
    taking six pays, and the salesman should not have to work that out or ring
@@ -54,7 +55,8 @@ function thresholds(p: Product): [number, number, number] {
   return [25, 100, 300]
 }
 
-export const RATE_CARDS: RateCard[] = P.map(p => {
+export const RATE_CARDS: RateCard[] = SHOW_SAMPLE
+  ? (P.map(p => {
   const [t2, t3, t4] = thresholds(p)
   const tiers: Tier[] = ([1, 2, 3, 4] as Level[]).map(l => ({
     level: l,
@@ -68,7 +70,8 @@ export const RATE_CARDS: RateCard[] = P.map(p => {
     // Six per cent over landed cost — thin, but never a loss.
     floor: +(p.costPerKg * 1.06).toFixed(2),
   }
-})
+}))
+  : []
 
 export const cardFor = (code: string) => RATE_CARDS.find(c => c.code === code)
 

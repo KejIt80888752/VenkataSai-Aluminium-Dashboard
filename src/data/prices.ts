@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── What a thing cost, against what we still sell it for ──────────────────
    Aluminium moves with the LME and the mill's monthly circular, so a rate
    agreed in April is not the rate in August. The loss does not happen at the
@@ -51,7 +52,8 @@ function historyFor(p: Product): CostPoint[] {
     }))
 }
 
-export const PRICE_WATCH: PriceWatch[] = P.map((p, pi) => {
+export const PRICE_WATCH: PriceWatch[] = SHOW_SAMPLE
+  ? (P.map((p, pi) => {
   const history = historyFor(p)
   const latestCost = history.length ? history[history.length - 1].ratePerKg : p.costPerKg
   const previousCost = history.length > 1 ? history[history.length - 2].ratePerKg : latestCost
@@ -81,7 +83,8 @@ export const PRICE_WATCH: PriceWatch[] = P.map((p, pi) => {
     status,
     stockAtRisk: Math.round(p.stockPcs * p.kgPerLength * (sellingRate - latestCost)),
   }
-})
+}))
+  : []
 
 export const PRICE_SUMMARY = {
   total: PRICE_WATCH.length,

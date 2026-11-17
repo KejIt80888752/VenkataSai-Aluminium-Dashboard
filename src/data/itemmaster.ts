@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Item master ────────────────────────────────────────────────────────
    The trade buys in one unit and sells in another: sections come in by
    weight and go out by pieces, clips arrive in packets and leave as nos,
@@ -23,7 +24,8 @@ export interface UomRule {
   valuation: 'LIFO' | 'FIFO' | 'Weighted Avg'
 }
 
-export const UOM_RULES: UomRule[] = [
+export const UOM_RULES: UomRule[] = SHOW_SAMPLE
+  ? ([
   { code: 'VSA-SL-2T-OF', name: '2 Track Sliding Outer Frame', purchaseUom: 'kg',     saleUom: 'nos', piecesPerPurchaseUom: 1,   kgPerPiece: 3.42,  autoTrueUp: true,  valuation: 'Weighted Avg' },
   { code: 'VSA-SL-2T-SH', name: '2 Track Sliding Shutter',     purchaseUom: 'kg',     saleUom: 'nos', piecesPerPurchaseUom: 1,   kgPerPiece: 2.18,  autoTrueUp: true,  valuation: 'Weighted Avg' },
   { code: 'VSA-SL-3T-OF', name: '3 Track Sliding Outer Frame', purchaseUom: 'kg',     saleUom: 'nos', piecesPerPurchaseUom: 1,   kgPerPiece: 4.86,  autoTrueUp: true,  valuation: 'Weighted Avg' },
@@ -34,7 +36,8 @@ export const UOM_RULES: UomRule[] = [
   { code: 'VSA-CN-SCRW',  name: 'SS Self-Tapping Screw',       purchaseUom: 'kg',     saleUom: 'nos', piecesPerPurchaseUom: 1,   kgPerPiece: 0.004, autoTrueUp: true,  valuation: 'Weighted Avg' },
   { code: 'VSA-CN-GSKT',  name: 'EPDM Gasket',                 purchaseUom: 'kg',     saleUom: 'nos', piecesPerPurchaseUom: 1,   kgPerPiece: 0.06,  autoTrueUp: true,  valuation: 'FIFO' },
   { code: 'VSA-HW-FHNG',  name: 'Friction Stay Hinge 12"',     purchaseUom: 'box',    saleUom: 'nos', piecesPerPurchaseUom: 20,  kgPerPiece: 0.31,  autoTrueUp: false, valuation: 'LIFO' },
-]
+])
+  : []
 
 export const uomOf = (code: string) => UOM_RULES.find(u => u.code === code)
 
@@ -57,7 +60,8 @@ export interface Kit {
   components: { code: string; name: string; qty: number; unit: string }[]
 }
 
-export const KITS: Kit[] = [
+export const KITS: Kit[] = SHOW_SAMPLE
+  ? ([
   {
     code: 'VSA-KIT-FSPR', name: 'Floor Spring Combo Set', saleUom: 'set',
     components: [
@@ -86,7 +90,8 @@ export const KITS: Kit[] = [
       { code: 'VSA-CN-GSKT', name: 'EPDM Gasket (per mtr)',   qty: 6, unit: 'nos' },
     ],
   },
-]
+])
+  : []
 
 /* ── 3. Consignments received against one common weight ─────────────── */
 export interface WeightPool {
@@ -101,7 +106,8 @@ export interface WeightPool {
   status: 'Allocated' | 'Pending Allocation'
 }
 
-export const WEIGHT_POOLS: WeightPool[] = [
+export const WEIGHT_POOLS: WeightPool[] = SHOW_SAMPLE
+  ? ([
   {
     id: 'WP1', dcNo: 'JIN/DC/8841', supplier: 'Jindal Aluminium Ltd — Depot', date: '2026-08-14',
     pooledWeightKg: 1284.5, method: 'Pro-rata by standard weight', status: 'Allocated',
@@ -122,7 +128,8 @@ export const WEIGHT_POOLS: WeightPool[] = [
       { code: 'VSA-SL-INTL',  name: 'Sliding Interlock Section', nos: 320, stdKgPerPiece: 0.92 },
     ],
   },
-]
+])
+  : []
 
 /** Split one pooled weight across the items on the challan. */
 export const allocatePool = (pool: WeightPool) => {
@@ -155,7 +162,8 @@ export interface AliasMap {
   status: 'Confirmed' | 'Needs Review'
 }
 
-export const ALIASES: AliasMap[] = [
+export const ALIASES: AliasMap[] = SHOW_SAMPLE
+  ? ([
   { id: 'A01', kind: 'Product',  alias: '2T OUTER FRAME MF 12',      source: 'Jindal Aluminium',  mapsTo: 'VSA-SL-2T-OF', mapsToName: '2 Track Sliding Outer Frame', hits: 46, confidence: 99, status: 'Confirmed' },
   { id: 'A02', kind: 'Product',  alias: '2 TRK SHUTTER',             source: 'Handwritten slip',  mapsTo: 'VSA-SL-2T-SH', mapsToName: '2 Track Sliding Shutter',     hits: 38, confidence: 97, status: 'Confirmed' },
   { id: 'A03', kind: 'Product',  alias: 'INTERLOCK SEC 12FT',        source: 'Bhoruka Extrusions',mapsTo: 'VSA-SL-INTL',  mapsToName: 'Sliding Interlock Section',   hits: 52, confidence: 99, status: 'Confirmed' },
@@ -171,7 +179,8 @@ export const ALIASES: AliasMap[] = [
   { id: 'A13', kind: 'Customer', alias: 'SRI BALAJI ALU FAB',        source: 'Handwritten slip',  mapsTo: 'C01',          mapsToName: 'Sri Balaji Aluminium Fabricators', hits: 29, confidence: 96, status: 'Confirmed' },
   { id: 'A14', kind: 'Customer', alias: 'PERFECT GLASS',             source: 'Handwritten slip',  mapsTo: 'C03',          mapsToName: 'Perfect Glass & Aluminium Works',   hits: 24, confidence: 95, status: 'Confirmed' },
   { id: 'A15', kind: 'Customer', alias: 'METRO FAB',                 source: 'Handwritten slip',  mapsTo: 'C07',          mapsToName: 'Metro Aluminium Fabricators', hits: 17, confidence: 89, status: 'Needs Review' },
-]
+])
+  : []
 
 /* ── 5. Cut pieces and to-be-cut (TBC) stock ────────────────────────── */
 export interface CutPiece {
@@ -190,7 +199,8 @@ export interface CutPiece {
   againstInvoice: string
 }
 
-export const CUT_PIECES: CutPiece[] = [
+export const CUT_PIECES: CutPiece[] = SHOW_SAMPLE
+  ? ([
   { id: 'CP1', code: 'VSA-SL-3T-OF', name: '3 Track Sliding Outer Frame', parentLengthFt: 12, cutLengthFt: 7.5, pieces: 18, balanceEndFt: 4.5, weightKg: 32.8, location: 'SHOP', date: '2026-08-19', disposition: 'Back to Stock',      againstInvoice: 'VSA/26-27/0088' },
   { id: 'CP2', code: 'VSA-OP-OF45',  name: 'Openable Outer Frame 45mm',   parentLengthFt: 12, cutLengthFt: 5.0, pieces: 24, balanceEndFt: 2.0, weightKg: 15.5, location: 'SHOP', date: '2026-08-19', disposition: 'Scrap / Melt',       againstInvoice: 'VSA/26-27/0085' },
   { id: 'CP3', code: 'VSA-PT-BOX',   name: 'Partition Box Section 2"x1"', parentLengthFt: 12, cutLengthFt: 9.0, pieces: 30, balanceEndFt: 3.0, weightKg: 20.4, location: 'GD1',  date: '2026-08-18', disposition: 'Back to Stock',      againstInvoice: 'VSA/26-27/0083' },
@@ -198,7 +208,8 @@ export const CUT_PIECES: CutPiece[] = [
   { id: 'CP5', code: 'VSA-DR-FRM',   name: 'Aluminium Door Frame Section',parentLengthFt: 16, cutLengthFt: 7.0, pieces: 12, balanceEndFt: 2.0, weightKg: 11.0, location: 'SHOP', date: '2026-08-16', disposition: 'TBC — awaiting cut', againstInvoice: '—' },
   { id: 'CP6', code: 'VSA-LV-BLADE', name: 'Louver Blade Section',        parentLengthFt: 12, cutLengthFt: 3.0, pieces: 96, balanceEndFt: 0,   weightKg: 38.6, location: 'GD2',  date: '2026-08-15', disposition: 'Back to Stock',      againstInvoice: 'VSA/26-27/0077' },
   { id: 'CP7', code: 'VSA-SL-3T-SH', name: '3 Track Sliding Shutter',     parentLengthFt: 12, cutLengthFt: 4.5, pieces: 44, balanceEndFt: 3.0, weightKg: 40.3, location: 'SHOP', date: '2026-08-14', disposition: 'TBC — awaiting cut', againstInvoice: '—' },
-]
+])
+  : []
 
 /** Items with a UOM rule, for the master listing. */
 export const MASTER_ITEMS = P.filter(p => uomOf(p.code))

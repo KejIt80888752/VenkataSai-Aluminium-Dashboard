@@ -4,7 +4,7 @@ import { Scale, CheckCircle2, AlertTriangle, Percent, RefreshCw } from 'lucide-r
 import { PageHead, Stat, ExportBtn, TableCard, Select, useChartTheme } from '@/components/ui'
 import { gainBySection, COATING_JOBS, COATING_TOTALS } from '@/data/challans'
 import { profileOf } from '@/data/sections'
-import { csvDownload, fmtDate, cn } from '@/lib/utils'
+import { csvDownload, fmtDate, cn, pctOf } from '@/lib/utils'
 import { FY } from '@/data/company'
 
 export default function CoatingRecon() {
@@ -17,7 +17,7 @@ export default function CoatingRecon() {
     .filter(j => pcu === 'All Coaters' || j.pcu === pcu)
 
   const outOfTol = jobs.filter(j => !j.withinTolerance)
-  const netGainPct = +((COATING_TOTALS.gainKg / (COATING_TOTALS.returnedKg - COATING_TOTALS.gainKg)) * 100).toFixed(2)
+  const netGainPct = +pctOf(COATING_TOTALS.gainKg, COATING_TOTALS.returnedKg - COATING_TOTALS.gainKg).toFixed(2)
 
   const chart = gainBySection.map(g => ({
     name: g.code.replace('VSA-', ''),

@@ -2,7 +2,7 @@ import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Respons
 import { TrendingUp, IndianRupee, Percent, Receipt } from 'lucide-react'
 import { PageHead, Stat, ExportBtn, useChartTheme } from '@/components/ui'
 import { monthlySales, TOTALS, OVERHEADS, MONTHLY_OVERHEAD, MONTHS } from '@/data/txns'
-import { inr, inrShort, csvDownload } from '@/lib/utils'
+import { inr, inrShort, csvDownload, pctOf } from '@/lib/utils'
 import { FY } from '@/data/company'
 
 export default function ProfitLoss() {
@@ -10,8 +10,8 @@ export default function ProfitLoss() {
   const months = MONTHS.length
   const totalOverhead = MONTHLY_OVERHEAD * months
   const netProfit = TOTALS.grossProfit - totalOverhead
-  const grossMargin = (TOTALS.grossProfit / TOTALS.revenue) * 100
-  const netMargin   = (netProfit / TOTALS.revenue) * 100
+  const grossMargin = pctOf(TOTALS.grossProfit, TOTALS.revenue)
+  const netMargin   = pctOf(netProfit, TOTALS.revenue)
 
   const exportCsv = () => csvDownload('vsa-profit-and-loss.csv', [
     ['Profit & Loss', FY],
@@ -90,7 +90,7 @@ export default function ProfitLoss() {
                     <td className="num tabular-nums text-xs">{inr(m.cogs)}</td>
                     <td className="num tabular-nums text-green-600 font-medium">{inr(m.grossProfit)}</td>
                     <td className={`num tabular-nums font-medium ${m.netProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>{inr(m.netProfit)}</td>
-                    <td className="num tabular-nums text-xs">{((m.grossProfit / m.revenue) * 100).toFixed(1)}%</td>
+                    <td className="num tabular-nums text-xs">{pctOf(m.grossProfit, m.revenue).toFixed(1)}%</td>
                   </tr>
                 ))}
                 <tr style={{ background: 'var(--bg-card2)' }}>

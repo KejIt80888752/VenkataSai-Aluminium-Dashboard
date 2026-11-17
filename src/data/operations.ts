@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Three shop-floor registers the office keeps on paper today ────────────
    Returns to the mill, what physically leaves each gate, and what the bank
    actually credited. Each is derived from existing documents so the figures
@@ -44,7 +45,8 @@ export interface MaterialReturn {
 
 const INSPECTORS = ['Ganesh P', 'Kavya M', 'Ramesh K', 'Suresh N']
 
-export const RETURNS: MaterialReturn[] = PURCHASES
+export const RETURNS: MaterialReturn[] = SHOW_SAMPLE
+  ? (PURCHASES
   .filter((_, i) => i % 4 === 2)                       // a defect on roughly one load in four
   .map((p, i) => {
     const nos      = 12 + (i * 7) % 60
@@ -66,7 +68,8 @@ export const RETURNS: MaterialReturn[] = PURCHASES
       ageDays: Math.max(0, Math.floor((new Date(TODAY).getTime() - new Date(date).getTime()) / 86400000)),
       raisedBy: INSPECTORS[i % INSPECTORS.length],
     }
-  })
+  }))
+  : []
 
 /* ── 2. Gate register — what physically left, and was it billed ────────── */
 
@@ -99,7 +102,8 @@ export interface GatePass {
 const GUARDS = ['Anand S', 'Mahesh B', 'Ravi T']
 const VEHICLES = ['KA 01 AB 4412', 'KA 05 MJ 7789', 'KA 41 C 2231', 'KA 03 AL 9067', 'KA 51 B 1180']
 
-export const GATE_PASSES: GatePass[] = INVOICES.slice(0, 90).map((inv, i) => {
+export const GATE_PASSES: GatePass[] = SHOW_SAMPLE
+  ? (INVOICES.slice(0, 90).map((inv, i) => {
   const g = GATES[i % GATES.length]
   const nos      = 18 + (i * 11) % 90
   const weightKg = +(nos * (1.4 + (i % 4) * 0.4)).toFixed(1)
@@ -126,7 +130,8 @@ export const GATE_PASSES: GatePass[] = INVOICES.slice(0, 90).map((inv, i) => {
     clipRef: `${g.id}-${inv.date.replace(/-/g, '')}-${String(9 + (i % 9)).padStart(2, '0')}${String((i * 17) % 60).padStart(2, '0')}`,
     guard: GUARDS[i % GUARDS.length],
   }
-}).sort((a, b) => b.date.localeCompare(a.date))
+}).sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 /* ── 3. Bank statement against receipts entered ────────────────────────── */
 
@@ -146,7 +151,8 @@ export interface BankLine {
 
 const MODES = ['NEFT', 'RTGS', 'UPI', 'IMPS', 'CHQ'] as const
 
-export const BANK_LINES: BankLine[] = INVOICES
+export const BANK_LINES: BankLine[] = SHOW_SAMPLE
+  ? (INVOICES
   .filter(inv => inv.received > 0)
   .slice(0, 120)
   .map((inv, i) => {
@@ -168,4 +174,5 @@ export const BANK_LINES: BankLine[] = INVOICES
       month: MONTHS.find(m => (inv.dueDate > TODAY ? inv.date : inv.dueDate).startsWith(m.key))?.label ?? '',
     }
   })
-  .sort((a, b) => b.date.localeCompare(a.date))
+  .sort((a, b) => b.date.localeCompare(a.date)))
+  : []

@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Turnkey work without counting the same material twice ─────────────────
    The trap: material for a project leaves the godown, so a sale bill gets
    raised to take it off stock — and then a turnkey bill goes to the customer
@@ -121,7 +122,9 @@ function build(i: number): Project {
   }
 }
 
-export const PROJECTS: Project[] = Array.from({ length: 7 }, (_, i) => build(i))
+export const PROJECTS: Project[] = SHOW_SAMPLE
+  ? (Array.from({ length: 7 }, (_, i) => build(i)))
+  : []
 
 /* A job only has a profit once it has been billed in full. Before that the
    cost is simply ahead of the billing, which is how the work runs — calling

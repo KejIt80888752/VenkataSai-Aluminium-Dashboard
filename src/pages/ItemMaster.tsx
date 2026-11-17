@@ -44,11 +44,11 @@ export default function ItemMaster() {
 
 /* ── 1. Weight ⇄ pieces ────────────────────────────────────────────── */
 function DualUnit({ q, setQ }: { q: string; setQ: (v: string) => void }) {
-  const [calcCode, setCalcCode] = useState(UOM_RULES[0].code)
+  const [calcCode, setCalcCode] = useState(UOM_RULES[0]?.code ?? '')
   const [calcKg, setCalcKg] = useState('100')
   const [calcPcs, setCalcPcs] = useState('')
 
-  const rule = uomOf(calcCode)!
+  const rule = uomOf(calcCode)
   const rows = UOM_RULES.filter(u => q === '' || `${u.code} ${u.name}`.toLowerCase().includes(q.toLowerCase()))
 
   const exportCsv = () => csvDownload('vsa-uom-rules.csv', [
@@ -79,11 +79,17 @@ function DualUnit({ q, setQ }: { q: string; setQ: (v: string) => void }) {
               onChange={e => { setCalcPcs(e.target.value); setCalcKg(String(piecesToKg(calcCode, Number(e.target.value) || 0))) }} />
           </div>
         </div>
-        <p className="text-[11px] mt-3" style={{ color: 'var(--text-4)' }}>
-          Standard weight {rule.kgPerPiece} kg per piece · bought in {rule.purchaseUom}
-          {rule.piecesPerPurchaseUom > 1 && ` of ${rule.piecesPerPurchaseUom} pcs`} · sold in {rule.saleUom} · valued {rule.valuation}
-          {rule.autoTrueUp && ' · weekly check trues the standard weight up from the latest DC'}
-        </p>
+        {rule ? (
+          <p className="text-[11px] mt-3" style={{ color: 'var(--text-4)' }}>
+            Standard weight {rule.kgPerPiece} kg per piece · bought in {rule.purchaseUom}
+            {rule.piecesPerPurchaseUom > 1 && ` of ${rule.piecesPerPurchaseUom} pcs`} · sold in {rule.saleUom} · valued {rule.valuation}
+            {rule.autoTrueUp && ' · weekly check trues the standard weight up from the latest DC'}
+          </p>
+        ) : (
+          <p className="text-[11px] mt-3" style={{ color: 'var(--text-4)' }}>
+            No item master loaded yet, so there is no standard weight to convert against.
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">

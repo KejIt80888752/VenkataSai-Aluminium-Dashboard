@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Customers (fabricators, builders, retail) and suppliers (mills/stockists) ── */
 
 export interface Client {
@@ -16,7 +17,8 @@ export interface Client {
   status: 'Active' | 'Dormant' | 'On Hold'
 }
 
-export const CLIENTS: Client[] = [
+export const CLIENTS: Client[] = SHOW_SAMPLE
+  ? ([
   { id:'C01', name:'Sri Balaji Aluminium Fabricators', type:'B2B Fabricator',      contact:'Ramesh K',      phone:'+91 98450 11234', email:'sribalajifab@gmail.com',    gstin:'29AAFCS1234K1Z8', state:'Karnataka', area:'K R Puram',      creditDays:30, creditLimit:800000,  since:'2018-04-12', status:'Active'   },
   { id:'C02', name:'Nandi Constructions Pvt Ltd',      type:'Builder / Contractor', contact:'Suresh Gowda',  phone:'+91 99001 45677', email:'purchase@nandicon.in',      gstin:'29AABCN8891P1ZQ', state:'Karnataka', area:'Whitefield',     creditDays:45, creditLimit:2500000, since:'2019-07-02', status:'Active'   },
   { id:'C03', name:'Perfect Glass & Aluminium Works',  type:'B2B Fabricator',       contact:'Imran Pasha',   phone:'+91 97400 88213', email:'perfectglasswork@gmail.com',gstin:'29AKPPP4412M1Z3', state:'Karnataka', area:'Ramamurthy Ngr', creditDays:30, creditLimit:600000,  since:'2019-01-20', status:'Active'   },
@@ -31,7 +33,8 @@ export const CLIENTS: Client[] = [
   { id:'C12', name:'Rajesh Kumar (Retail)',            type:'B2C Retail',           contact:'Rajesh Kumar',  phone:'+91 99450 12388', email:'—',                         gstin:'—',               state:'Karnataka', area:'Ayyappa Nagar',  creditDays:0,  creditLimit:0,       since:'2026-05-14', status:'Active'   },
   { id:'C13', name:'Sowmya Residency Project',         type:'Builder / Contractor', contact:'Girish B',      phone:'+91 97310 66542', email:'girish.sowmya@gmail.com',   gstin:'29AWEPB7734F1ZV', state:'Karnataka', area:'Budigere',       creditDays:45, creditLimit:1500000, since:'2024-02-19', status:'Active'   },
   { id:'C14', name:'Classic Aluminium Centre',         type:'Dealer',               contact:'Farhan A',      phone:'+91 89710 30094', email:'classicalu@gmail.com',      gstin:'29AZOPA1189R1ZT', state:'Karnataka', area:'Devanahalli',    creditDays:21, creditLimit:400000,  since:'2022-01-30', status:'Dormant'  },
-]
+])
+  : []
 
 export interface Supplier {
   id: string
@@ -45,11 +48,13 @@ export interface Supplier {
   leadDays: number
 }
 
-export const SUPPLIERS: Supplier[] = [
+export const SUPPLIERS: Supplier[] = SHOW_SAMPLE
+  ? ([
   { id:'S01', name:'Jindal Aluminium Ltd — Depot',   category:'Extruded Sections', contact:'Depot Sales',   phone:'+91 80 2839 4444', gstin:'29AAACJ4436N1ZG', state:'Karnataka',  creditDays:30, leadDays:7  },
   { id:'S02', name:'Hindalco Authorised Stockist',   category:'Sheets & Coils',    contact:'Mahesh Jain',   phone:'+91 98860 71123', gstin:'29AABCH1234K1ZD', state:'Karnataka',  creditDays:21, leadDays:5  },
   { id:'S03', name:'Bhoruka Extrusions Pvt Ltd',     category:'Extruded Sections', contact:'Sales Desk',    phone:'+91 80 2204 8800', gstin:'29AAACB5567L1ZR', state:'Karnataka',  creditDays:30, leadDays:10 },
   { id:'S04', name:'Alstrong Enterprises India',     category:'ACP Panels',        contact:'Region Sales',  phone:'+91 99100 44521', gstin:'07AAACA9987M1ZB', state:'Delhi',      creditDays:15, leadDays:12 },
   { id:'S05', name:'Saint-Gobain Glass Distributor', category:'Glass',             contact:'Kiran Shetty',  phone:'+91 97390 22014', gstin:'29AAECS3321P1ZN', state:'Karnataka',  creditDays:15, leadDays:4  },
   { id:'S06', name:'Ozone / Ebco Hardware Agency',   category:'Hardware',          contact:'Deepak M',      phone:'+91 96110 87720', gstin:'29AFDPM8812Q1ZE', state:'Karnataka',  creditDays:21, leadDays:6  },
-]
+])
+  : []

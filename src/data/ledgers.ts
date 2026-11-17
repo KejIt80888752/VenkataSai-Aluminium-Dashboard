@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Three books, one set of documents ─────────────────────────────────────
    An estimate is written at the counter before anything is agreed. When the
    customer confirms, the same document becomes a tax invoice — the point is
@@ -14,7 +15,9 @@ import { CLIENTS } from './parties'
 import { TODAY } from './company'
 
 export type Book = 'Estimate' | 'GST' | 'Audit'
-export const BOOKS: Book[] = ['Estimate', 'GST', 'Audit']
+export const BOOKS: Book[] = SHOW_SAMPLE
+  ? (['Estimate', 'GST', 'Audit'])
+  : []
 
 export type EstStatus = 'Open' | 'Part Invoiced' | 'Fully Invoiced' | 'Cancelled'
 
@@ -40,7 +43,8 @@ export interface Estimate {
 
 const STAFF = ['Kavya M', 'Siva Reddy', 'Murali', 'Prakash']
 
-export const ESTIMATES: Estimate[] = INVOICES.slice(0, 26).map((inv, i) => {
+export const ESTIMATES: Estimate[] = SHOW_SAMPLE
+  ? (INVOICES.slice(0, 26).map((inv, i) => {
   const client = CLIENTS.find(c => c.id === inv.clientId) ?? CLIENTS[0]
 
   // Most estimates turn into a bill; a few sit open, one or two get dropped.
@@ -64,7 +68,8 @@ export const ESTIMATES: Estimate[] = INVOICES.slice(0, 26).map((inv, i) => {
       ? [{ invoiceNo: inv.no, date: inv.date, value: +(value * share).toFixed(2) }] : [],
     cancelReason: cancelled ? 'Customer did not confirm the size' : undefined,
   }
-}).sort((a, b) => b.date.localeCompare(a.date))
+}).sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 export const invoicedValue = (e: Estimate) =>
   +e.links.reduce((s, l) => s + l.value, 0).toFixed(2)

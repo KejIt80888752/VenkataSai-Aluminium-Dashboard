@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Stat, useChartTheme, SERIES, Pill } from '@/components/ui'
-import { inr, inrShort, fmtDate } from '@/lib/utils'
+import { inr, inrShort, fmtDate , pctOf } from '@/lib/utils'
 import { FY, TODAY } from '@/data/company'
 import { P, isLow, stockValue, stockQty } from '@/data/catalogue'
 import {
@@ -27,11 +27,11 @@ export default function Dashboard() {
   const lowItems     = P.filter(isLow)
   const overdue      = INVOICES.filter(i => i.status === 'Overdue')
   const overdueAmt   = overdue.reduce((s, i) => s + (i.total - i.received), 0)
-  const marginPct    = (TOTALS.grossProfit / TOTALS.revenue) * 100
+  const marginPct    = pctOf(TOTALS.grossProfit, TOTALS.revenue)
   const recent       = [...INVOICES].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6)
   const openLeads    = LEADS.filter(l => l.stage !== 'Converted' && l.stage !== 'Dropped')
   const wonQuotes    = QUOTATIONS.filter(q => q.status === 'Won')
-  const quoteWinRate = Math.round((wonQuotes.length / QUOTATIONS.length) * 100)
+  const quoteWinRate = Math.round(pctOf(wonQuotes.length, QUOTATIONS.length))
 
   const pcuPendingNos = PCU_OUTSTANDING.reduce((s, p) => s + p.nos, 0)
   const pcuPendingKg  = +PCU_OUTSTANDING.reduce((s, p) => s + p.kg, 0).toFixed(1)
@@ -185,7 +185,7 @@ export default function Dashboard() {
                   </span>
                 </div>
                 <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                  <div className="h-full bg-brand rounded-full" style={{ width: `${(c.value / topClients[0].value) * 100}%` }} />
+                  <div className="h-full bg-brand rounded-full" style={{ width: `${pctOf(c.value, topClients[0]?.value ?? 0)}%` }} />
                 </div>
               </div>
             ))}

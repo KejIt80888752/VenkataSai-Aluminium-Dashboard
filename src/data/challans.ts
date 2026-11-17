@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Delivery challans, coating jobs and material position ──────────────
    Raw sections leave the mill on an outward DC to a powder coating unit.
    The coater returns them on one or more inward DCs — heavier, because the
@@ -130,7 +131,8 @@ const roll = (lines: DCLine[]) => ({
 })
 
 /* ── Outward: mill → coating unit ───────────────────────────────────── */
-const OUTWARD: DC[] = MONTH_KEYS.flatMap(mk =>
+const OUTWARD: DC[] = SHOW_SAMPLE
+  ? (MONTH_KEYS.flatMap(mk =>
   Array.from({ length: mk === '2026-08' ? 6 : iBetween(9, 12) }, () => {
     const r = pick(ROUTES.filter(x => x.leg === 'Outward to Coating'))
     const shade = pick(POWDER_SHADES)
@@ -154,12 +156,15 @@ const OUTWARD: DC[] = MONTH_KEYS.flatMap(mk =>
       againstDc: '—',
     }
   }).filter(Boolean) as DC[],
-).sort((a, b) => a.date.localeCompare(b.date))
+).sort((a, b) => a.date.localeCompare(b.date)))
+  : []
 
 /* ── Inward: coating unit → shop / godown, against an outward DC ─────── */
 const INWARD: DC[] = []
 
-for (const out of OUTWARD) {
+/* Built by accumulation rather than a single expression, so the loop itself
+   is what has to be skipped when sample data is off. */
+if (SHOW_SAMPLE) for (const out of OUTWARD) {
   const prof = out.lines.map(l => profileOf(l.code)!)
   const avgExpected = prof.reduce((s, p) => s + p.expectedGainPct, 0) / prof.length
   const daysSince = dayDiff(out.date, TODAY)
@@ -218,7 +223,9 @@ for (const out of OUTWARD) {
   })
 }
 
-export const CHALLANS: DC[] = [...OUTWARD, ...INWARD].sort((a, b) => b.date.localeCompare(a.date))
+export const CHALLANS: DC[] = SHOW_SAMPLE
+  ? ([...OUTWARD, ...INWARD].sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 /* ── Coating job: one outward DC and everything returned against it ──── */
 export interface CoatingJob {
@@ -244,7 +251,8 @@ export interface CoatingJob {
   coatingValue: number
 }
 
-export const COATING_JOBS: CoatingJob[] = OUTWARD.map(out => {
+export const COATING_JOBS: CoatingJob[] = SHOW_SAMPLE
+  ? (OUTWARD.map(out => {
   const rets = INWARD.filter(i => i.againstDc === out.no)
   const returnedNos = rets.reduce((s, r) => s + r.totalNos, 0)
   const returnedKg = +rets.reduce((s, r) => s + r.totalWeightKg, 0).toFixed(1)
@@ -286,7 +294,8 @@ export const COATING_JOBS: CoatingJob[] = OUTWARD.map(out => {
     returns: rets.map(r => ({ no: r.no, date: r.date, to: r.to, nos: r.totalNos, kg: r.totalWeightKg })),
     coatingValue: Math.round(out.totalSqft * rate),
   }
-}).sort((a, b) => b.date.localeCompare(a.date))
+}).sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 /* ── Position of material right now ─────────────────────────────────── */
 export const pcuOutstanding = (pcu: string) => {

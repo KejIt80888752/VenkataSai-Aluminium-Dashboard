@@ -86,7 +86,7 @@ interface BillLine {
 
 export default function QuickBill() {
   const [lines, setLines] = useState<BillLine[]>([])
-  const [customer, setCustomer] = useState(CLIENTS[0].name)
+  const [customer, setCustomer] = useState(CLIENTS[0]?.name ?? '')
   const [remarks, setRemarks] = useState('Siva Reddy — sales bill')
   const [listening, setListening] = useState(false)
   const [heard, setHeard] = useState('')

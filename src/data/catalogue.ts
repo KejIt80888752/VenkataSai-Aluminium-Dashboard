@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Product catalogue: extruded aluminium sections, sheets, glass, hardware ── */
 
 export type Finish =
@@ -44,7 +45,8 @@ export const CATEGORIES = [
 ] as const
 
 /** For section items the sale unit is kg; pcs → kg via kgPerLength. */
-export const P: Product[] = [
+export const P: Product[] = SHOW_SAMPLE
+  ? ([
   // ── Sliding Sections ────────────────────────────────────────────────
   { id:'P01', code:'VSA-SL-2T-OF', name:'2 Track Sliding Outer Frame',      category:'Sliding Sections',      series:'2 Track',   brand:'Jindal',   finish:'Mill Finish',          lengthFt:12, kgPerLength:3.42, unit:'kg', ratePerKg:286, costPerKg:239, hsn:'7604', gst:18, stockPcs:184, reorderPcs:60, rack:'A-01', godown:'Main Godown', active:true },
   { id:'P02', code:'VSA-SL-2T-SH', name:'2 Track Sliding Shutter',          category:'Sliding Sections',      series:'2 Track',   brand:'Jindal',   finish:'Mill Finish',          lengthFt:12, kgPerLength:2.18, unit:'kg', ratePerKg:286, costPerKg:239, hsn:'7604', gst:18, stockPcs:236, reorderPcs:80, rack:'A-02', godown:'Main Godown', active:true },
@@ -94,7 +96,8 @@ export const P: Product[] = [
   { id:'P30', code:'VSA-CN-SIL',   name:'Silicone Sealant — Weatherproof',  category:'Consumables',           series:'Sealant',    brand:'Dow',      finish:'N/A',                 lengthFt:0,  kgPerLength:1,    unit:'nos', ratePerKg:365, costPerKg:274, hsn:'3214', gst:18, stockPcs:212, reorderPcs:80, rack:'I-01', godown:'Main Godown', active:true },
   { id:'P31', code:'VSA-CN-GSKT',  name:'EPDM Gasket (per mtr)',            category:'Consumables',           series:'Gasket',     brand:'Generic',  finish:'N/A',                 lengthFt:0,  kgPerLength:1,    unit:'nos', ratePerKg:14,  costPerKg:9,   hsn:'4016', gst:18, stockPcs:2400, reorderPcs:800, rack:'I-02', godown:'Main Godown', active:true },
   { id:'P32', code:'VSA-CN-SCRW',  name:'SS Self-Tapping Screw (100 nos)',  category:'Consumables',           series:'Fastener',   brand:'Generic',  finish:'N/A',                 lengthFt:0,  kgPerLength:1,    unit:'nos', ratePerKg:185, costPerKg:131, hsn:'7318', gst:18, stockPcs:148, reorderPcs:60, rack:'I-03', godown:'Main Godown', active:true },
-]
+])
+  : []
 
 /** Saleable quantity in the product's own unit (kg for sections, nos/sqft otherwise) */
 export const stockQty = (p: Product) => p.unit === 'kg' ? p.stockPcs * p.kgPerLength : p.stockPcs

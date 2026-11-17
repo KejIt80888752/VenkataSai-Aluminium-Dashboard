@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Deterministic transaction book for FY 2026–27 ─────────────────────
    Everything below is generated from a fixed seed, so the numbers stay
    identical on every reload and reconcile across Sales, Purchases,
@@ -57,8 +58,12 @@ export interface Invoice {
 const interState = (c: Client) => c.state !== 'Karnataka'
 
 /* Product mix — sections move most, consumables ride along. */
-const HOT: Product[] = P.filter(p => ['Sliding Sections', 'Openable / Casement', 'Partition & Door'].includes(p.category))
-const REST: Product[] = P.filter(p => !HOT.includes(p))
+const HOT: Product[] = SHOW_SAMPLE
+  ? (P.filter(p => ['Sliding Sections', 'Openable / Casement', 'Partition & Door'].includes(p.category)))
+  : []
+const REST: Product[] = SHOW_SAMPLE
+  ? (P.filter(p => !HOT.includes(p)))
+  : []
 
 function buildLines(retail = false): Line[] {
   const n = retail ? iBetween(1, 2) : iBetween(1, 5)
@@ -107,7 +112,8 @@ function priceInvoice(lines: Line[], c: Client) {
 const SELLABLE = CLIENTS.filter(c => c.status !== 'Dormant')
 let invSeq = 0
 
-export const INVOICES: Invoice[] = MONTHS.flatMap(m => {
+export const INVOICES: Invoice[] = SHOW_SAMPLE
+  ? (MONTHS.flatMap(m => {
   const count = m.label === 'Aug' ? 22 : iBetween(30, 36)
   return Array.from({ length: count }, () => {
     const day    = iBetween(1, m.days)
@@ -161,7 +167,8 @@ export const INVOICES: Invoice[] = MONTHS.flatMap(m => {
       mode: client.creditDays === 0 ? pick(['Cash', 'UPI'] as const) : pick(['NEFT', 'Cheque', 'Credit', 'NEFT'] as const),
     }
   })
-}).sort((a, b) => a.date.localeCompare(b.date))
+}).sort((a, b) => a.date.localeCompare(b.date)))
+  : []
 
 /* ── Purchases ──────────────────────────────────────────────────────── */
 export interface Purchase {
@@ -180,7 +187,8 @@ export interface Purchase {
 }
 
 let poSeq = 0
-export const PURCHASES: Purchase[] = MONTHS.flatMap(m => {
+export const PURCHASES: Purchase[] = SHOW_SAMPLE
+  ? (MONTHS.flatMap(m => {
   const count = m.label === 'Aug' ? 5 : iBetween(6, 8)
   return Array.from({ length: count }, () => {
     const s       = pick(SUPPLIERS)
@@ -217,7 +225,8 @@ export const PURCHASES: Purchase[] = MONTHS.flatMap(m => {
       weightKg: Math.round(taxable / between(275, 340)),
     }
   })
-}).sort((a, b) => a.date.localeCompare(b.date))
+}).sort((a, b) => a.date.localeCompare(b.date)))
+  : []
 
 /* ── Quotations ─────────────────────────────────────────────────────── */
 export interface Quotation {
@@ -243,7 +252,8 @@ const SUBJECTS = [
 ]
 const OWNERS = ['Nageswara Rao', 'Srinivas B', 'Kavya M']
 
-export const QUOTATIONS: Quotation[] = Array.from({ length: 16 }, (_, i) => {
+export const QUOTATIONS: Quotation[] = SHOW_SAMPLE
+  ? (Array.from({ length: 16 }, (_, i) => {
   const m      = pick(MONTHS)
   const date   = iso(m.key, iBetween(1, m.days))
   const client = pick(SELLABLE)
@@ -261,7 +271,8 @@ export const QUOTATIONS: Quotation[] = Array.from({ length: 16 }, (_, i) => {
     status: (r < .34 ? 'Won' : r < .52 ? 'Under Negotiation' : r < .68 ? 'Sent' : r < .86 ? 'Lost' : 'Expired') as Quotation['status'],
     owner: pick(OWNERS),
   }
-}).sort((a, b) => b.date.localeCompare(a.date))
+}).sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 /* ── Leads (website / walk-in / referral enquiries) ──────────────────── */
 export interface Lead {
@@ -291,7 +302,8 @@ const REQS  = [
   'Shopfront glazing work','Balcony sliding doors','Full house windows — 2BHK',
 ]
 
-export const LEADS: Lead[] = Array.from({ length: 22 }, (_, i) => {
+export const LEADS: Lead[] = SHOW_SAMPLE
+  ? (Array.from({ length: 22 }, (_, i) => {
   const m = pick(MONTHS)
   const r = rnd()
   return {
@@ -317,7 +329,8 @@ export const LEADS: Lead[] = Array.from({ length: 22 }, (_, i) => {
       ...(r < .3 ? ['Site photo 1.jpg', 'Site photo 2.jpg'] : []),
     ],
   }
-}).sort((a, b) => b.date.localeCompare(a.date))
+}).sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 /* ── Stock movement ledger ──────────────────────────────────────────── */
 export interface Movement {
@@ -327,7 +340,8 @@ export interface Movement {
   ref: string; party: string
 }
 
-export const MOVEMENTS: Movement[] = Array.from({ length: 46 }, (_, i) => {
+export const MOVEMENTS: Movement[] = SHOW_SAMPLE
+  ? (Array.from({ length: 46 }, (_, i) => {
   const p = pick(P)
   const m = pick(MONTHS)
   const r = rnd()
@@ -342,7 +356,8 @@ export const MOVEMENTS: Movement[] = Array.from({ length: 46 }, (_, i) => {
     ref: type === 'Inward' ? `PB/26-27/${String(iBetween(1, 34)).padStart(3, '0')}` : `VSA/26-27/${String(iBetween(1, 95)).padStart(4, '0')}`,
     party: type === 'Inward' ? pick(SUPPLIERS).name : pick(SELLABLE).name,
   }
-}).sort((a, b) => b.date.localeCompare(a.date))
+}).sort((a, b) => b.date.localeCompare(a.date)))
+  : []
 
 /* ── Fixed operating overheads per month (₹) ────────────────────────── */
 export const OVERHEADS = {

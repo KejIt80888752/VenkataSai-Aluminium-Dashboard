@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── One item, many weights ────────────────────────────────────────────────
    The same profile does not come off the press at the same weight twice. A
    2x1 Plain may run 1.10 kg a foot on one lot and 1.25 on the next, which is
@@ -48,7 +49,8 @@ export const bandOf = (kgPerPiece: number) => {
 const BY_WEIGHT = P.filter(p => p.unit === 'kg' && p.kgPerLength > 0)
 
 let seq = 0
-export const LOTS: Lot[] = BY_WEIGHT.flatMap((p, pi) =>
+export const LOTS: Lot[] = SHOW_SAMPLE
+  ? (BY_WEIGHT.flatMap((p, pi) =>
   // Three to four lots per section, each off a different press run.
   Array.from({ length: 3 + (pi % 2) }, (_, li) => {
     seq++
@@ -82,7 +84,8 @@ export const LOTS: Lot[] = BY_WEIGHT.flatMap((p, pi) =>
       location: LOCS[(pi + li) % LOCS.length],
     }
   }),
-)
+))
+  : []
 
 export interface Pick {
   lotId: string

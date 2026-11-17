@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Where the material physically sits, and what it is doing ───────────
    Catalogue stock is what the business owns at its own premises. This file
    splits that across shop and godowns, adds what is lying at the coaters
@@ -85,7 +86,8 @@ export const soldPieces = (() => {
   return m
 })()
 
-export const LOCATION_STOCK: LocationStock[] = P.map(p => {
+export const LOCATION_STOCK: LocationStock[] = SHOW_SAMPLE
+  ? (P.map(p => {
   // Fast movers sit at the shop counter; bulk lives in the godowns.
   const shopShare = between(0.18, 0.38)
   const gd2Share = p.godown === 'Yard 2' ? between(0.35, 0.55) : between(0.08, 0.22)
@@ -110,7 +112,8 @@ export const LOCATION_STOCK: LocationStock[] = P.map(p => {
     days15: Math.ceil(avgDaily * 15),
     coverDays: avgDaily > 0 ? Math.round(p.stockPcs / avgDaily) : 999,
   }
-})
+}))
+  : []
 
 export const locTotals = (key: 'shop' | 'gd1' | 'gd2' | 'atPcu1' | 'atPcu2' | 'inTransit') =>
   LOCATION_STOCK.reduce((s, l) => s + l[key], 0)
@@ -149,9 +152,12 @@ export interface PurchaseOrder {
   followUps: number
 }
 
-const PO_POOL: Product[] = P.filter(p => p.unit === 'kg')
+const PO_POOL: Product[] = SHOW_SAMPLE
+  ? (P.filter(p => p.unit === 'kg'))
+  : []
 
-export const PURCHASE_ORDERS: PurchaseOrder[] = Array.from({ length: 11 }, (_, i) => {
+export const PURCHASE_ORDERS: PurchaseOrder[] = SHOW_SAMPLE
+  ? (Array.from({ length: 11 }, (_, i) => {
   const s = pick(SUPPLIERS)
   const day = iBetween(1, 20)
   const date = `2026-0${day > 12 ? 7 : 8}-${String(iBetween(1, 28)).padStart(2, '0')}`
@@ -191,7 +197,8 @@ export const PURCHASE_ORDERS: PurchaseOrder[] = Array.from({ length: 11 }, (_, i
     value, status,
     followUps: status === 'Overdue' ? iBetween(1, 4) : 0,
   }
-}).filter(p => p.status !== 'Closed').sort((a, b) => a.expectedDate.localeCompare(b.expectedDate))
+}).filter(p => p.status !== 'Closed').sort((a, b) => a.expectedDate.localeCompare(b.expectedDate)))
+  : []
 
 /* ── Weekly physical stock check ────────────────────────────────────── */
 export interface StockCheckRow {
@@ -209,7 +216,8 @@ export interface StockCheckRow {
   action: 'Auto-adjust from latest DC' | 'Post manual adjustment' | 'No action'
 }
 
-export const STOCK_CHECK: StockCheckRow[] = LOCATION_STOCK
+export const STOCK_CHECK: StockCheckRow[] = SHOW_SAMPLE
+  ? (LOCATION_STOCK
   .filter(() => rnd() < 0.42)
   .slice(0, 18)
   .map(l => {
@@ -230,7 +238,8 @@ export const STOCK_CHECK: StockCheckRow[] = LOCATION_STOCK
       weightDrift: drift,
       action: drift ? 'Auto-adjust from latest DC' : diffPcs !== 0 ? 'Post manual adjustment' : 'No action',
     }
-  })
+  }))
+  : []
 
 export const CHECK_SUMMARY = {
   rows: STOCK_CHECK.length,

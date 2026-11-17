@@ -24,30 +24,43 @@ export default function SupplierRecon() {
   const [supId, setSupId] = useState(ordered[0]?.supplierId ?? '')
   const [kind, setKind] = useState('All Rows')
 
-  const led = SUPPLIER_LEDGERS.find(l => l.supplierId === supId)!
-  const rows = led.rows.filter(r => kind === 'All Rows' || r.kind === kind)
+  const led = SUPPLIER_LEDGERS.find(l => l.supplierId === supId)
+  const ledRows = led?.rows ?? []
+  const rows = ledRows.filter(r => kind === 'All Rows' || r.kind === kind)
 
   /* Every disagreement, grouped — these add up to the closing difference exactly. */
   const explained = KINDS.filter(k => k !== 'Matched').map(k => ({
     kind: k,
-    count: led.rows.filter(r => r.kind === k).length,
-    effect: led.rows.filter(r => r.kind === k).reduce((s, r) => s + r.effect, 0),
+    count: ledRows.filter(r => r.kind === k).length,
+    effect: ledRows.filter(r => r.kind === k).reduce((s, r) => s + r.effect, 0),
   })).filter(e => e.count > 0)
 
-  const exportCsv = () => csvDownload(`supplier-statement-difference-${led.supplierId}.csv`, [
-    [`Statement reconciliation — ${led.supplier}`, led.gstin, FY],
+  const exportCsv = () => csvDownload(`supplier-statement-difference-${led?.supplierId ?? 'none'}.csv`, [
+    [`Statement reconciliation — ${led?.supplier ?? '—'}`, led?.gstin ?? '—', FY],
     [`${COMPANY.name} purchase register compared with the supplier's own statement`],
     [],
-    ['Their closing balance', led.theirClosing],
-    ['Our closing balance', led.ourClosing],
-    ['Difference to resolve', led.difference],
+    ['Their closing balance', led?.theirClosing ?? 0],
+    ['Our closing balance', led?.ourClosing ?? 0],
+    ['Difference to resolve', led?.difference ?? 0],
     [],
     ['Difference explained by'], ['Reason', 'Bills', 'Effect on their balance'],
     ...explained.map(e => [e.kind, e.count, e.effect]),
     [],
     ['Document', 'Date', 'Our Books', 'Their Statement', 'Difference', 'Status', 'What to do'],
-    ...led.rows.map(r => [r.billNo, r.date, r.ours, r.theirs, r.effect, r.kind, r.note]),
+    ...ledRows.map(r => [r.billNo, r.date, r.ours, r.theirs, r.effect, r.kind, r.note]),
   ])
+
+  /* Every panel below reads this one supplier's ledger, so with no supplier
+     ledgers loaded the page says so once instead of guarding each figure. */
+  if (!led) {
+    return (
+      <div>
+        <PageHead title="Supplier Statement Reconciliation"
+          sub="Their statement against our purchase register — and exactly what makes up the difference" />
+        <Empty msg="No supplier ledgers loaded yet. Once the purchase register carries your own bills, each supplier's statement can be compared against it here." />
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -71,20 +84,20 @@ export default function SupplierRecon() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-            <Stat label="They Say We Owe" value={inr(led.theirClosing)} icon={Scale} tone="violet" sub="Closing on their statement" />
-            <Stat label="Our Books Say"   value={inr(led.ourClosing)}   icon={IndianRupee} tone="brand" sub="Closing in our purchase register" />
-            <Stat label="Difference"      value={inr(Math.abs(led.difference))}
-              icon={FileWarning} tone={led.difference === 0 ? 'green' : 'red'}
-              sub={led.difference === 0 ? 'Statement agrees' : led.difference > 0 ? 'They are claiming more' : 'We have booked more'} />
-            <Stat label="Rows to Resolve" value={String(led.toResolve)} icon={Handshake} tone="sky"
-              sub={`of ${led.rows.length} documents on the statement`} />
+            <Stat label="They Say We Owe" value={inr(led?.theirClosing)} icon={Scale} tone="violet" sub="Closing on their statement" />
+            <Stat label="Our Books Say"   value={inr(led?.ourClosing)}   icon={IndianRupee} tone="brand" sub="Closing in our purchase register" />
+            <Stat label="Difference"      value={inr(Math.abs(led?.difference))}
+              icon={FileWarning} tone={led?.difference === 0 ? 'green' : 'red'}
+              sub={led?.difference === 0 ? 'Statement agrees' : led?.difference > 0 ? 'They are claiming more' : 'We have booked more'} />
+            <Stat label="Rows to Resolve" value={String(led?.toResolve)} icon={Handshake} tone="sky"
+              sub={`of ${ledRows.length} documents on the statement`} />
           </div>
 
           {explained.length > 0 && (
             <div className="card mb-5">
               <p className="section-title text-base mb-1">What Makes Up the Difference</p>
               <p className="section-sub mb-4">
-                Each reason below, added together, comes to exactly {inr(Math.abs(led.difference))} — nothing is left unexplained.
+                Each reason below, added together, comes to exactly {inr(Math.abs(led?.difference))} — nothing is left unexplained.
               </p>
               <div className="space-y-2.5">
                 {explained.map(e => {

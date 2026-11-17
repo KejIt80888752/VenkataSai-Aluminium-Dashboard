@@ -16,13 +16,18 @@ export default function RateCards() {
 
   // the trial line at the top
   const [code, setCode] = useState(RATE_CARDS[0]?.code ?? '')
-  const [client, setClient] = useState(CLIENTS[0].name)
+  const [client, setClient] = useState(CLIENTS[0]?.name ?? '')
   const [qty, setQty] = useState('120')
   const [given, setGiven] = useState('')
 
-  const cust = CLIENTS.find(c => c.name === client)!
+  /* With no customer master loaded there is nobody to price for, so the
+     page says so rather than working on an undefined customer. */
+  const cust = CLIENTS.find(c => c.name === client)
   const card = cardFor(code)
-  const applied = useMemo(() => rateFor(code, Number(qty) || 0, cust.type), [code, qty, cust.type])
+  const applied = useMemo(
+    () => (cust ? rateFor(code, Number(qty) || 0, cust.type) : null),
+    [code, qty, cust],
+  )
 
   const askedRate = Number(given) || applied?.rate || 0
   const belowFloor = applied ? askedRate < applied.floor : false
@@ -52,6 +57,10 @@ export default function RateCards() {
         <Select value={cat} onChange={setCat} options={['All Categories', ...CATEGORIES]} />
         <ExportBtn onClick={exportCsv} />
       </PageHead>
+
+      {!cust && (
+        <Empty msg="No customer master loaded yet — the quoting panel below needs one customer to price against." />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Sections Priced" value={String(RATE_CARDS.length)} icon={Tags} tone="brand" sub="Four rates each" />
@@ -115,9 +124,9 @@ export default function RateCards() {
 
               <p className="text-[11.5px] mt-3" style={{ color: 'var(--text-3)' }}>
                 {applied.because === 'customer'
-                  ? <>Given because {cust.name.split(' ').slice(0, 3).join(' ')} is a {cust.type.toLowerCase()} — the quantity on its own would only have earned {LEVEL_NAMES[applied.quantityLevel]}.</>
+                  ? <>Given because {cust?.name.split(' ').slice(0, 3).join(' ')} is a {cust?.type.toLowerCase()} — the quantity on its own would only have earned {LEVEL_NAMES[applied.quantityLevel]}.</>
                   : applied.because === 'quantity'
-                  ? <>Earned by the quantity. As a {cust.type.toLowerCase()} they would normally be on {LEVEL_NAMES[applied.customerLevel]}; {qty} {card.unit} moves the line up.</>
+                  ? <>Earned by the quantity. As a {cust?.type.toLowerCase()} they would normally be on {LEVEL_NAMES[applied.customerLevel]}; {qty} {card.unit} moves the line up.</>
                   : <>Both the customer and the quantity land on the same rate.</>}
                 {applied.next && applied.next.moreQty > 0 && (
                   <> Another <strong>{applied.next.moreQty} {card.unit}</strong> on this line would bring it to {applied.next.name} at {inr2(applied.next.rate)}.</>

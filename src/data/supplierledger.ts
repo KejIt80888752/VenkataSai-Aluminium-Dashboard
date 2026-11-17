@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Supplier's own statement against our purchase register ────────────────
    Suppliers post a statement every month and it rarely agrees with our books.
    The value is not the list of bills — it is the single number at the bottom
@@ -96,8 +97,10 @@ function build(supplierId: string): SupplierLedger {
   }
 }
 
-export const SUPPLIER_LEDGERS: SupplierLedger[] = SUPPLIERS
+export const SUPPLIER_LEDGERS: SupplierLedger[] = SHOW_SAMPLE
+  ? (SUPPLIERS
   .map(s => build(s.id))
-  .filter(l => l.rows.length > 0)
+  .filter(l => l.rows.length > 0))
+  : []
 
 export const LEDGER_ACTION = ACTION

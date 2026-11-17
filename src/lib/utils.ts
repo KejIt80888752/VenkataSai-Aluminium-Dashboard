@@ -49,3 +49,7 @@ export const gstSplit = (taxable: number, rate: number, interState: boolean) => 
     ? { cgst: 0, sgst: 0, igst: tax, total: tax }
     : { cgst: tax / 2, sgst: tax / 2, igst: 0, total: tax }
 }
+
+/** A percentage that stays a number when the base is zero, which it is
+    whenever a book is empty. Without this an empty page reads "NaN%". */
+export const pctOf = (part: number, whole: number) => whole ? (part / whole) * 100 : 0

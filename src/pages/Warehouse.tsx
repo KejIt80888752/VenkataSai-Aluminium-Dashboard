@@ -3,17 +3,17 @@ import { Warehouse as WhIcon, PackageSearch, PackagePlus, Layers, MapPin } from 
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import { BINS, GODOWNS, WAREHOUSE_SUMMARY, binsFor, pickFrom, putawayFor, type Bin } from '@/data/warehouse'
 import { P } from '@/data/catalogue'
-import { csvDownload } from '@/lib/utils'
+import { csvDownload , pctOf } from '@/lib/utils'
 
 const fillColour = (b: Bin) => {
   if (b.nos === 0) return 'var(--bg-card2)'
-  const pct = b.nos / b.capacityNos
+  const pct = b.capacityNos ? b.nos / b.capacityNos : 0
   return `color-mix(in srgb, var(--brand) ${Math.round(18 + pct * 55)}%, transparent)`
 }
 
 export default function Warehouse() {
   const [godown, setGodown] = useState<string>(GODOWNS[0].id)
-  const [code, setCode] = useState(P[0].code)
+  const [code, setCode] = useState(P[0]?.code ?? '')
   const [qty, setQty] = useState('60')
   const [hover, setHover] = useState<Bin | null>(null)
 
@@ -201,7 +201,7 @@ export default function Warehouse() {
               <td>
                 <div className="h-1.5 w-20 rounded-full overflow-hidden" style={{ background: 'var(--bg-card2)' }}>
                   <div className="h-full rounded-full"
-                    style={{ width: `${(b.nos / b.capacityNos) * 100}%`, background: 'var(--brand)' }} />
+                    style={{ width: `${pctOf(b.nos, b.capacityNos)}%`, background: 'var(--brand)' }} />
                 </div>
               </td>
             </tr>

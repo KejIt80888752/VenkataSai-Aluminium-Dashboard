@@ -51,15 +51,15 @@ const newLine = (): Line => ({
 })
 
 export default function Proforma() {
-  const [client, setClient] = useState(CLIENTS[0].name)
+  const [client, setClient] = useState(CLIENTS[0]?.name ?? '')
   const [lines, setLines] = useState<Line[]>([newLine()])
   const [open, setOpen] = useState<string | null>(lines[0]?.id ?? null)
   const [preview, setPreview] = useState(false)
 
-  const cust = CLIENTS.find(c => c.name === client)!
+  const cust = CLIENTS.find(c => c.name === client)
 
   /* Retail buyers with no GSTIN are quoted without tax unless told otherwise. */
-  const suggestedGst = cust.gstin.trim() === '' || cust.type === 'B2C Retail' ? 0 : 18
+  const suggestedGst = !cust || cust.gstin.trim() === '' || cust.type === 'B2C Retail' ? 0 : 18
 
   const totals = useMemo(() => {
     const taxable = +lines.reduce((s, l) => s + amount(l), 0).toFixed(2)
@@ -80,8 +80,8 @@ export default function Proforma() {
         sub="Each window drawn to the size quoted, with the specification ticked line by line">
         <Select value={client} onChange={v => {
           setClient(v)
-          const c = CLIENTS.find(x => x.name === v)!
-          const g = c.gstin.trim() === '' || c.type === 'B2C Retail' ? 0 : 18
+          const c = CLIENTS.find(x => x.name === v)
+          const g = !c || c.gstin.trim() === '' || c.type === 'B2C Retail' ? 0 : 18
           setLines(ls => ls.map(l => ({ ...l, gst: g })))
         }} options={CLIENTS.map(c => c.name)} className="min-w-[18rem]" />
         <button className="btn-outline" onClick={() => { const l = newLine(); setLines(ls => [...ls, l]); setOpen(l.id) }}>
@@ -102,7 +102,7 @@ export default function Proforma() {
           sub={lines.every(l => l.gst === 0) ? 'Quoted without GST' : `Including ${inr(totals.tax)} GST`} />
       </div>
 
-      {cust.gstin.trim() === '' && lines.some(l => l.gst > 0) && (
+      {cust && cust.gstin.trim() === '' && lines.some(l => l.gst > 0) && (
         <div className="card mb-5" style={{ borderColor: 'var(--amber, #f59e0b)' }}>
           <p className="text-sm" style={{ color: 'var(--text-1)' }}>
             {cust.name} has no GSTIN on file, so this would normally be quoted without tax.
@@ -256,9 +256,11 @@ export default function Proforma() {
 
           <div>
             <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>Quotation for</p>
-            <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{cust.name}</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{cust?.name ?? '—'}</p>
             <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
-              {cust.area}, {cust.state}{cust.gstin ? ` · GSTIN ${cust.gstin}` : ' · no GSTIN on file'}
+              {cust
+                ? <>{cust.area}, {cust.state}{cust.gstin ? ` · GSTIN ${cust.gstin}` : ' · no GSTIN on file'}</>
+                : 'No customer master loaded'}
             </p>
           </div>
 

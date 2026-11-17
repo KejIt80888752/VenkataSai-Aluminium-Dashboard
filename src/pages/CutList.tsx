@@ -13,7 +13,7 @@ const row = (lengthFt: number, qty: number, label: string): Need & { id: number 
   ({ id: ++seq, lengthFt, qty, label })
 
 export default function CutList() {
-  const [code, setCode] = useState(P.find(p => p.unit === 'kg')?.code ?? P[0].code)
+  const [code, setCode] = useState(P.find(p => p.unit === 'kg')?.code ?? P[0]?.code ?? '')
   const [stock, setStock] = useState('12')
   const [kerf, setKerf] = useState('3')
   const [needs, setNeeds] = useState([
@@ -23,16 +23,16 @@ export default function CutList() {
     row(5.5, 6, 'Interlock'),
   ])
 
-  const product = P.find(p => p.code === code)!
+  const product = P.find(p => p.code === code)
   const plan = useMemo(
     () => optimise(needs, Number(stock) || 12, Number(kerf) || 0),
     [needs, stock, kerf],
   )
 
   /* A foot of section has a weight and a cost, so waste can be priced. */
-  const kgPerFt = product.lengthFt > 0 ? product.kgPerLength / product.lengthFt : 0
+  const kgPerFt = product && product.lengthFt > 0 ? product.kgPerLength / product.lengthFt : 0
   const wasteKg = +(plan.offcutFt * kgPerFt).toFixed(1)
-  const wasteValue = Math.round(wasteKg * product.costPerKg)
+  const wasteValue = Math.round(wasteKg * (product?.costPerKg ?? 0))
 
   const naive = useMemo(() => {
     // Cutting in the order written, one bar at a time, as it is done by hand.
@@ -48,7 +48,7 @@ export default function CutList() {
   const saved = naive - plan.barsNeeded
 
   const exportCsv = () => csvDownload('vsa-cut-list.csv', [
-    [`Cutting plan — ${product.name}`, FY],
+    [`Cutting plan — ${(product?.name ?? '—')}`, FY],
     [], ['Stock length', stock + ' ft'], ['Blade', kerf + ' mm'],
     ['Bars needed', plan.barsNeeded], ['Waste', plan.offcutFt + ' ft'],
     [], ['Bar', 'Cuts', 'Used ft', 'Offcut ft', 'Offcut usable'],

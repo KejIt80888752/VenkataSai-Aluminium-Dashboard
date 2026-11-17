@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Who did what, and when ────────────────────────────────────────────────
    Not a debugging log. It answers the questions that come up in a shop: who
    changed that rate, who let that lorry out, who took a copy of the customer
@@ -51,7 +52,8 @@ const stamp = (daysBack: number, i: number) => {
   return d.toISOString()
 }
 
-export const AUDIT: Entry[] = Array.from({ length: 120 }, (_, i) => {
+export const AUDIT: Entry[] = SHOW_SAMPLE
+  ? (Array.from({ length: 120 }, (_, i) => {
   const p = PEOPLE[i % PEOPLE.length]
   const act = ACTS[i % ACTS.length]
   const inv = INVOICES[i % INVOICES.length]
@@ -89,7 +91,8 @@ export const AUDIT: Entry[] = Array.from({ length: 120 }, (_, i) => {
     rows: act === 'Exported' || act === 'Printed' ? 40 + (i * 17) % 900 : undefined,
     device: DEVICES[i % DEVICES.length],
   }
-}).sort((a, b) => b.at.localeCompare(a.at))
+}).sort((a, b) => b.at.localeCompare(a.at)))
+  : []
 
 export const AUDIT_SUMMARY = {
   total: AUDIT.length,

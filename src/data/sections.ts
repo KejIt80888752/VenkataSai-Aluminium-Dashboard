@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /* ── Section profile master ─────────────────────────────────────────────
    Coatable extruded profiles carry two extra properties the trading
    catalogue doesn't need: the developed surface area used to bill powder
@@ -41,7 +42,9 @@ export const profileOf = (code: string) => SECTION_PROFILES.find(s => s.code ===
 export const isCoatable = (code: string) => SECTION_PROFILES.some(s => s.code === code)
 
 /** Products that pass through the coating line. */
-export const COATABLE: Product[] = P.filter(p => isCoatable(p.code))
+export const COATABLE: Product[] = SHOW_SAMPLE
+  ? (P.filter(p => isCoatable(p.code)))
+  : []
 
 /** Developed area for a consignment: pieces × cut length × sqft per foot. */
 export const sqftFor = (code: string, pieces: number, cutLengthFt: number) =>

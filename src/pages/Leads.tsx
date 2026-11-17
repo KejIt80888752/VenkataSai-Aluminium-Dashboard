@@ -3,7 +3,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis
 import { Users, Target, IndianRupee, Globe } from 'lucide-react'
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, useChartTheme, SERIES } from '@/components/ui'
 import { LEADS, type Lead } from '@/data/txns'
-import { inr, inrShort, fmtDate, csvDownload } from '@/lib/utils'
+import { inr, inrShort, fmtDate, csvDownload , pctOf } from '@/lib/utils'
 import { COMPANY, TODAY } from '@/data/company'
 
 import { useCrud } from '@/lib/store'
@@ -84,7 +84,7 @@ export default function Leads() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Total Leads"     value={String(LEADS.length)}  icon={Users}       tone="brand"  sub="This financial year" />
-        <Stat label="Converted"       value={String(converted.length)} icon={Target}   tone="green"  sub={`${Math.round((converted.length / LEADS.length) * 100)}% conversion`} />
+        <Stat label="Converted"       value={String(converted.length)} icon={Target}   tone="green"  sub={`${Math.round(pctOf(converted.length, LEADS.length))}% conversion`} />
         <Stat label="Open Pipeline"   value={inr(pipeline)}         icon={IndianRupee} tone="violet" sub="Estimated value in play" />
         <Stat label="Digital Enquiries" value={String(web.length)}  icon={Globe}       tone="sky"    sub="Website, Google, Facebook" />
       </div>

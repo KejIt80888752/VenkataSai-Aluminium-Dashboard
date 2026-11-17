@@ -14,7 +14,7 @@ export default function SalesReports() {
     return { name: type, value: Math.round(INVOICES.filter(i => ids.has(i.clientId)).reduce((s, i) => s + i.taxable, 0)) }
   }).filter(x => x.value > 0)
 
-  const avgBill = TOTALS.revenue / INVOICES.length
+  const avgBill = INVOICES.length ? TOTALS.revenue / INVOICES.length : 0
   const kgSold  = topProducts.filter(p => p.unit === 'kg').reduce((s, p) => s + p.qty, 0)
 
   const exportCsv = () => csvDownload('vsa-sales-summary.csv', [

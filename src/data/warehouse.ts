@@ -1,3 +1,5 @@
+import { pctOf } from '@/lib/utils'
+import { SHOW_SAMPLE } from './sample'
 /* ── Knowing which rack a section is actually on ───────────────────────────
    "Godown 1" is not an address. A picker needs the aisle, the rack and the
    level, and the system needs to know how much is in each one so it can say
@@ -28,7 +30,8 @@ export const GODOWNS = [
 const HEAVY = (code: string) => (P.find(p => p.code === code)?.kgPerLength ?? 0) >= 2.5
 
 let n = 0
-export const BINS: Bin[] = GODOWNS.flatMap(g =>
+export const BINS: Bin[] = SHOW_SAMPLE
+  ? (GODOWNS.flatMap(g =>
   g.aisles.flatMap(aisle =>
     Array.from({ length: g.racks }, (_, r) =>
       Array.from({ length: g.levels }, (_, l) => {
@@ -49,7 +52,8 @@ export const BINS: Bin[] = GODOWNS.flatMap(g =>
       }),
     ).flat(),
   ),
-)
+))
+  : []
 
 export const binsFor = (code: string) => BINS.filter(b => b.code === code && b.nos > 0)
 
@@ -87,5 +91,5 @@ export const WAREHOUSE_SUMMARY = {
   used: BINS.filter(b => b.nos > 0).length,
   empty: BINS.filter(b => b.nos === 0).length,
   pieces: BINS.reduce((s, b) => s + b.nos, 0),
-  fillPct: +((BINS.reduce((s, b) => s + b.nos, 0) / BINS.reduce((s, b) => s + b.capacityNos, 0)) * 100).toFixed(0),
+  fillPct: +pctOf(BINS.reduce((s, b) => s + b.nos, 0), BINS.reduce((s, b) => s + b.capacityNos, 0)).toFixed(0),
 }

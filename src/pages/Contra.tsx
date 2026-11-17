@@ -37,7 +37,11 @@ const seedContras: Contra[] = [
   { id: 'CN3', date: '2026-08-04', from: 'CASH', to: 'KOTAK-CA', amount: 265000, note: 'Counter collection deposited' },
 ]
 
-const seedDiverted: Diverted[] = [0, 1, 2].map(i => {
+/* Built from sample invoices and bills, so there is nothing to seed once
+   sample data is switched off and the shop's own books are what is shown. */
+const seedDiverted: Diverted[] = (INVOICES.length < 7 || PURCHASES.length < 5 || !CLIENTS.length || !SUPPLIERS.length)
+  ? []
+  : [0, 1, 2].map(i => {
   const inv = INVOICES[i * 3]
   const pur = PURCHASES[i * 2]
   const client = CLIENTS.find(c => c.id === inv.clientId)!
@@ -219,8 +223,8 @@ function AddModal({ open, kind, onClose, onContra, onDiverted }: {
   const [to, setTo] = useState(ACCOUNTS[2].id as string)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
-  const [client, setClient] = useState(CLIENTS[0].name)
-  const [supplier, setSupplier] = useState(SUPPLIERS[0].name)
+  const [client, setClient] = useState(CLIENTS[0]?.name ?? '')
+  const [supplier, setSupplier] = useState(SUPPLIERS[0]?.name ?? '')
   const [invoiceNo, setInvoiceNo] = useState(INVOICES[0]?.no ?? '')
   const [billNo, setBillNo] = useState(PURCHASES[0]?.no ?? '')
 

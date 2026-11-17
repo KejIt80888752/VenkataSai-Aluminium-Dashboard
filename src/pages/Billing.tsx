@@ -3,7 +3,7 @@ import { Receipt, IndianRupee, Wallet, AlertTriangle, Eye, Printer } from 'lucid
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill } from '@/components/ui'
 import InvoiceDoc from '@/components/InvoiceDoc'
 import { INVOICES, TOTALS, MONTHS, type Invoice } from '@/data/txns'
-import { inr, fmtDate, csvDownload } from '@/lib/utils'
+import { inr, fmtDate, csvDownload , pctOf } from '@/lib/utils'
 import { FY } from '@/data/company'
 import { Link } from 'react-router-dom'
 import { Mic } from 'lucide-react'
@@ -82,7 +82,7 @@ export default function Billing() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Invoices Raised"  value={String(list.length)}  icon={Receipt}     tone="brand"  sub={FY} />
         <Stat label="Total Billed"     value={inr(TOTALS.invoiced)}     icon={IndianRupee} tone="violet" sub="Inclusive of GST" />
-        <Stat label="Collected"        value={inr(TOTALS.collected)}    icon={Wallet}      tone="green"  sub={`${Math.round((TOTALS.collected / TOTALS.invoiced) * 100)}% realised`} />
+        <Stat label="Collected"        value={inr(TOTALS.collected)}    icon={Wallet}      tone="green"  sub={`${Math.round(pctOf(TOTALS.collected, TOTALS.invoiced))}% realised`} />
         <Stat label="Overdue Bills"    value={String(overdue.length)}   icon={AlertTriangle} tone="red"  sub={inr(overdue.reduce((s, i) => s + (i.total - i.received), 0)) + ' pending'} />
       </div>
 
