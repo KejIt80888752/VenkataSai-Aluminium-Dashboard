@@ -109,19 +109,30 @@ function tally(lines: CoatLine[]) {
   return m
 }
 
-export function reconcile(): ReconRow[] {
-  const out = tally(LOADED)
-  const back = tally(RECEIVED)
+/**
+ * Sent against received.
+ *
+ * Takes the lines rather than reading the sheets directly, so a row typed
+ * into the coating book moves the pending figure the moment it is entered.
+ * Called with nothing it falls back to their paper, which is what a page
+ * showing the sheets as they arrived should see.
+ */
+export function reconcile(
+  loadedLines: CoatLine[] = LOADED,
+  receivedLines: CoatLine[] = RECEIVED,
+): ReconRow[] {
+  const out = tally(loadedLines)
+  const back = tally(receivedLines)
 
   /* The colours a thing came back in are read off the received sheet. */
-  for (const l of RECEIVED) {
+  for (const l of receivedLines) {
     const p = productById(masterIdOf(l) ?? '')
     const s = back.get(keyOf(l))
     if (s && p) for (const c of p.colours) if (c !== 'Uncoated') s.colours.add(c)
   }
 
   const names = new Map<string, { code: string; name: string }>()
-  for (const l of [...LOADED, ...RECEIVED]) {
+  for (const l of [...loadedLines, ...receivedLines]) {
     const k = keyOf(l)
     if (names.has(k)) continue
     const p = productById(masterIdOf(l) ?? '')
@@ -158,7 +169,7 @@ export interface ReconTotals {
   tbcLines: number
 }
 
-export function reconTotals(rows: ReconRow[]): ReconTotals {
+export function reconTotals(rows: ReconRow[], receivedLines: CoatLine[] = RECEIVED): ReconTotals {
   const t = rows.reduce((a, r) => ({
     sentNos: a.sentNos + r.sentNos, sentKg: +(a.sentKg + r.sentKg).toFixed(2),
     recvNos: a.recvNos + r.recvNos, recvKg: +(a.recvKg + r.recvKg).toFixed(2),
@@ -170,6 +181,6 @@ export function reconTotals(rows: ReconRow[]): ReconTotals {
     nosPct: t.sentNos > 0 ? +(((t.recvNos - t.sentNos) / t.sentNos) * 100).toFixed(1) : null,
     kgPct: t.sentKg > 0 ? +(((t.recvKg - t.sentKg) / t.sentKg) * 100).toFixed(1) : null,
     pendingLines: rows.filter(r => r.pendingNos > 0).length,
-    tbcLines: RECEIVED.filter(isTbc).length,
+    tbcLines: receivedLines.filter(isTbc).length,
   }
 }

@@ -19,6 +19,7 @@ import { PCU_OUTSTANDING, below15Days, PURCHASE_ORDERS } from '@/data/positions'
 import { AI_SUMMARY } from '@/data/aidocs'
 import { RECON_SUMMARY } from '@/data/gst2b'
 import { reconcile, reconTotals } from '@/data/coatrecon'
+import { useCoatBook } from '@/lib/coatbook-store'
 import { MASTER } from '@/data/productmaster'
 
 export default function Dashboard() {
@@ -30,7 +31,8 @@ export default function Dashboard() {
      a fault to hide behind a blank card: the material side of the same four
      sheets is full of real figures, so those are shown and the rest says
      plainly what it is waiting for. */
-  const coat = reconTotals(reconcile())
+  const book = useCoatBook()
+  const coat = reconTotals(reconcile(book.loaded, book.received), book.received)
   const priced = 0
 
   const stockTotal   = P.reduce((s, p) => s + stockValue(p), 0)

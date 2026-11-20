@@ -6,9 +6,9 @@ import {
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import { SAMPLE_DC, dcTotals, perPiece } from '@/data/despatch'
 import {
-  OPENING, LOADED, RECEIVED, colourOf, isHardware, isRubber, weighments,
-  type CoatLine,
+  colourOf, isHardware, isRubber, weighments, type CoatLine,
 } from '@/data/coatbook'
+import { useCoatBook } from '@/lib/coatbook-store'
 import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
 import { reconcile, reconTotals } from '@/data/coatrecon'
 import { CROSS_SECTIONS, CUT_LENGTHS, FINISHES, variantOf, variantCount } from '@/data/variants'
@@ -65,6 +65,11 @@ export default function DcFlow() {
   const [tab, setTab] = useState<typeof TABS[number]>('The journey')
   const [where, setWhere] = useState('All')
 
+  /* The same book the coating screen writes into, so a line entered there
+     moves these figures rather than leaving two pages disagreeing. */
+  const book = useCoatBook()
+  const OPENING = book.opening, LOADED = book.loaded, RECEIVED = book.received
+
   const purchase = dcTotals(SAMPLE_DC)
   const sent = coveredBy(LOADED)
   const back = coveredBy(RECEIVED)
@@ -78,8 +83,8 @@ export default function DcFlow() {
      Asked for on 20-11-2026: "whatever is pending at the coating, whatever
      has received at the shop". Matched on the product, because a section
      goes out as W/O and comes back as Ivory — the names never agree. */
-  const recon = useMemo(() => reconcile(), [])
-  const rt = useMemo(() => reconTotals(recon), [recon])
+  const recon = useMemo(() => reconcile(LOADED, RECEIVED), [LOADED, RECEIVED])
+  const rt = useMemo(() => reconTotals(recon, RECEIVED), [recon, RECEIVED])
   const stillOut = recon.filter(r => r.pendingNos > 0)
   const extraPcs = recon.reduce((a, r) => a + r.extraNos, 0)
 
@@ -93,7 +98,7 @@ export default function DcFlow() {
       m.set(k, e)
     }
     return [...m.entries()].map(([place, v]) => ({ place, ...v })).sort((a, b) => b.nos - a.nos)
-  }, [])
+  }, [RECEIVED])
 
   const stages = [
     {
@@ -137,7 +142,7 @@ export default function DcFlow() {
       m.set(c, (m.get(c) ?? 0) + l.nos)
     }
     return [...m.entries()].map(([colour, nos]) => ({ colour, nos })).sort((a, b) => b.nos - a.nos)
-  }, [])
+  }, [OPENING, LOADED, RECEIVED])
 
   const sheet = tab === 'Sent to the coater' ? LOADED : tab === 'Back in colour' ? RECEIVED : []
   const places = useMemo(

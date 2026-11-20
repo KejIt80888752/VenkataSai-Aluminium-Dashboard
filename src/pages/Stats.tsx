@@ -4,7 +4,8 @@ import {
   Palette, TriangleAlert, Info,
 } from 'lucide-react'
 import { PageHead, Stat, ExportBtn, TableCard } from '@/components/ui'
-import { OPENING, LOADED, RECEIVED, isHardware, isRubber, colourOf } from '@/data/coatbook'
+import { isHardware, isRubber, colourOf } from '@/data/coatbook'
+import { useCoatBook } from '@/lib/coatbook-store'
 import { reconcile, reconTotals } from '@/data/coatrecon'
 import { MASTER } from '@/data/productmaster'
 import { SAMPLE_DC } from '@/data/despatch'
@@ -30,8 +31,11 @@ const sum = (ls: { nos: number; kg: number | null }[], f: 'nos' | 'kg') =>
   +ls.reduce((s, l) => s + (f === 'nos' ? l.nos : (l.kg ?? 0)), 0).toFixed(2)
 
 export default function Stats() {
-  const recon = useMemo(() => reconcile(), [])
-  const rt = useMemo(() => reconTotals(recon), [recon])
+  const book = useCoatBook()
+  const OPENING = book.opening, LOADED = book.loaded, RECEIVED = book.received
+
+  const recon = useMemo(() => reconcile(LOADED, RECEIVED), [LOADED, RECEIVED])
+  const rt = useMemo(() => reconTotals(recon, RECEIVED), [recon, RECEIVED])
 
   const openNos = sum(OPENING, 'nos'), openKg = sum(OPENING, 'kg')
   const gainKg = +(rt.recvKg - rt.sentKg).toFixed(2)
@@ -47,7 +51,7 @@ export default function Stats() {
       m.set(c, e)
     }
     return [...m.entries()].map(([colour, v]) => ({ colour, ...v })).sort((a, b) => b.nos - a.nos)
-  }, [])
+  }, [RECEIVED])
 
   const sections = MASTER.filter(p => p.kind === 'section')
   const hardware = MASTER.filter(p => p.kind !== 'section')

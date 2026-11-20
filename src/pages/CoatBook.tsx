@@ -1,16 +1,20 @@
 import { useState, useMemo } from 'react'
 import {
   Palette, PackageCheck, TriangleAlert, CircleCheck, Scale, Boxes, HelpCircle, Link2, Clock,
-  ArrowLeftRight, Warehouse,
+  ArrowLeftRight, Warehouse, Plus, Trash2, PencilLine, Undo2,
 } from 'lucide-react'
-import { PageHead, Stat, ExportBtn, TableCard, Empty } from '@/components/ui'
+import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import {
-  OPENING, LOADED, RECEIVED, WRITTEN, TBC_PARTS, TBC_MULTIPLIER,
+  WRITTEN, TBC_PARTS, TBC_MULTIPLIER,
   colourOf, sectionOf, isHardware, isRubber, isTbc, weighments,
   type CoatLine,
 } from '@/data/coatbook'
+import {
+  useCoatBook, placesOn, newLine, composeName, composeCode,
+  COLOUR_OPTIONS, SHEET_META, type BookLine, type SheetId,
+} from '@/lib/coatbook-store'
 import { reconcile, reconTotals } from '@/data/coatrecon'
-import { PICK_OPTIONS } from '@/data/productmaster'
+import { PICK_OPTIONS, productById } from '@/data/productmaster'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 import { useAliases } from '@/lib/useAliases'
 import { SectionPicker } from '@/components/SectionPicker'
@@ -32,7 +36,7 @@ import { sectionName } from '@/data/catalogue'
    "Whenever I open it I should be able to see the lines rather than all these
    data." — the sheet comes first. The workings sit underneath it.         */
 
-const SHEETS = ['Opening 01-09', 'Loaded out 16/17-09', 'Received back 21-09'] as const
+
 
 const COLOUR_DOT: Record<string, string> = {
   'Uncoated': '#9AA5B1', 'Ivory': '#E8DCC0', 'White': '#F2F2F0', 'Black': '#2B2B2B',
@@ -41,14 +45,22 @@ const COLOUR_DOT: Record<string, string> = {
 }
 
 const sum = (ls: CoatLine[], f: (l: CoatLine) => number) => +ls.reduce((s, l) => s + f(l), 0).toFixed(2)
+const per = (kg: number | null, nos: number) =>
+  kg !== null && nos > 0 ? +(kg / nos).toFixed(3) : null
 
 const pct = (n: number | null) => n === null ? '—' : `${n > 0 ? '+' : ''}${n}%`
 const pctTone = (n: number | null) =>
   n === null ? 'var(--text-4)' : Math.abs(n) <= 8 ? 'var(--green)' : 'var(--amber, #f59e0b)'
 
 export default function CoatBook() {
-  const [sheet, setSheet] = useState<typeof SHEETS[number]>('Received back 21-09')
+  const [sheetId, setSheetId] = useState<SheetId>('received')
   const [where, setWhere] = useState('All')
+  const [entering, setEntering] = useState(false)
+
+  const book = useCoatBook()
+  const meta = SHEET_META.find(m => m.id === sheetId)!
+  const sheet = meta.label
+  const OPENING = book.opening, LOADED = book.loaded, RECEIVED = book.received
 
   const { map: aliasMap, ours: ourSectionFor, teach } = useAliases('coatbook')
 
@@ -59,20 +71,18 @@ export default function CoatBook() {
       if (!m.has(l.code)) m.set(l.code, l.name)
     }
     return [...m.entries()].map(([code, name]) => ({ code, name })).sort((a, b) => a.code.localeCompare(b.code))
-  }, [])
+  }, [OPENING, LOADED, RECEIVED])
 
   const unmapped = codes.filter(c => !ourSectionFor(c.code))
   const joined = useMemo(() => joinedSections(aliasMap), [aliasMap])
 
-  const lines = sheet.startsWith('Opening') ? OPENING : sheet.startsWith('Loaded') ? LOADED : RECEIVED
-  const isReceived = sheet.startsWith('Received')
+  const lines = book.of(sheetId)
+  const isReceived = sheetId === 'received'
 
-  /* The godown, or the route, picked once above the table. */
-  const places = useMemo(
-    () => ['All', ...new Set(lines.map(l => l.at ?? l.route ?? '—'))],
-    [lines],
-  )
-  const shown = lines.filter(l => where === 'All' || (l.at ?? l.route) === where)
+  /* The godown, or the route, picked once above the table and carried by
+     every line entered under it. */
+  const places = useMemo(() => ['All', ...placesOn(lines)], [lines])
+  const shown = lines.filter(l => where === 'All' || l.place === where)
 
   const totals = {
     nos: sum(shown, l => l.nos),
@@ -81,8 +91,8 @@ export default function CoatBook() {
   }
 
   /* ── Sent against received ──────────────────────────────────────────── */
-  const recon = useMemo(() => reconcile(), [])
-  const rt = useMemo(() => reconTotals(recon), [recon])
+  const recon = useMemo(() => reconcile(LOADED, RECEIVED), [LOADED, RECEIVED])
+  const rt = useMemo(() => reconTotals(recon, RECEIVED), [recon, RECEIVED])
   const pending = recon.filter(r => r.pendingNos > 0)
   const extra = recon.filter(r => r.extraNos > 0)
 
@@ -105,7 +115,7 @@ export default function CoatBook() {
       }))
       .filter(s => s.colours.length > 1)
       .sort((a, b) => b.colours.length - a.colours.length || b.nos - a.nos)
-  }, [])
+  }, [OPENING, LOADED, RECEIVED])
 
   /* ── Held against the rules the shop gave us on 11-11 ───────────────── */
   const checks = useMemo(() => {
@@ -159,7 +169,34 @@ export default function CoatBook() {
     })
 
     return out
-  }, [])
+  }, [OPENING, LOADED, RECEIVED])
+
+  /* ── Entering a line ──────────────────────────────────────────────────
+     Weight and weight per piece hold each other up the same way they do on
+     the purchase sheet, and the name is composed from the product and the
+     shade rather than typed, so the two books cannot drift apart again. */
+  const rename = (l: BookLine, productId: string, colour: string) => ({
+    productId, colour,
+    name: composeName(productId, colour) || l.name,
+    code: composeCode(productId, colour) || l.code,
+  })
+
+  const pickProduct = (l: BookLine, productId: string) => {
+    const p = productById(productId)
+    const kg = p?.kgPerPiece != null && l.nos > 0 ? +(p.kgPerPiece * l.nos).toFixed(3) : l.kg
+    book.update(l.id, { ...rename(l, productId, l.colour), kg })
+  }
+
+  const setColour = (l: BookLine, colour: string) =>
+    book.update(l.id, rename(l, l.productId, colour))
+
+  const setNos = (l: BookLine, nos: number) => {
+    const p = productById(l.productId)
+    book.update(l.id, {
+      nos,
+      kg: p?.kgPerPiece != null ? +(p.kgPerPiece * nos).toFixed(3) : l.kg,
+    })
+  }
 
   const exportCsv = () => csvDownload('vsa-coating-book.csv', [
     [`Coating book — ${sheet}`, where === 'All' ? 'all places' : where],
@@ -197,14 +234,18 @@ export default function CoatBook() {
         <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
           <div>
             <p className="section-title text-base">{sheet}</p>
-            <p className="section-sub">Your columns, your order — code, product name, qty, weight</p>
+            <p className="section-sub">
+              {entering
+                ? 'Pick the product and the shade — the name writes itself the way you write it'
+                : 'Your columns, your order — code, product name, qty, weight'}
+            </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {SHEETS.map(s => (
-              <button key={s} onClick={() => { setSheet(s); setWhere('All') }}
+            {SHEET_META.map(m => (
+              <button key={m.id} onClick={() => { setSheetId(m.id); setWhere('All') }}
                 className={cn('px-2.5 py-1 rounded-lg text-[11.5px] font-medium transition-colors',
-                  s === sheet ? 'text-white' : 'btn-ghost')}
-                style={s === sheet ? { background: 'var(--brand)' } : undefined}>{s}</button>
+                  m.id === sheetId ? 'text-white' : 'btn-ghost')}
+                style={m.id === sheetId ? { background: 'var(--brand)' } : undefined}>{m.label}</button>
             ))}
           </div>
         </div>
@@ -223,59 +264,166 @@ export default function CoatBook() {
               {p === 'All' ? 'All' : p}
             </button>
           ))}
-          <span className="text-[10.5px] ml-auto" style={{ color: 'var(--text-4)' }}>
-            Picked once here, carried by every line below — not asked for again on each row
+          <span className="flex items-center gap-2 ml-auto">
+            {book.changes > 0 && (
+              <button className="btn-ghost !py-1 !text-[11px]" onClick={book.restore}
+                title="Put every sheet back to the figures read off your workbook">
+                <Undo2 size={12} /> {book.changes} {book.changes === 1 ? 'change' : 'changes'} — undo all
+              </button>
+            )}
+            <button className="btn-ghost !py-1 !text-[11px]" onClick={() => setEntering(e => !e)}>
+              <PencilLine size={12} /> {entering ? 'Done entering' : 'Enter lines'}
+            </button>
           </span>
         </div>
+
+        {entering && (
+          <p className="text-[11px] mb-2.5 flex items-start gap-1.5" style={{ color: 'var(--text-4)' }}>
+            <Warehouse size={11} className="mt-0.5 shrink-0" />
+            {where === 'All'
+              ? 'Pick a godown above before adding a line — whatever is picked there is carried by every line you add, so it is never asked for again on the row.'
+              : `New lines go to ${where}. Change the tab above to put them somewhere else. Leave a weight blank where the row was put on the scale with the one above it.`}
+          </p>
+        )}
 
         <div className="overflow-auto -mx-1 px-1" style={{ maxHeight: '30rem' }}>
           <table className="w-full">
             <thead>
-              <tr><th>Code</th><th>Product Name</th><th className="num">Qty (nos)</th>
-                <th className="num">Weight (kgs)</th><th className="num">Kg / Piece</th><th>Colour</th></tr>
+              <tr><th>Code</th><th>Product Name</th>
+                {entering && <th>Shade</th>}
+                <th className="num">Qty (nos)</th>
+                <th className="num">Weight (kgs)</th><th className="num">Kg / Piece</th>
+                {entering ? <th>Internal</th> : <th>Colour</th>}
+                {entering && <th />}</tr>
             </thead>
             <tbody>
-              {shown.map((l, i) => {
+              {shown.map(l => {
                 const colour = colourOf(l)
-                const p = l.kg && l.nos ? +(l.kg / l.nos).toFixed(3) : null
+                const pk = per(l.kg, l.nos)
+                const typed = book.isNew(l.id)
+                const changed = book.isEdited(l.id)
                 return (
-                  <tr key={i}>
-                    <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{l.code ?? '—'}</td>
-                    <td className="text-xs max-w-[18rem] truncate" title={l.name}>{l.name}</td>
-                    <td className="num tabular-nums font-medium" style={{ color: 'var(--text-1)' }}>{l.nos}</td>
-                    <td className="num tabular-nums text-xs"
-                      style={{ color: l.kg === null && !isHardware(l) && !isRubber(l) ? 'var(--text-4)' : undefined }}
-                      title={l.kg === null && !isHardware(l) && !isRubber(l)
-                        ? 'Weighed together with the row above it' : undefined}>
-                      {l.kg !== null ? l.kg : isHardware(l) ? '—' : isRubber(l) ? l.unit : 'weighed above'}
+                  <tr key={l.id}>
+                    <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>
+                      {(typed || changed) && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle"
+                          title={typed ? 'typed here' : 'changed from what your sheet says'}
+                          style={{ background: typed ? 'var(--green)' : 'var(--amber)' }} />
+                      )}
+                      {l.code ?? '—'}
                     </td>
-                    <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{p ?? '—'}</td>
-                    <td>
-                      <span className="flex items-center gap-1.5 text-xs whitespace-nowrap">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ background: COLOUR_DOT[colour] ?? '#C7D0DA', border: '1px solid var(--border-2)' }} />
-                        {colour}
-                      </span>
+
+                    {entering ? (
+                      <td className="min-w-[13rem]">
+                        {/* Selection only — the name is never typed over. */}
+                        <SectionPicker options={PICK_OPTIONS} value={l.productId}
+                          onChange={id => pickProduct(l, id)} />
+                        {!l.productId && l.name && (
+                          <p className="text-[10.5px] mt-1 font-mono" style={{ color: 'var(--text-4)' }}>
+                            on your sheet: {l.name}
+                          </p>
+                        )}
+                      </td>
+                    ) : (
+                      <td className="text-xs max-w-[18rem] truncate" title={l.name}>{l.name || '—'}</td>
+                    )}
+
+                    {entering && (
+                      <td>
+                        <Select value={l.colour || 'W/O'} onChange={v => setColour(l, v)}
+                          options={COLOUR_OPTIONS.map(c => c.key)} className="!w-24 !py-1 !text-xs !min-w-0" />
+                      </td>
+                    )}
+
+                    <td className="num">
+                      {entering ? (
+                        <input className="input !w-20 !py-1 text-right tabular-nums !text-xs" value={l.nos}
+                          onChange={e => setNos(l, Number(e.target.value) || 0)} />
+                      ) : (
+                        <span className="tabular-nums font-medium" style={{ color: 'var(--text-1)' }}>{l.nos}</span>
+                      )}
                     </td>
+
+                    <td className="num">
+                      {entering ? (
+                        <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                          value={l.kg ?? ''} placeholder="weighed above"
+                          title="Leave it blank where this row went on the scale with the one above it"
+                          onChange={e => book.update(l.id,
+                            { kg: e.target.value === '' ? null : Number(e.target.value) })} />
+                      ) : (
+                        <span className="tabular-nums text-xs"
+                          style={{ color: l.kg === null && !isHardware(l) && !isRubber(l) ? 'var(--text-4)' : undefined }}
+                          title={l.kg === null && !isHardware(l) && !isRubber(l)
+                            ? 'Weighed together with the row above it' : undefined}>
+                          {l.kg !== null ? l.kg : isHardware(l) ? '—' : isRubber(l) ? l.unit : 'weighed above'}
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{pk ?? '—'}</td>
+
+                    {entering ? (
+                      <td>
+                        <input className="input !w-24 !py-1 !text-xs" value={l.internal ?? ''} placeholder="—"
+                          onChange={e => book.update(l.id,
+                            { internal: e.target.value === '' ? null : e.target.value })} />
+                      </td>
+                    ) : (
+                      <td>
+                        <span className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ background: COLOUR_DOT[colour] ?? '#C7D0DA', border: '1px solid var(--border-2)' }} />
+                          {colour}
+                        </span>
+                      </td>
+                    )}
+
+                    {entering && (
+                      <td>
+                        <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
+                          title="Take this line off the sheet"
+                          onClick={() => book.remove(l.id)}><Trash2 size={13} /></button>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
-              {shown.length === 0 && <tr><td colSpan={6}><Empty msg="Nothing on this sheet" /></td></tr>}
+              {shown.length === 0 && (
+                <tr><td colSpan={entering ? 8 : 6}>
+                  <Empty msg={where === 'All' ? 'Nothing on this sheet' : `Nothing at ${where} yet`} />
+                </td></tr>
+              )}
             </tbody>
             {shown.length > 0 && (
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border-2)' }}>
-                  <td colSpan={2} className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>
+                  <td colSpan={entering ? 3 : 2} className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>
                     Total — {where === 'All' ? 'all places' : where}
                   </td>
                   <td className="num tabular-nums font-bold" style={{ color: 'var(--brand)' }}>{totals.nos}</td>
                   <td className="num tabular-nums font-bold" style={{ color: 'var(--brand)' }}>{totals.kg}</td>
-                  <td colSpan={2} />
+                  <td colSpan={entering ? 3 : 2} />
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
+
+        {entering && (
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3 mt-1"
+            style={{ borderTop: '1px solid var(--border-2)' }}>
+            <button className="btn-outline" disabled={where === 'All'}
+              style={where === 'All' ? { opacity: .45, cursor: 'not-allowed' } : undefined}
+              onClick={() => book.add(newLine(sheetId, where, meta.date))}>
+              <Plus size={14} /> Add a line{where === 'All' ? '' : ` at ${where}`}
+            </button>
+            <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+              A green dot is a line typed here; amber is one changed from what your sheet says. Nothing
+              overwrites your workbook — undo all puts every figure back.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── What has not come back ────────────────────────────────────── */}
