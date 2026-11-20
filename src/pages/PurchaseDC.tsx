@@ -75,6 +75,8 @@ interface Row {
   kg: number | null
   /** the length on this line, which a cross section needs to be weighed at */
   lengthFt: number
+  /** what the paper said, where the shop has since corrected the length */
+  writtenLengthFt?: string
   internal: string
 }
 
@@ -157,6 +159,7 @@ const febSheet = (): Sheet => ({
     weightRange: l.weightRange,
     kg: l.netWeightKg,
     lengthFt: parseFloat(l.lengthFt) || 0,
+    writtenLengthFt: l.writtenLengthFt,
     internal: '',
   })),
 })
@@ -491,6 +494,14 @@ export default function PurchaseDC() {
                       {!p && r.written && (
                         <p className="text-[10.5px] mt-1 font-mono" style={{ color: 'var(--text-4)' }}
                           title="What the supplier wrote on the paper">on the paper: {r.written}</p>
+                      )}
+                      {/* A length the shop has corrected shows both figures,
+                          so the paper can still be read against the screen. */}
+                      {r.writtenLengthFt && (
+                        <p className="text-[10.5px] mt-1" style={{ color: 'var(--amber)' }}
+                          title="You corrected this on 20-11-2026 — the weight agrees with the shorter length">
+                          paper says {r.writtenLengthFt}, read as {r.lengthFt}′
+                        </p>
                       )}
                     </td>
                     <td className="num">

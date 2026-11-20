@@ -16,6 +16,10 @@ export interface DcLine {
   netWeightKg: number
   lengthFt: string         // written with the foot mark, as on the sheet
   pieces: number
+  /** what the paper says, where the shop has since corrected the length */
+  writtenLengthFt?: string
+  /** the day they corrected it, so the change can be traced to a decision */
+  correctedOn?: string
 }
 
 export interface PurchaseDc {
@@ -41,7 +45,15 @@ export const SAMPLE_DC: PurchaseDc = {
     { slNo: 2,  particulars: 'SP',          weightRange: null,  netWeightKg: 46.080, lengthFt: "11'", pieces: 24  },
     { slNo: 3,  particulars: 'CUPC',        weightRange: null,  netWeightKg: 63.600, lengthFt: "12'", pieces: 280 },
     { slNo: 4,  particulars: 'DIV',         weightRange: null,  netWeightKg: 36.960, lengthFt: "7'",  pieces: 30  },
-    { slNo: 5,  particulars: 'DIV',         weightRange: null,  netWeightKg: 28.880, lengthFt: "11'", pieces: 23  },
+    /* The paper reads 11' against this line. The shop settled it on
+       20-11-2026 — "DV is 7 feet only, not 11 feet" — and their own figures
+       agree: 1.256 kg a piece is 8.5% under a seven-foot DV and 41.8% under
+       an eleven-foot one, where every other line on this sheet sits between
+       8 and 12% under. Corrected to 7', with what the paper says kept beside
+       it rather than quietly replaced. The weight is untouched, so neither
+       the line total nor the 5.500 kg the sheet is out by moves. */
+    { slNo: 5,  particulars: 'DIV',         weightRange: null,  netWeightKg: 28.880, lengthFt: "7'",  pieces: 23,
+      writtenLengthFt: "11'", correctedOn: '2026-11-20' },
     { slNo: 6,  particulars: 'DIV',         weightRange: null,  netWeightKg: 41.040, lengthFt: "8'",  pieces: 30  },
     { slNo: 7,  particulars: 'SP',          weightRange: null,  netWeightKg: 43.640, lengthFt: "15'", pieces: 18  },
     { slNo: 8,  particulars: 'DP',          weightRange: null,  netWeightKg: 45.340, lengthFt: "15'", pieces: 18  },
