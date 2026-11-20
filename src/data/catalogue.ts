@@ -1,4 +1,5 @@
 import { SHOW_SAMPLE } from './sample'
+import { MASTER, type MasterProduct } from './productmaster'
 /* ── Product catalogue: extruded aluminium sections, sheets, glass, hardware ── */
 
 export type Finish =
@@ -45,7 +46,7 @@ export const CATEGORIES = [
 ] as const
 
 /** For section items the sale unit is kg; pcs → kg via kgPerLength. */
-export const P: Product[] = SHOW_SAMPLE
+const SAMPLE_P: Product[] = SHOW_SAMPLE
   ? ([
   // ── Sliding Sections ────────────────────────────────────────────────
   { id:'P01', code:'VSA-SL-2T-OF', name:'2 Track Sliding Outer Frame',      category:'Sliding Sections',      series:'2 Track',   brand:'Jindal',   finish:'Mill Finish',          lengthFt:12, kgPerLength:3.42, unit:'kg', ratePerKg:286, costPerKg:239, hsn:'7604', gst:18, stockPcs:184, reorderPcs:60, rack:'A-01', godown:'Main Godown', active:true },
@@ -98,6 +99,71 @@ export const P: Product[] = SHOW_SAMPLE
   { id:'P32', code:'VSA-CN-SCRW',  name:'SS Self-Tapping Screw (100 nos)',  category:'Consumables',           series:'Fastener',   brand:'Generic',  finish:'N/A',                 lengthFt:0,  kgPerLength:1,    unit:'nos', ratePerKg:185, costPerKg:131, hsn:'7318', gst:18, stockPcs:148, reorderPcs:60, rack:'I-03', godown:'Main Godown', active:true },
 ])
   : []
+
+/* ── The catalogue, when the invented one is switched off ──────────────────
+   With the demo data gone, every screen that reaches for a product list found
+   nothing — which is what the shop ran into when they typed "W/o clips" into
+   a section box and asked, fairly, why the box was there at all.
+
+   So the catalogue falls back to the master derived from their own coating
+   sheets. Those sheets say what a product is called, what its code is and —
+   through the weighments — what a piece of it weighs. They say nothing at all
+   about money, so cost and selling price come through as nought rather than
+   as a guess, and the screens that show money say what they are waiting for.
+
+   One code can carry two lengths: 20034 is both 16' SG and 15' SG, and their
+   own Excel repeats the code on two rows for that reason. Code alone would
+   therefore be an ambiguous key, so where a code is shared the length and
+   groove already written in the name are carried into it — "20034 16'SG" —
+   which is still their code and still reads like their paper.             */
+
+const sharedCodes = new Set(
+  MASTER.map(p => p.code).filter((c, i, a) => c && a.indexOf(c) !== i),
+)
+
+const catalogueCode = (p: MasterProduct) =>
+  p.code
+    ? sharedCodes.has(p.code)
+      ? `${p.code} ${p.lengthFt}'${p.groove}`.trim()
+      : p.code
+    : p.name.toUpperCase().replace(/\s+/g, '-')
+
+const categoryOf = (p: MasterProduct): string =>
+  p.kind === 'rubber' ? 'Consumables'
+  : p.kind === 'hardware' ? 'Hardware & Accessories'
+  : 'Sliding Sections'
+
+const fromMaster = (p: MasterProduct): Product => ({
+  id: p.id,
+  code: catalogueCode(p),
+  name: p.name,
+  category: categoryOf(p),
+  series: p.groove || '—',
+  brand: '—',
+  finish: 'Mill Finish',
+  lengthFt: p.lengthFt,
+  /* A piece's weight, where their own weighments gave one. */
+  kgPerLength: p.kgPerPiece ?? 1,
+  unit: p.kgPerPiece !== null ? 'kg' : 'nos',
+  /* Not known. The product list with prices has not reached us yet, and a
+     made-up rate here would travel into every quotation and every valuation. */
+  ratePerKg: 0,
+  costPerKg: 0,
+  hsn: p.kind === 'section' ? '7604' : p.kind === 'rubber' ? '4016' : '8302',
+  gst: 18,
+  /* Physical stock has not been given either, so nothing is claimed. */
+  stockPcs: 0,
+  reorderPcs: 0,
+  rack: '—',
+  godown: 'Main Godown',
+  active: true,
+})
+
+export const P: Product[] = SHOW_SAMPLE ? SAMPLE_P : MASTER.map(fromMaster)
+
+/** True while the catalogue carries no prices — the screens say so instead of
+    showing a rupee figure nobody can stand behind. */
+export const PRICES_KNOWN = P.some(p => p.ratePerKg > 0)
 
 /** Saleable quantity in the product's own unit (kg for sections, nos/sqft otherwise) */
 export const stockQty = (p: Product) => p.unit === 'kg' ? p.stockPcs * p.kgPerLength : p.stockPcs

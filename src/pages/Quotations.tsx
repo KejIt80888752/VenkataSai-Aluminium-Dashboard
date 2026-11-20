@@ -137,6 +137,9 @@ export default function Quotations() {
       clientName: x.clientName, subject: x.subject, owner: x.owner,
       lines: (toBuilt(x).lines ?? []),
       taxable: x.taxable, tax: x.tax, total: x.total,
+      /* A quotation carries no place of supply, so the proforma opens on the
+         shop's own state and is changed there if the customer is outside it. */
+      interState: false,
     }, 'Proforma Invoice'))
     setKind('Proforma Invoice')
   }

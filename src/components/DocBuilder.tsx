@@ -42,6 +42,7 @@ export interface BuiltLine {
 export interface BuiltDoc {
   no: string
   date: string
+  /** the day it lapses on a quotation, the day it falls due on an invoice */
   validTill: string
   clientName: string
   subject: string
@@ -50,7 +51,11 @@ export interface BuiltDoc {
   taxable: number
   tax: number
   total: number
+  /** true where the customer is outside Karnataka, so the tax is IGST */
+  interState: boolean
 }
+
+export type DocKind = 'Quotation' | 'Proforma Invoice' | 'Tax Invoice'
 
 export const amountOf = (l: BuiltLine) =>
   +((l.basis === 'kg' ? l.kg : l.nos) * l.rate).toFixed(2)
@@ -72,7 +77,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   open: boolean
   onClose: () => void
   onSave: (doc: BuiltDoc) => void
-  kind: 'Quotation' | 'Proforma Invoice'
+  kind: DocKind
   /** the number this document will carry — issued by the caller, never typed */
   docNo: string
   /** the document being revised or copied, where there is one */
@@ -83,7 +88,12 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [days, setDays] = useState(DEFAULT_VALID_DAYS)
   const [clientName, setClientName] = useState('')
   const [subject, setSubject] = useState('')
+  const [interState, setInterState] = useState(false)
   const [lines, setLines] = useState<BuiltLine[]>([blankLine()])
+
+  /* An invoice is the same document with the dates read differently: validity
+     becomes credit, and the day it lapses becomes the day it falls due. */
+  const isInvoice = kind === 'Tax Invoice'
 
   /* Opening the form resets it to today and to whatever is being revised. */
   useEffect(() => {
@@ -92,6 +102,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setDays(DEFAULT_VALID_DAYS)
     setClientName(initial?.clientName ?? '')
     setSubject(initial?.subject ?? '')
+    setInterState(initial?.interState ?? false)
     setLines(initial?.lines?.length
       ? initial.lines.map(l => ({ ...l, key: Math.random().toString(36).slice(2) }))
       : [blankLine()])
@@ -130,7 +141,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     onSave({
       no: docNo, date, validTill: validTill(date, days),
       clientName: clientName.trim(), subject: subject.trim(), owner,
-      lines: keep, ...totalsOf(keep),
+      lines: keep, interState, ...totalsOf(keep),
     })
     onClose()
   }
@@ -157,10 +168,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             <input className="input w-full" value={date} readOnly
               title="Today. A revision carries the day it was revised."
               style={{ color: 'var(--text-3)' }} /></div>
-          <div><label className="label">Valid for</label>
+          <div><label className="label">{isInvoice ? 'Credit' : 'Valid for'}</label>
             <Select value={`${days} days`} onChange={v => setDays(parseInt(v, 10))}
-              options={['3 days', '7 days', '15 days', '30 days']} className="!w-full" /></div>
-          <div><label className="label">Valid till</label>
+              options={isInvoice
+                ? ['0 days', '7 days', '15 days', '21 days', '30 days', '45 days', '60 days']
+                : ['1 day', '2 days', '3 days', '7 days', '15 days', '30 days']}
+              className="!w-full" /></div>
+          <div><label className="label">{isInvoice ? 'Due on' : 'Valid till'}</label>
             <input className="input w-full" value={validTill(date, days)} readOnly
               style={{ color: 'var(--text-3)' }} /></div>
         </div>
@@ -173,9 +187,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               {CLIENTS.map(c => <option key={c.id} value={c.name} />)}
             </datalist>
           </div>
-          <div className="lg:col-span-2"><label className="label">Subject</label>
+          <div><label className="label">{isInvoice ? 'Site / reference' : 'Subject'}</label>
             <input className="input w-full" value={subject} placeholder="What it is for"
               onChange={e => setSubject(e.target.value)} /></div>
+          <div><label className="label">Place of supply</label>
+            <Select value={interState ? 'Outside Karnataka — IGST' : 'Karnataka — CGST + SGST'}
+              onChange={v => setInterState(v.startsWith('Outside'))}
+              options={['Karnataka — CGST + SGST', 'Outside Karnataka — IGST']} className="!w-full" /></div>
         </div>
 
         <div>
@@ -230,8 +248,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               <tbody>
                 <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>Taxable</td>
                   <td className="text-right tabular-nums">{inr2(t.taxable)}</td></tr>
-                <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>GST</td>
-                  <td className="text-right tabular-nums">{inr2(t.tax)}</td></tr>
+                {interState ? (
+                  <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>IGST</td>
+                    <td className="text-right tabular-nums">{inr2(t.tax)}</td></tr>
+                ) : (
+                  <>
+                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>CGST</td>
+                      <td className="text-right tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td></tr>
+                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>SGST</td>
+                      <td className="text-right tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td></tr>
+                  </>
+                )}
                 <tr className="font-bold" style={{ color: 'var(--text-1)' }}>
                   <td className="pr-8 py-0.5 border-t" style={{ borderColor: 'var(--border-2)' }}>Total</td>
                   <td className="text-right tabular-nums border-t" style={{ borderColor: 'var(--border-2)' }}>
@@ -249,7 +276,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn" disabled={!ready} onClick={save}
             style={ready ? undefined : { opacity: .45, cursor: 'not-allowed' }}>
-            {rev ? `Save revision ${rev}` : `Issue ${kind.toLowerCase()}`}
+            {rev ? `Save revision ${rev}` : `Raise ${kind.toLowerCase()}`}
           </button>
         </div>
       </div>

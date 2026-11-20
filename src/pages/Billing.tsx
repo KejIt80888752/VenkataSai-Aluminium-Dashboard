@@ -9,9 +9,55 @@ import { Link } from 'react-router-dom'
 import { Mic } from 'lucide-react'
 import { useCrud } from '@/lib/store'
 import { RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
+import DocBuilder, { type BuiltDoc, amountOf } from '@/components/DocBuilder'
+import { nextDocNo } from '@/lib/docnos'
+import { COMPANY } from '@/data/company'
+import { Plus } from 'lucide-react'
 
-/* A bill's lines are built on the Quick Bill screen; what the office corrects
-   afterwards is the header — dates, PO, the note, and what has been received. */
+/* ── Raising a bill ────────────────────────────────────────────────────────
+   The shop looked at this screen on 20-11-2026 and said the same thing they
+   had said about quotations: "even the basic things are not there." They were
+   right. A bill could be added only by typing a number, a date and a figure,
+   with nowhere at all to put the material — so a total could be billed that no
+   line of stock supported.
+
+   New Bill still goes to the Quick Bill counter screen, which is the right
+   place when somebody is standing at the counter. This is the other way in:
+   the office raising a bill against material, with the number issued from the
+   series, the tax split by place of supply and the total coming off the lines.
+
+   What the office corrects afterwards is still the header — dates, PO, the
+   note, and what has been received.                                        */
+
+const INV_PREFIX = 'VSA/INV/26-27'
+
+/** A built document as a tax invoice: the tax split by place of supply. */
+function asInvoice(d: BuiltDoc): Invoice {
+  const half = +(d.tax / 2).toFixed(2)
+  const total = Math.round(d.taxable + d.tax)
+  return {
+    id: `INV-${Date.now().toString(36)}`,
+    no: d.no, date: d.date, dueDate: d.validTill,
+    clientId: '', clientName: d.clientName, gstin: '',
+    state: d.interState ? '' : COMPANY.state,
+    poNo: '—', vehicle: '—', ewayBill: '—', remarks: d.subject || '—',
+    shipTo: '—',
+    lines: d.lines.map(l => ({
+      code: l.code, name: l.name, hsn: l.hsn,
+      unit: l.basis === 'kg' ? 'kg' : 'nos',
+      qty: l.basis === 'kg' ? l.kg : l.nos,
+      rate: l.rate, gst: l.gst, amount: amountOf(l), cost: 0,
+      productId: l.productId, nos: l.nos,
+    })),
+    taxable: d.taxable,
+    cgst: d.interState ? 0 : half,
+    sgst: d.interState ? 0 : half,
+    igst: d.interState ? d.tax : 0,
+    roundOff: +(total - (d.taxable + d.tax)).toFixed(2),
+    total,
+    cogs: 0, received: 0, status: 'Unpaid', mode: 'Credit',
+  }
+}
 const FIELDS: Field[] = [
   { key: 'no',         label: 'Invoice no', required: true },
   { key: 'date',       label: 'Invoice date', type: 'date', required: true },
@@ -46,6 +92,7 @@ export default function Billing() {
   const [hsn, setHsn]       = useState('All HSN')
   const [doc, setDoc]       = useState<Invoice | null>(null)
   const [edit, setEdit]     = useState<Invoice | null>(null)
+  const [raising, setRaising] = useState<string | null>(null)
   const crud = useCrud<Invoice>('invoices', INVOICES, idOf)
   const list = crud.rows
 
@@ -76,8 +123,15 @@ export default function Billing() {
             {crud.changes} {crud.changes === 1 ? 'change' : 'changes'} — undo all
           </button>
         )}
-        <Link to="/quick-bill" className="btn"><Mic size={14} /> New Bill</Link>
+        <Link to="/quick-bill" className="btn-outline"><Mic size={14} /> Counter bill</Link>
+        <button className="btn" onClick={() => setRaising(nextDocNo(INV_PREFIX, list.map(i => i.no)))}>
+          <Plus size={14} /> New invoice
+        </button>
       </PageHead>
+
+      <DocBuilder open={!!raising} onClose={() => setRaising(null)} kind="Tax Invoice"
+        docNo={raising ?? ''} owner="D. Nageswara Rao"
+        onSave={d => crud.add(asInvoice(d))} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Invoices Raised"  value={String(list.length)}  icon={Receipt}     tone="brand"  sub={FY} />

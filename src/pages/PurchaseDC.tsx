@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Scale, Boxes, Plus, Trash2, Ruler, Send } from 'lucide-react'
-import { PageHead, Stat, Select, ExportBtn, Empty } from '@/components/ui'
+import { PageHead, Stat, Select, SearchBox, ExportBtn, Empty } from '@/components/ui'
 import { SAMPLE_DC, lengthCheck, suspectLines, type DcLine } from '@/data/despatch'
 import { LOADED } from '@/data/coatbook'
 import { PICK_OPTIONS, productById, masterIdOf, LENGTHS } from '@/data/productmaster'
@@ -62,6 +62,8 @@ interface Row {
 interface Sheet {
   id: string
   label: string
+  /** the number on the supplier's own DC — what a query is quoted against */
+  dcNo: string
   supplier: string
   date: string
   poNo: string
@@ -84,6 +86,7 @@ const per = (kg: number | null, nos: number) =>
 const loadedSheet = (): Sheet => ({
   id: 'loaded',
   label: 'Loaded out 16 / 17-09-2026 — M1 to PC1',
+  dcNo: '',
   supplier: 'M1 — Manufacturer 1',
   date: '2026-09-17', poNo: '—', vehicleNo: '—', ccNo: '',
   sentTo: 'PC1', overall: '', paperKg: null,
@@ -104,6 +107,7 @@ const loadedSheet = (): Sheet => ({
 const febSheet = (): Sheet => ({
   id: 'feb',
   label: 'Despatch 13-02-2026 — Jindal depot',
+  dcNo: SAMPLE_DC.no,
   supplier: SAMPLE_DC.supplier,
   date: SAMPLE_DC.date, poNo: SAMPLE_DC.poNo, vehicleNo: SAMPLE_DC.vehicleNo,
   ccNo: SAMPLE_DC.ccNo,
@@ -138,6 +142,7 @@ export default function PurchaseDC() {
   const [sheetId, setSheetId] = useState(SHEETS[0].id)
   const [sheets, setSheets] = useState<Sheet[]>(SHEETS)
   const [lenFilter, setLenFilter] = useState('All lengths')
+  const [find, setFind] = useState('')
 
   const sheet = sheets.find(s => s.id === sheetId)!
   const rows = sheet.rows
@@ -197,10 +202,18 @@ export default function PurchaseDC() {
 
   /** Rows shown, after the length filter that replaced the length column. */
   const shown = useMemo(() => {
-    if (lenFilter === 'All lengths') return rows
-    const ft = parseFloat(lenFilter)
-    return rows.filter(r => (productById(r.productId)?.lengthFt ?? 0) === ft)
-  }, [rows, lenFilter])
+    const ft = lenFilter === 'All lengths' ? null : parseFloat(lenFilter)
+    const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    return rows.filter(r => {
+      const p = productById(r.productId)
+      if (ft !== null && (p?.lengthFt ?? 0) !== ft) return false
+      if (!words.length) return true
+      /* Searched on the name, the code and what the supplier wrote, so a line
+         can be found by whichever of the three the man has in front of him. */
+      const hay = `${p?.name ?? ''} ${r.code} ${r.written} ${r.internal}`.toLowerCase()
+      return words.every(w => hay.includes(w))
+    })
+  }, [rows, lenFilter, find])
 
   /* ── The one check they kept ───────────────────────────────────────────
      "This error is fine" — a code is one cross section, so every line carrying
@@ -232,7 +245,8 @@ export default function PurchaseDC() {
 
   const exportCsv = () => csvDownload(`vsa-purchase-dc-${sheet.id}.csv`, [
     [`Purchase DC — ${sheet.label}`, FY],
-    ['Supplier', sheet.supplier, 'Date', sheet.date, 'P.O. No', sheet.poNo, 'Vehicle', sheet.vehicleNo],
+    ['DC No', sheet.dcNo, 'Supplier', sheet.supplier, 'Date', sheet.date,
+     'P.O. No', sheet.poNo, 'Vehicle', sheet.vehicleNo],
     ['Sent to', destLabel(sheet.sentTo)],
     [], ['Code', 'Product Name', 'Qty (nos)', 'Kg / Piece', 'Weight (kgs)', 'Internal Name'],
     ...rows.map(r => [
@@ -275,17 +289,23 @@ export default function PurchaseDC() {
               Pick the product and the code, the length and the weight a piece come with it.
             </p>
           </div>
-          <Select value={lenFilter} onChange={setLenFilter}
-            options={['All lengths', ...LENGTHS.map(f => `${f} ft`)]} className="min-w-[9rem]" />
+          <div className="flex flex-wrap gap-2">
+            <SearchBox value={find} onChange={setFind} placeholder="Find a product or code…" />
+            <Select value={lenFilter} onChange={setLenFilter}
+              options={['All lengths', ...LENGTHS.map(f => `${f} ft`)]} className="min-w-[9rem]" />
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 pb-4 mb-1"
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 pb-4 mb-1"
           style={{ borderBottom: '1px solid var(--border-2)' }}>
           <div className="lg:col-span-2"><label className="label">Supplier</label>
             <Select value={sheet.supplier} onChange={v => edit({ supplier: v })}
               options={[...new Set([sheet.supplier, ...SUPPLIERS.map(s => s.name),
                 ...PARTY_CODES.map(p => `${p.code} — ${p.name}`)])].filter(Boolean)}
               className="!w-full" /></div>
+          <div><label className="label">DC No</label>
+            <input className="input w-full" value={sheet.dcNo} placeholder="as on the paper"
+              onChange={e => edit({ dcNo: e.target.value })} /></div>
           <div><label className="label">Date</label>
             <input type="date" className="input w-full" value={sheet.date}
               onChange={e => edit({ date: e.target.value })} /></div>
@@ -364,7 +384,10 @@ export default function PurchaseDC() {
               })}
               {shown.length === 0 && (
                 <tr><td colSpan={8}>
-                  <Empty msg={rows.length ? `No ${lenFilter.toLowerCase()} on this sheet` : 'No lines yet'} />
+                  <Empty msg={rows.length
+                    ? `Nothing on this sheet matches${find ? ` "${find}"` : ''}`
+                      + `${lenFilter === 'All lengths' ? '' : ` at ${lenFilter}`}`
+                    : 'No lines yet'} />
                 </td></tr>
               )}
             </tbody>
