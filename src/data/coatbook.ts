@@ -190,3 +190,55 @@ export function weighments(lines: CoatLine[]): Weighment[] {
   return out
 }
 
+
+
+/* ── Giving a shared weighment back to the rows it covers ──────────────────
+   Their style: two or three colours of one section go on the scale together
+   and the figure is written against the first of them. Counted row by row
+   that makes the first line heavy and the rest weightless, which inflates
+   whatever average is taken from it — DV 7' came out at 1.482 kg a piece
+   against the 1.354 their own opening sheet shows, because a figure covering
+   sixteen pieces was being read as covering eight.
+
+   There is no way to recover the true split from the paper, so a weighment is
+   divided across its rows by piece count. That is the one division that
+   assumes nothing beyond what is already written.                         */
+export function apportioned(lines: CoatLine[]): Map<CoatLine, number> {
+  const out = new Map<CoatLine, number>()
+  let group: CoatLine[] = []
+
+  const close = () => {
+    if (!group.length) return
+    const kg = group[0].kg ?? 0
+    const nos = group.reduce((a, l) => a + l.nos, 0)
+    for (const l of group) {
+      out.set(l, nos > 0 ? +(kg * (l.nos / nos)).toFixed(3) : (l === group[0] ? kg : 0))
+    }
+    group = []
+  }
+
+  for (const l of lines) {
+    /* Hardware and rubber are counted, never weighed: they break no group
+       and join none. */
+    if (isHardware(l) || isRubber(l)) { out.set(l, 0); continue }
+    if (l.kg !== null) { close(); group = [l] }
+    else if (group.length) group.push(l)
+    else out.set(l, 0)
+  }
+  close()
+  return out
+}
+
+/** True where this row leans on a weighment covering more than one line. */
+export function sharesWeighment(lines: CoatLine[]): Set<CoatLine> {
+  const shared = new Set<CoatLine>()
+  let group: CoatLine[] = []
+  const close = () => { if (group.length > 1) for (const l of group) shared.add(l); group = [] }
+  for (const l of lines) {
+    if (isHardware(l) || isRubber(l)) { continue }
+    if (l.kg !== null) { close(); group = [l] }
+    else if (group.length) group.push(l)
+  }
+  close()
+  return shared
+}

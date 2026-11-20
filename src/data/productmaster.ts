@@ -19,7 +19,9 @@
    Nothing here is invented and nothing is mapped by guess. Cost, selling price
    and physical stock are absent because they have not been given yet.       */
 
-import { OPENING, LOADED, RECEIVED, isHardware, isRubber, type CoatLine } from './coatbook'
+import {
+  OPENING, LOADED, RECEIVED, isHardware, isRubber, apportioned, type CoatLine,
+} from './coatbook'
 
 /** Colour words that are a state at the coater, not part of a section's name. */
 const COLOUR_WORDS = [
@@ -134,6 +136,15 @@ function build(): MasterProduct[] {
   }
   const m = new Map<string, Acc>()
 
+  /* Each sheet's shared weighments are split across the rows they cover
+     before anything is averaged. Read row by row they put a whole
+     weighment on the first line of a group, so a section that happens to
+     head one came out heavier than their own sheets say it is. */
+  const share = new Map<CoatLine, number>()
+  for (const sheet of [OPENING, LOADED, RECEIVED]) {
+    for (const [l, kg] of apportioned(sheet)) share.set(l, kg)
+  }
+
   for (const l of [...OPENING, ...LOADED, ...RECEIVED]) {
     const name = baseName(l.name)
     if (!name) continue
@@ -148,10 +159,11 @@ function build(): MasterProduct[] {
     if (l.code) a.spellings.add(l.code)
     const c = colourWord(l)
     if (c) a.colours.add(c)
-    /* Only weighed, countable lines may move the average. A blank weight is a
-       shared weighment, not a zero, so it must not drag the figure down. */
-    if (l.kg !== null && l.kg > 0 && l.nos > 0 && a.kind === 'section') {
-      a.kg += l.kg; a.nos += l.nos
+    /* A blank weight is a shared weighment, not a zero. Apportioned, every
+       row of a group carries its own share and the average is honest. */
+    const kg = share.get(l) ?? 0
+    if (kg > 0 && l.nos > 0 && a.kind === 'section') {
+      a.kg += kg; a.nos += l.nos
     }
     m.set(id, a)
   }

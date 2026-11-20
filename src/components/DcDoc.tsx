@@ -18,9 +18,9 @@ export interface DcPrintLine {
   code: string
   name: string
   nos: number
-  kgPerPiece: number | null
+  /** what a piece of this ought to weigh, as against what it did */
+  weightRange: number | null
   kg: number | null
-  internal: string
 }
 
 export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose }: {
@@ -90,7 +90,7 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
                 <td className="border border-slate-300 px-2 py-1.5 font-mono text-[11px]">{l.code || '—'}</td>
                 <td className="border border-slate-300 px-2 py-1.5 font-medium text-slate-900">{l.name || '—'}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.nos}</td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.kgPerPiece ?? '—'}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.weightRange ?? '—'}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
                   {l.kg ?? <span className="text-slate-400">weighed above</span>}
                 </td>

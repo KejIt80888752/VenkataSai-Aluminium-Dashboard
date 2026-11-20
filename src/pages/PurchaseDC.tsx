@@ -5,11 +5,12 @@ import DcDoc, { type DcPrintLine } from '@/components/DcDoc'
 import { xlsDownload } from '@/lib/sheetexport'
 import { SAMPLE_DC, lengthCheck, suspectLines, type DcLine } from '@/data/despatch'
 import { LOADED } from '@/data/coatbook'
-import { PICK_OPTIONS, productById, masterIdOf, LENGTHS } from '@/data/productmaster'
+import { PICK_OPTIONS, productById, masterIdOf, pieceKgAt, LENGTHS } from '@/data/productmaster'
 import { SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
 import { csvDownload, kg as kgFmt } from '@/lib/utils'
 import { SectionPicker, loose } from '@/components/SectionPicker'
+import { useAliases } from '@/lib/useAliases'
 import { FY } from '@/data/company'
 
 /* ── The purchase DC, as the shop asked for it on 20-11-2026 ───────────────
@@ -55,11 +56,30 @@ interface Row {
   /** their own words for this line, kept so a query can be put to the paper */
   written: string
   nos: number
-  kgPerPiece: number | null
+  /* ── Weight range, not weight per piece ─────────────────────────────────
+     Theirs, on 20-11: "kg/piece replace with weight range". They are not
+     quite the same thing and the shop knows it better than we do — a range
+     is what the mill says a piece of that section ought to weigh, and the
+     weight on the line is what it actually weighed. Their own February sheet
+     carries one: 1.900 against the 2.5x1.5 RT line, which came in at 1.763,
+     seven per cent under. That gap is the whole reason a range is written
+     down at all, and a column holding the actual figure could never show it.
+
+     So the range is the section's figure, taken off the paper where the
+     paper gives one and from the master otherwise. Typing a range works out
+     the weight — "1.232 into 30", as they put it. Typing a weight leaves the
+     range alone, because a lot coming in under or over its range is ordinary
+     and overwriting the range would hide it.                             */
+  weightRange: number | null
   /** null where the row shares the weighment written on the row above it */
   kg: number | null
+  /** the length on this line, which a cross section needs to be weighed at */
+  lengthFt: number
   internal: string
 }
+
+/** What a piece of this ought to weigh, where anything says so. */
+const nominalOf = (productId: string, lengthFt: number) => pieceKgAt(productId, lengthFt)
 
 interface Sheet {
   id: string
@@ -92,16 +112,23 @@ const loadedSheet = (): Sheet => ({
   supplier: 'M1 — Manufacturer 1',
   date: '2026-09-17', poNo: '—', vehicleNo: '—', ccNo: '',
   sentTo: 'PC1', overall: '', paperKg: null,
-  rows: LOADED.map((l, i) => ({
-    slNo: i + 1,
-    productId: masterIdOf(l) ?? '',
-    code: l.code ?? '',
-    written: l.name,
-    nos: l.nos,
-    kgPerPiece: per(l.kg, l.nos),
-    kg: l.kg,
-    internal: l.internal ?? '',
-  })),
+  rows: LOADED.map((l, i) => {
+    const productId = masterIdOf(l) ?? ''
+    const lengthFt = productById(productId)?.lengthFt ?? 0
+    return {
+      slNo: i + 1,
+      productId,
+      code: l.code ?? '',
+      written: l.name,
+      nos: l.nos,
+      /* Their loading sheet writes no range, so the section's own figure
+         stands in — worked out from every weighed line of it in their books. */
+      weightRange: nominalOf(productId, lengthFt) ?? per(l.kg, l.nos),
+      kg: l.kg,
+      lengthFt,
+      internal: l.internal ?? '',
+    }
+  }),
 })
 
 /* The February depot sheet. No codes on it, and SP / DP / DIV have not been
@@ -125,8 +152,11 @@ const febSheet = (): Sheet => ({
     code: l.particulars,
     written: `${l.particulars} ${l.lengthFt}`,
     nos: l.pieces,
-    kgPerPiece: per(l.netWeightKg, l.pieces),
+    /* The depot wrote a range against one line of fourteen. Where it did,
+       that is the range; the rest fill in as their shorthand is taught. */
+    weightRange: l.weightRange,
     kg: l.netWeightKg,
+    lengthFt: parseFloat(l.lengthFt) || 0,
     internal: '',
   })),
 })
@@ -162,6 +192,15 @@ export default function PurchaseDC() {
   const [extra, setExtra] = useState<string[]>(() => readExtra())
   const [printing, setPrinting] = useState(false)
 
+  /* ── What the depot's shorthand means ─────────────────────────────────
+     SP, DP and DIV are theirs, confirmed by voice on 20-11. A line that has
+     not been pointed at a product by hand falls back to what the shorthand
+     has been taught as, so a sheet full of SP reads itself the moment the
+     shorthand is known — which is the point of teaching it once. */
+  const { ours } = useAliases('depot')
+  const resolved = (r: Row) => r.productId || ours(r.code) || ''
+  const rangeOf = (r: Row) => r.weightRange ?? nominalOf(resolved(r), r.lengthFt)
+
   const destinations = useMemo(() => [...BUILT_IN_DESTINATIONS, ...extra], [extra])
   const destLabel = (code: string) =>
     destinations.find(d => d === code || d.startsWith(code + ' ')) ?? code
@@ -185,40 +224,54 @@ export default function PurchaseDC() {
   const setRows = (f: (r: Row[]) => Row[]) =>
     setSheets(ss => ss.map(s => s.id === sheetId ? { ...s, rows: f(s.rows) } : s))
 
-  /* ── Weight and weight-per-piece hold each other up ───────────────────
-     Whichever of the three the shop types, the other two are worked out from
-     it. Nobody multiplies anything by hand and nothing silently disagrees. */
-  const patch = (sl: number, p: Partial<Row>, drive?: 'kg' | 'perPiece' | 'nos') =>
+  /* ── What drives what ─────────────────────────────────────────────────
+     A range times a count is a weight — "1.232 into 30", as they put it — so
+     typing a range or a count works the weight out. Typing a weight does not
+     work backwards into the range: a lot can come in under or over what the
+     mill says it should weigh, and that is exactly what the shop needs to be
+     able to see. Overwriting the range with the actual would erase it. */
+  const patch = (sl: number, p: Partial<Row>, drive?: 'kg' | 'range' | 'nos') =>
     setRows(rs => rs.map(r => {
       if (r.slNo !== sl) return r
       const n = { ...r, ...p }
-      if (drive === 'kg') n.kgPerPiece = per(n.kg, n.nos)
-      else if (drive === 'perPiece') {
-        n.kg = n.kgPerPiece === null ? null : +(n.kgPerPiece * n.nos).toFixed(3)
-      } else if (drive === 'nos') {
-        if (n.kgPerPiece !== null) n.kg = +(n.kgPerPiece * n.nos).toFixed(3)
-        else n.kgPerPiece = per(n.kg, n.nos)
+      if (drive === 'range' || drive === 'nos') {
+        if (n.weightRange !== null && n.nos > 0) n.kg = +(n.weightRange * n.nos).toFixed(3)
       }
       return n
     }))
 
-  /* Picking a product brings its code, and its weight per piece where their
-     own books have weighed it — then the weight follows from the count. */
+  /* Picking a product brings its code and the range it ought to weigh at,
+     worked out at this line's own length so a cross section can be weighed. */
   const pick = (sl: number, id: string) => setRows(rs => rs.map(r => {
     if (r.slNo !== sl) return r
     const p = productById(id)
     if (!p) return { ...r, productId: '' }
-    const kgPerPiece = r.kgPerPiece ?? p.kgPerPiece
-    return {
-      ...r, productId: id, code: p.code || r.code, kgPerPiece,
-      kg: kgPerPiece !== null ? +(kgPerPiece * r.nos).toFixed(3) : r.kg,
-    }
+    const lengthFt = p.lengthFt || r.lengthFt
+    const weightRange = r.weightRange ?? nominalOf(id, lengthFt)
+    return { ...r, productId: id, code: p.code || r.code, lengthFt, weightRange }
   }))
 
   const addRow = () => setRows(rs => [...rs, {
     slNo: rs.length ? Math.max(...rs.map(r => r.slNo)) + 1 : 1,
-    productId: '', code: '', written: '', nos: 0, kgPerPiece: null, kg: null, internal: '',
+    productId: '', code: '', written: '', nos: 0,
+    weightRange: null, kg: null, lengthFt: 0, internal: '',
   }])
+
+  /* A section's range is derived from their coating book, where some of the
+     readings are of coated pieces, so a depot line running a few per cent
+     light against it is ordinary and not worth marking. Fifteen is where it
+     stops being tolerance and starts being a question — on their February
+     sheet exactly one line passes it, the DIV at eleven feet that weighs like
+     seven, which is the one they said themselves they would check. */
+  const OFF_RANGE_LIMIT = 15
+
+  /** How far a line came in from what its range says it should weigh. */
+  const offRange = (r: Row) => {
+    const range = rangeOf(r)
+    if (range === null || range <= 0 || r.kg === null || r.nos <= 0) return null
+    const expected = range * r.nos
+    return +(((r.kg - expected) / expected) * 100).toFixed(1)
+  }
 
   /* A blank weight is already covered by the weighment on the row above, so
      adding a nought for it would be right and counting it twice would not. */
@@ -240,8 +293,8 @@ export default function PurchaseDC() {
        that finds the line carrying it cannot disagree about what 16SG means. */
     const words = find.trim().split(/\s+/).map(loose).filter(Boolean)
     return rows.filter(r => {
-      const p = productById(r.productId)
-      if (ft !== null && (p?.lengthFt ?? 0) !== ft) return false
+      const p = productById(resolved(r))
+      if (ft !== null && (p?.lengthFt || r.lengthFt || 0) !== ft) return false
       if (!words.length) return true
       /* The internal name is searched but never shown — theirs, on 20-11:
          "internal we will type in search bar but only billing name will
@@ -249,7 +302,7 @@ export default function PurchaseDC() {
       const hay = loose(`${p?.name ?? ''} ${r.code} ${r.written} ${r.internal}`)
       return words.every(w => hay.includes(w))
     })
-  }, [rows, lenFilter, find])
+  }, [rows, lenFilter, find, ours])
 
   /* ── The one check they kept ───────────────────────────────────────────
      "This error is fine" — a code is one cross section, so every line carrying
@@ -262,16 +315,16 @@ export default function PurchaseDC() {
        an invented error — so it is left out of the check entirely. */
     .filter(r => r.kg !== null)
     .map(r => {
-      const p = productById(r.productId)
+      const p = productById(r.productId || ours(r.code) || '')
       return {
         slNo: r.slNo,
         particulars: r.code || r.written,
         weightRange: null,
         netWeightKg: r.kg as number,
-        lengthFt: `${p?.lengthFt || 0}'`,
+        lengthFt: `${p?.lengthFt || r.lengthFt || 0}'`,
         pieces: r.nos,
       }
-    }), [rows])
+    }), [rows, ours])
 
   const suspect = useMemo(() => suspectLines(asDcLines), [asDcLines])
   const checkOf = (sl: number) => {
@@ -292,11 +345,10 @@ export default function PurchaseDC() {
   const printLines = (): DcPrintLine[] => rows.map(r => ({
     slNo: r.slNo,
     code: r.code,
-    name: productById(r.productId)?.name ?? r.written,
+    name: productById(resolved(r))?.name ?? r.written,
     nos: r.nos,
-    kgPerPiece: r.kgPerPiece,
+    weightRange: rangeOf(r),
     kg: r.kg,
-    internal: r.internal,
   }))
 
   const exportXls = () => xlsDownload(
@@ -304,7 +356,7 @@ export default function PurchaseDC() {
     `Purchase DC — ${sheet.label}`,
     headMeta(),
     ['SL', 'CODE', 'PRODUCT NAME', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)'],
-    printLines().map(l => [l.slNo, l.code, l.name, l.nos, l.kgPerPiece, l.kg]),
+    printLines().map(l => [l.slNo, l.code, l.name, l.nos, l.weightRange, l.kg]),
     ['', '', 'TOTAL', totalNos, null, totalKg],
   )
 
@@ -315,8 +367,8 @@ export default function PurchaseDC() {
     ['Sent to', destLabel(sheet.sentTo)],
     [], ['Code', 'Product Name', 'Qty (nos)', 'Weight Range', 'Weight (kgs)'],
     ...rows.map(r => [
-      r.code, productById(r.productId)?.name ?? r.written, r.nos,
-      r.kgPerPiece ?? '', r.kg ?? '',
+      r.code, productById(resolved(r))?.name ?? r.written, r.nos,
+      rangeOf(r) ?? '', r.kg ?? '',
     ]),
     [], ['Total weight', totalKg], ['Total pieces', totalNos],
     ['Overall', overallTyped ? printKg : `${totalKg} (calculated)`],
@@ -423,8 +475,9 @@ export default function PurchaseDC() {
             </thead>
             <tbody>
               {shown.map(r => {
-                const p = productById(r.productId)
+                const p = productById(resolved(r))
                 const bad = checkOf(r.slNo)?.suspect
+                const off = offRange(r)
                 return (
                   <tr key={r.slNo}>
                     <td className="num tabular-nums text-xs !pr-6" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>
@@ -432,7 +485,7 @@ export default function PurchaseDC() {
                       style={{ color: p ? 'var(--text-1)' : 'var(--text-4)' }}>{r.code || '—'}</td>
                     <td className="min-w-[15rem]">
                       {/* Selection only — the name is never typed over. */}
-                      <SectionPicker options={PICK_OPTIONS} value={r.productId}
+                      <SectionPicker options={PICK_OPTIONS} value={resolved(r)}
                         onChange={id => pick(r.slNo, id)}
                         placeholder="Type a product name…" />
                       {!p && r.written && (
@@ -446,20 +499,29 @@ export default function PurchaseDC() {
                     </td>
                     <td className="num">
                       <input className="input !w-20 !py-1 text-right tabular-nums !text-xs"
-                        value={r.kgPerPiece ?? ''} placeholder="—"
+                        value={rangeOf(r) ?? ''} placeholder="—"
+                        title="What a piece of this ought to weigh. Times the count, it gives the weight."
                         onChange={e => patch(r.slNo,
-                          { kgPerPiece: e.target.value === '' ? null : Number(e.target.value) }, 'perPiece')} />
+                          { weightRange: e.target.value === '' ? null : Number(e.target.value) }, 'range')} />
                     </td>
                     <td className="num">
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
                         value={r.kg ?? ''} placeholder="weighed above"
-                        style={bad ? {
-                          borderColor: 'var(--amber, #f59e0b)',
-                          background: 'color-mix(in srgb, var(--amber, #f59e0b) 8%, transparent)',
+                        style={bad || off !== null && Math.abs(off) > OFF_RANGE_LIMIT ? {
+                          borderColor: 'var(--amber)',
+                          background: 'color-mix(in srgb, var(--amber) 8%, transparent)',
                         } : undefined}
-                        title={bad ? 'This weight does not agree with the other lines of this code — see the foot of the page' : undefined}
+                        title={bad
+                          ? 'This weight does not agree with the other lines of this code — see the foot of the page'
+                          : off !== null && Math.abs(off) > OFF_RANGE_LIMIT
+                          ? `${off > 0 ? '+' : ''}${off}% against its weight range`
+                          : undefined}
                         onChange={e => patch(r.slNo,
                           { kg: e.target.value === '' ? null : Number(e.target.value) }, 'kg')} />
+                      {off !== null && Math.abs(off) > OFF_RANGE_LIMIT && (
+                        <p className="text-[10px] text-right mt-0.5 tabular-nums"
+                          style={{ color: 'var(--amber)' }}>{off > 0 ? '+' : ''}{off}% off range</p>
+                      )}
                     </td>
                     <td>
                       <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
@@ -521,9 +583,9 @@ export default function PurchaseDC() {
       </div>
 
       {/* ── What is left to be pointed at a product ───────────────────── */}
-      {rows.some(r => !r.productId) && (
+      {rows.some(r => !resolved(r)) && (
         <p className="text-[11.5px] mt-4" style={{ color: 'var(--text-4)' }}>
-          {rows.filter(r => !r.productId).length} of {rows.length} lines are not pointed at a product yet.
+          {rows.filter(r => !resolved(r)).length} of {rows.length} lines are not pointed at a product yet.
           What the supplier wrote is kept under each one so it can be matched against the paper. Nothing has
           been guessed.
         </p>
