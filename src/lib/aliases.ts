@@ -33,13 +33,17 @@ export type Source = 'depot' | 'coater' | 'coatbook'
    depot writes SP at ten, eleven, twelve and fifteen feet on one sheet and
    puts the length in its own column. The length comes off the line.
 
-   CUPC is NOT here. The same message said "CUPC is nothing, I don't know
-   which you are talking about, it is clips" — which is either an answer or a
-   question, and the recording was not clear enough to tell. Their CUPC line
-   weighs 0.227 kg a piece against 0.276 for the clips in their coating book,
-   which is close but not close enough to act on. It stays untaught until
-   somebody says plainly, because a wrong mapping here would quietly spoil the
-   weight per piece of every job cut from that section afterwards.
+   CUPC is here too, and it took a second reading to see it. "CUPC is nothing,
+   I don't know which you are talking about, it is clips" reads as a shrug
+   until you hear it as "CUPC is nothing but ... it is clips", which is how it
+   was meant and how it is said. It is an answer, not a question.
+
+   Their own figures bear it out and were checked before it was applied. The
+   CUPC line is 280 pieces at twelve feet weighing 63.6 kg — 0.227 kg a piece
+   — and their coating book carries a W/O CLIPS 12' line of exactly 280
+   pieces. Same count, same length. Against the clips' 0.248 kg a piece that
+   is 8.4% light, which is closer than SP at 11.3% and DIV at 10.3%, both of
+   which they confirmed in the same breath.
 
    Anything taught on a screen overrides what is here; these are only what to
    start from, so the shop is not asked a question it has already answered. */
@@ -48,6 +52,7 @@ const CONFIRMED: Record<string, string> = {
   [`depot:dp`]:  crossSectionId('20033', 'DG'),
   [`depot:div`]: crossSectionId('19543', ''),
   [`depot:dv`]:  crossSectionId('19543', ''),
+  [`depot:cupc`]: crossSectionId('19382', ''),
 }
 
 const KEY = 'vsa-aliases'
