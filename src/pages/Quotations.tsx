@@ -3,13 +3,18 @@ import { FileText, Trophy, Percent, IndianRupee, Plus, FileCheck2, History, Prin
 import {
   PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, Modal,
 } from '@/components/ui'
-import { QUOTATIONS, type Quotation } from '@/data/txns'
+import { QUOTATIONS, INVOICES, type Quotation, type Invoice } from '@/data/txns'
 import { inr, inr2, fmtDate, csvDownload, cn } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
 import { useCrud } from '@/lib/store'
 import { RowActions, EditedDot } from '@/components/crud'
-import DocBuilder, { type BuiltDoc, type BuiltLine, amountOf } from '@/components/DocBuilder'
+import DocBuilder, { type BuiltDoc, type BuiltLine } from '@/components/DocBuilder'
 import QuoteDoc from '@/components/QuoteDoc'
+import InvoiceDoc from '@/components/InvoiceDoc'
+import {
+  asQuotation, asInvoice, rowOfQuotation, rowOfInvoice, builtFrom,
+  STATUS_OPTIONS, type DocRow,
+} from '@/lib/docshapes'
 import { MASTER } from '@/data/productmaster'
 import { nextDocNo, revisionOf, revisionNumber, baseDocNo, today, validTill } from '@/lib/docnos'
 
@@ -42,30 +47,19 @@ const SERIES = {
 } as const
 type Kind = keyof typeof SERIES
 
-const idOf = (x: Quotation) => x.no
+const idOf = (x: { no: string }) => x.no
 
-/** What a built document looks like in the list. */
-function asQuotation(d: BuiltDoc, kind: Kind): Quotation {
-  return {
-    id: `${kind === 'Quotation' ? 'Q' : 'PI'}-${Date.now().toString(36)}`,
-    no: d.no, date: d.date, validTill: d.validTill,
-    clientId: '', clientName: d.clientName, subject: d.subject,
-    lines: d.lines.map(l => ({
-      code: l.code, name: l.name, hsn: l.hsn,
-      unit: l.basis === 'kg' ? 'kg' : 'nos',
-      qty: l.basis === 'kg' ? l.kg : l.nos,
-      rate: l.rate, gst: l.gst, amount: amountOf(l), cost: 0,
-      productId: l.productId, nos: l.nos,
-    })),
-    taxable: d.taxable, tax: d.tax, total: d.total,
-    status: 'Sent', owner: d.owner,
-  }
-}
+/* A tax invoice is a different record from an offer — it splits its tax three
+   ways and carries what has been received — so the two are built in one place
+   and read back into one display row. See src/lib/docshapes.ts. */
+const resolveProduct = (code: string, name: string) =>
+  MASTER.find(p => p.code === code && p.name === name)?.id
+  ?? MASTER.find(p => p.code === code)?.id
+  ?? ''
 
-/** A listed document read back into the builder's shape, for a revision. */
-const toBuilt = (x: Quotation): Partial<BuiltDoc> => ({
-  clientName: x.clientName, subject: x.subject,
-  lines: x.lines.map((l, i): BuiltLine => ({
+const toBuilt = (r: DocRow): Partial<BuiltDoc> => ({
+  ...builtFrom(r),
+  lines: r.lines.map((l, i): BuiltLine => ({
     key: `${l.code}-${i}`,
     /* Lines raised before the master existed carry no product, so they are
        matched back by code and name; failing that the row opens with its
@@ -79,18 +73,13 @@ const toBuilt = (x: Quotation): Partial<BuiltDoc> => ({
   })),
 })
 
-const resolveProduct = (code: string, name: string) =>
-  MASTER.find(p => p.code === code && p.name === name)?.id
-  ?? MASTER.find(p => p.code === code)?.id
-  ?? ''
-
 export default function Quotations() {
   const [kind, setKind] = useState<Kind>('Quotation')
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All Status')
-  const [sel, setSel] = useState<Quotation | null>(null)
+  const [sel, setSel] = useState<DocRow | null>(null)
   const [building, setBuilding] = useState<{ no: string; from: Partial<BuiltDoc> | null } | null>(null)
-  const [printing, setPrinting] = useState<Quotation | null>(null)
+  const [printing, setPrinting] = useState<DocRow | null>(null)
 
   /* The series are kept apart so their numbering cannot collide. Tax invoices
      share the billing screen's own store, so a bill raised here is the same
@@ -98,12 +87,18 @@ export default function Quotations() {
   const quotes = useCrud<Quotation>('quotations', QUOTATIONS, idOf)
   const ests = useCrud<Quotation>('estimates', [], idOf)
   const pis = useCrud<Quotation>('proformas', [], idOf)
-  const invs = useCrud<Quotation>('invoices', [], idOf)
-  const crud = kind === 'Quotation' ? quotes
-    : kind === 'Estimate' ? ests
-    : kind === 'Proforma Invoice' ? pis
-    : invs
-  const list = crud.rows
+  /* Typed as the bill it really is, and sharing the billing screen's store,
+     so a bill raised here is the same bill there — not a quotation-shaped row
+     that reads as NaN the moment the billing screen adds up its tax. */
+  const invs = useCrud<Invoice>('invoices', INVOICES, idOf)
+
+  const isInvoiceKind = kind === 'Tax Invoice'
+  const crud = kind === 'Quotation' ? quotes : kind === 'Estimate' ? ests : pis
+
+  const list: DocRow[] = useMemo(
+    () => isInvoiceKind ? invs.rows.map(rowOfInvoice) : crud.rows.map(rowOfQuotation),
+    [isInvoiceKind, invs.rows, crud.rows],
+  )
 
   /* Everyone already billed or quoted, across all four, so a name is picked
      rather than retyped — theirs: "customer name from data selection". */
@@ -125,7 +120,7 @@ export default function Quotations() {
      of each number and leave the superseded ones in the list below, which is
      where somebody looking for what was sent last month will want them. */
   const current = useMemo(() => {
-    const newest = new Map<string, Quotation>()
+    const newest = new Map<string, DocRow>()
     for (const x of list) {
       const base = baseDocNo(x.no)
       const held = newest.get(base)
@@ -134,14 +129,17 @@ export default function Quotations() {
     return [...newest.values()]
   }, [list])
 
-  const won = current.filter(x => x.status === 'Won')
-  const open = current.filter(x => x.status === 'Sent' || x.status === 'Under Negotiation')
+  /* A bill is won when it is paid; an offer when it is accepted. */
+  const won = current.filter(x => isInvoiceKind ? x.status === 'Paid' : x.status === 'Won')
+  const open = current.filter(x => isInvoiceKind
+    ? x.status !== 'Paid'
+    : x.status === 'Sent' || x.status === 'Under Negotiation')
   const winRate = current.length ? Math.round((won.length / current.length) * 100) : 0
   const superseded = list.length - current.length
   const noun = kind.toLowerCase()
 
   /** Every version of the document this row revises, newest first. */
-  const versionsOf = (x: Quotation) =>
+  const versionsOf = (x: DocRow) =>
     list.filter(y => baseDocNo(y.no) === baseDocNo(x.no))
       .sort((a, b) => revisionNumber(b.no) - revisionNumber(a.no))
 
@@ -149,7 +147,7 @@ export default function Quotations() {
     setBuilding({ no: nextDocNo(SERIES[kind].prefix, list.map(x => x.no)), from: null })
 
   /* Editing issues a revision rather than quietly changing what was sent. */
-  const startRevision = (x: Quotation) =>
+  const startRevision = (x: DocRow) =>
     setBuilding({ no: revisionOf(x.no), from: toBuilt(x) })
 
   /* Carrying a document forward: estimate → quotation → proforma → invoice,
@@ -160,29 +158,31 @@ export default function Quotations() {
     'Proforma Invoice': 'Tax Invoice',
   }
 
-  const storeFor = (k: Kind) => k === 'Quotation' ? quotes
-    : k === 'Estimate' ? ests : k === 'Proforma Invoice' ? pis : invs
-
-  const carryForward = (x: Quotation) => {
+  const carryForward = (x: DocRow) => {
     const to = NEXT_STEP[kind]
     if (!to) return
-    const target = storeFor(to)
-    const no = nextDocNo(SERIES[to].prefix, target.rows.map(r => r.no))
-    target.add(asQuotation({
-      no, date: today(), validTill: validTill(today()),
+    const existing = to === 'Tax Invoice' ? invs.rows.map(r => r.no)
+      : (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).rows.map(r => r.no)
+    const built: BuiltDoc = {
+      no: nextDocNo(SERIES[to].prefix, existing),
+      date: today(), validTill: validTill(today()),
       clientName: x.clientName, subject: x.subject, owner: x.owner,
       lines: (toBuilt(x).lines ?? []),
       taxable: x.taxable, tax: x.tax, total: x.total,
-      /* No place of supply travels with a quotation, so it opens on the shop's
+      /* No place of supply travels with an offer, so it opens on the shop's
          own state and is changed if the customer is outside it. */
       interState: false,
-    }, to))
+    }
+    if (to === 'Tax Invoice') invs.add(asInvoice(built))
+    else (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).add(asQuotation(built, to))
     setKind(to)
   }
 
-  const exportCsv = () => csvDownload(`vsa-${kind === 'Quotation' ? 'quotations' : 'proformas'}.csv`, [
-    ['No', 'Date', 'Valid Till', 'Customer', 'Subject', 'Taxable', 'GST', 'Total', 'Status', 'Owner'],
-    ...rows.map(x => [x.no, x.date, x.validTill, x.clientName, x.subject, x.taxable, x.tax, x.total, x.status, x.owner]),
+  const exportCsv = () => csvDownload(`vsa-${SERIES[kind].store}.csv`, [
+    ['No', 'Date', isInvoiceKind ? 'Due On' : 'Valid Till', 'Customer', 'Subject',
+     'Taxable', 'GST', 'Total', 'Status', 'Owner'],
+    ...rows.map(x => [x.no, x.date, x.until, x.clientName, x.subject,
+      x.taxable, x.tax, x.total, x.status, x.owner]),
   ])
 
   return (
@@ -222,7 +222,7 @@ export default function Quotations() {
       <div className="flex flex-wrap gap-2 mb-4">
         <SearchBox value={q} onChange={setQ} placeholder={`Search ${noun} no, customer, subject…`} />
         <Select value={status} onChange={setStatus}
-          options={['All Status', 'Sent', 'Under Negotiation', 'Won', 'Lost', 'Expired']} />
+          options={['All Status', ...STATUS_OPTIONS[isInvoiceKind ? 'invoice' : 'offer']]} />
       </div>
 
       <TableCard>
@@ -276,14 +276,28 @@ export default function Quotations() {
         turns a quotation into a proforma invoice under its own series.
       </p>
 
-      {printing && (
-        <QuoteDoc doc={printing} kind={kind} onClose={() => setPrinting(null)} />
+      {/* A bill prints on the GST invoice; an offer prints on its own
+          document, which says on its face that it is not a tax invoice. */}
+      {printing && isInvoiceKind && (() => {
+        const inv = invs.rows.find(i => i.no === printing.no)
+        return inv ? <InvoiceDoc inv={inv} onClose={() => setPrinting(null)} /> : null
+      })()}
+      {printing && !isInvoiceKind && (
+        <QuoteDoc
+          doc={{
+            id: printing.id, no: printing.no, date: printing.date,
+            validTill: printing.until, clientId: '', clientName: printing.clientName,
+            subject: printing.subject, lines: printing.lines,
+            taxable: printing.taxable, tax: printing.tax, total: printing.total,
+            status: printing.status as Quotation['status'], owner: printing.owner,
+          }}
+          kind={kind} onClose={() => setPrinting(null)} />
       )}
 
       <DocBuilder open={!!building} onClose={() => setBuilding(null)} kind={kind}
         docNo={building?.no ?? ''} initial={building?.from} parties={parties}
         owner="D. Nageswara Rao"
-        onSave={d => crud.add(asQuotation(d, kind))} />
+        onSave={d => isInvoiceKind ? invs.add(asInvoice(d)) : crud.add(asQuotation(d, kind))} />
 
       <Modal open={!!sel} onClose={() => setSel(null)}
         title={sel ? `${sel.no} — ${sel.clientName}` : ''} wide>
@@ -293,7 +307,12 @@ export default function Quotations() {
               <Pill s={sel.status} />
               <span className="badge-gray">Owner: {sel.owner}</span>
               <span className="badge-gray">Issued {fmtDate(sel.date)}</span>
-              <span className="badge-gray">Valid till {fmtDate(sel.validTill)}</span>
+              <span className="badge-gray">
+                {isInvoiceKind ? 'Due on' : 'Valid till'} {fmtDate(sel.until)}
+              </span>
+              {sel.balance !== null && sel.balance > 0 && (
+                <span className="badge-red">{inr(sel.balance)} still to come in</span>
+              )}
               <button className="btn-outline !py-1 !text-xs ml-auto"
                 onClick={() => { setPrinting(sel); setSel(null) }}>
                 <Printer size={13} /> Print / Save PDF

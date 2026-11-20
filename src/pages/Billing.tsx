@@ -2,16 +2,16 @@ import { useState, useMemo } from 'react'
 import { Receipt, IndianRupee, Wallet, AlertTriangle, Eye, Printer } from 'lucide-react'
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill } from '@/components/ui'
 import InvoiceDoc from '@/components/InvoiceDoc'
-import { INVOICES, TOTALS, MONTHS, type Invoice } from '@/data/txns'
+import { INVOICES, MONTHS, type Invoice } from '@/data/txns'
 import { inr, fmtDate, csvDownload , pctOf } from '@/lib/utils'
 import { FY } from '@/data/company'
 import { Link } from 'react-router-dom'
 import { Mic } from 'lucide-react'
 import { useCrud } from '@/lib/store'
 import { RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
-import DocBuilder, { type BuiltDoc, amountOf } from '@/components/DocBuilder'
+import DocBuilder from '@/components/DocBuilder'
+import { asInvoice } from '@/lib/docshapes'
 import { nextDocNo } from '@/lib/docnos'
-import { COMPANY } from '@/data/company'
 import { Plus } from 'lucide-react'
 
 /* ── Raising a bill ────────────────────────────────────────────────────────
@@ -32,32 +32,6 @@ import { Plus } from 'lucide-react'
 const INV_PREFIX = 'VSA/INV/26-27'
 
 /** A built document as a tax invoice: the tax split by place of supply. */
-function asInvoice(d: BuiltDoc): Invoice {
-  const half = +(d.tax / 2).toFixed(2)
-  const total = Math.round(d.taxable + d.tax)
-  return {
-    id: `INV-${Date.now().toString(36)}`,
-    no: d.no, date: d.date, dueDate: d.validTill,
-    clientId: '', clientName: d.clientName, gstin: '',
-    state: d.interState ? '' : COMPANY.state,
-    poNo: '—', vehicle: '—', ewayBill: '—', remarks: d.subject || '—',
-    shipTo: '—',
-    lines: d.lines.map(l => ({
-      code: l.code, name: l.name, hsn: l.hsn,
-      unit: l.basis === 'kg' ? 'kg' : 'nos',
-      qty: l.basis === 'kg' ? l.kg : l.nos,
-      rate: l.rate, gst: l.gst, amount: amountOf(l), cost: 0,
-      productId: l.productId, nos: l.nos,
-    })),
-    taxable: d.taxable,
-    cgst: d.interState ? 0 : half,
-    sgst: d.interState ? 0 : half,
-    igst: d.interState ? d.tax : 0,
-    roundOff: +(total - (d.taxable + d.tax)).toFixed(2),
-    total,
-    cogs: 0, received: 0, status: 'Unpaid', mode: 'Credit',
-  }
-}
 const FIELDS: Field[] = [
   { key: 'no',         label: 'Invoice no', required: true },
   { key: 'date',       label: 'Invoice date', type: 'date', required: true },
@@ -95,6 +69,9 @@ export default function Billing() {
   const [raising, setRaising] = useState<string | null>(null)
   const crud = useCrud<Invoice>('invoices', INVOICES, idOf)
   const list = crud.rows
+
+  const billed = useMemo(() => list.reduce((s, i) => s + i.total, 0), [list])
+  const collected = useMemo(() => list.reduce((s, i) => s + i.received, 0), [list])
 
   const rows = useMemo(() => list.filter(i =>
     (status === 'All Status' || i.status === status) &&
@@ -135,8 +112,12 @@ export default function Billing() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Invoices Raised"  value={String(list.length)}  icon={Receipt}     tone="brand"  sub={FY} />
-        <Stat label="Total Billed"     value={inr(TOTALS.invoiced)}     icon={IndianRupee} tone="violet" sub="Inclusive of GST" />
-        <Stat label="Collected"        value={inr(TOTALS.collected)}    icon={Wallet}      tone="green"  sub={`${Math.round(pctOf(TOTALS.collected, TOTALS.invoiced))}% realised`} />
+        {/* Added up off the bills on the screen rather than off a figure
+            computed when the page was built — a bill raised today was being
+            counted in "invoices raised" and left out of "total billed". */}
+        <Stat label="Total Billed"     value={inr(billed)}    icon={IndianRupee} tone="violet" sub="Inclusive of GST" />
+        <Stat label="Collected"        value={inr(collected)} icon={Wallet}      tone="green"
+          sub={`${Math.round(pctOf(collected, billed))}% realised`} />
         <Stat label="Overdue Bills"    value={String(overdue.length)}   icon={AlertTriangle} tone="red"  sub={inr(overdue.reduce((s, i) => s + (i.total - i.received), 0)) + ' pending'} />
       </div>
 

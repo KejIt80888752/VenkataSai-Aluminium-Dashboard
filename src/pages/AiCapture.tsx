@@ -341,6 +341,12 @@ function Box({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
 /* ── Correction report ─────────────────────────────────────────────── */
 function Corrections() {
   const t = useChartTheme()
+  /* With nothing put through the system there is no accuracy to report, and
+     a table of noughts reads like a failing model rather than an idle one. */
+  if (CAPTURED.length === 0) return (
+    <Empty msg="Nothing has been put through capture yet — the correction report fills in once bills start going through" />
+  )
+
   const allCorrections = CAPTURED.flatMap(c => c.corrections.map(x => ({ ...x, tempId: c.tempId, date: c.billDate })))
 
   const exportCsv = () => csvDownload('vsa-ai-correction-report.csv', [

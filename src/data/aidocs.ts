@@ -237,7 +237,9 @@ export const FIELD_ACCURACY: FieldAccuracy[] = (() => {
       field: f,
       extracted,
       corrected,
-      accuracy: +(((extracted - corrected) / extracted) * 100).toFixed(1),
+      /* Nothing captured means nothing to be right or wrong about. Divided
+         out anyway this read 0 of 0 as NaN% down every row of the report. */
+      accuracy: extracted > 0 ? +(((extracted - corrected) / extracted) * 100).toFixed(1) : 0,
       trend: (corrected === 0 ? 'flat' : rnd() < 0.7 ? 'up' : 'down') as FieldAccuracy['trend'],
     }
   }).sort((a, b) => a.accuracy - b.accuracy)
