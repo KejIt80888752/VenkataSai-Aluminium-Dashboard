@@ -1,24 +1,52 @@
+import { useState, useMemo } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
+import { loose } from '@/components/SectionPicker'
 import {
   LayoutDashboard, Package, Warehouse, ArrowLeftRight, FileText, Receipt,
-  ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2,
+  ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2, Search,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
   ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+/* ── The order they asked for, on 20-11-2026 ───────────────────────────────
+   "Sales at top, purchase second, material flow third. Coating book at top."
+
+   Which is the order of their day rather than the order of the material: a
+   shop sells, then buys to cover what it sold, and only then chases what is
+   out at the coater. The dashboard stays above all of it because it is where
+   the app opens, and the back-office groups keep to the foot.             */
 const NAV: ({ group: string } | { to: string; icon: typeof Package; label: string })[] = [
   { group: 'Overview' },
   { to: '/',                 icon: LayoutDashboard, label: 'Dashboard'         },
   { to: '/alerts',           icon: BellRing,        label: 'Alerts & Reminders'},
+  { group: 'Sales' },
+  { to: '/quotation',        icon: FileText,        label: 'Sales Documents'   },
+  { to: '/billing',          icon: Receipt,         label: 'Billing / Invoice' },
+  { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
+  { to: '/cut-list',         icon: Scissors,        label: 'Cut List'          },
+  { to: '/books',            icon: BookOpen,        label: 'Books (Est / GST)' },
+  { to: '/quick-bill',       icon: Mic,             label: 'Quick Bill (Voice)'},
+  { to: '/sales-reports',    icon: TrendingUp,      label: 'Sales Reports'     },
+  { to: '/salesmen',         icon: Trophy,          label: 'Salesmen'          },
+  { to: '/leads',            icon: Users,           label: 'Lead Generation'   },
+  { to: '/clients',          icon: Building2,       label: 'Customers'         },
+  { to: '/projects',         icon: HardHat,         label: 'Turnkey Projects'  },
+  { group: 'Purchase' },
+  { to: '/purchase-dc',      icon: FileInput,       label: 'Purchase DC'       },
+  { to: '/purchases',        icon: ShoppingBag,     label: 'Purchase Invoice'  },
+  { to: '/purchase-orders',  icon: ClipboardList,   label: 'Purchase Orders'   },
+  { to: '/shortage-order',   icon: PackageX,        label: 'Shortage Order'    },
+  { to: '/suppliers',        icon: Truck,           label: 'Suppliers'         },
+  { to: '/supplier-recon',   icon: Scale,           label: 'Supplier Statement'},
   { group: 'Material Flow' },
+  { to: '/coat-book',        icon: Palette,         label: 'Coating Book'      },
   { to: '/dc-flow',          icon: Workflow,        label: 'Material Journey'  },
   { to: '/stats',            icon: BarChart2,       label: 'Figures at a Glance' },
   { to: '/material-flow',    icon: GitBranch,       label: 'Material Flow'     },
   { to: '/challans',         icon: FileStack,       label: 'Delivery Challans' },
-  { to: '/coat-book',        icon: Palette,         label: 'Coating Book'      },
   { to: '/coating-recon',    icon: Scale,           label: 'Coating Recon'     },
   { to: '/coating-billing',  icon: SprayCan,        label: 'Coating Billing'   },
   { to: '/coater-bill',      icon: FileSearch,      label: "Coater's Bill Recon"},
@@ -37,25 +65,6 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/item-master',      icon: Boxes,           label: 'Item Master'       },
   { to: '/barcodes',         icon: ScanBarcode,     label: 'Barcodes & Labels' },
   { to: '/pack-goods',       icon: PackageOpen,     label: 'Pack & Loose Goods'},
-  { group: 'Sales' },
-  { to: '/quotation',        icon: FileText,        label: 'Quotations'        },
-  { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
-  { to: '/cut-list',         icon: Scissors,        label: 'Cut List'          },
-  { to: '/billing',          icon: Receipt,         label: 'Billing / Invoice' },
-  { to: '/books',            icon: BookOpen,        label: 'Books (Est / GST)' },
-  { to: '/quick-bill',       icon: Mic,             label: 'Quick Bill (Voice)'},
-  { to: '/sales-reports',    icon: TrendingUp,      label: 'Sales Reports'     },
-  { to: '/salesmen',         icon: Trophy,          label: 'Salesmen'          },
-  { to: '/leads',            icon: Users,           label: 'Lead Generation'   },
-  { to: '/clients',          icon: Building2,       label: 'Customers'         },
-  { to: '/projects',         icon: HardHat,         label: 'Turnkey Projects'  },
-  { group: 'Purchase' },
-  { to: '/purchase-dc',      icon: FileInput,       label: 'Purchase DC'       },
-  { to: '/purchase-orders',  icon: ClipboardList,   label: 'Purchase Orders'   },
-  { to: '/shortage-order',   icon: PackageX,        label: 'Shortage Order'    },
-  { to: '/purchases',        icon: ShoppingBag,     label: 'Purchase Invoice' },
-  { to: '/suppliers',        icon: Truck,           label: 'Suppliers'         },
-  { to: '/supplier-recon',   icon: Scale,           label: 'Supplier Statement'},
   { group: 'AI & Automation' },
   { to: '/ai-capture',       icon: ScanLine,        label: 'AI Capture'        },
   { group: 'Finance' },
@@ -81,6 +90,32 @@ export default function Sidebar({ open, onClose }: Props) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const handleLogout = () => { logout(); navigate('/login') }
+  const [find, setFind] = useState('')
+
+  /* ── Finding a screen in sixty ────────────────────────────────────────
+     The search box came down off the top bar — theirs, on 20-11 — and is
+     most use here, where the list is long enough that nobody should have to
+     scroll it. Typed against, the menu shows only what matches, and a group
+     with nothing left in it drops out with its heading.
+
+     Matched the same loose way the product box is, so the foot mark, spaces
+     and × make no difference here either. */
+  const shown = useMemo(() => {
+    const q = loose(find)
+    if (!q) return NAV
+    const hits = NAV.filter(n => !('group' in n) && loose(n.label + ' ' + n.to).includes(q))
+    const out: typeof NAV = []
+    for (let i = 0; i < NAV.length; i++) {
+      const item = NAV[i]
+      if (!('group' in item)) continue
+      const kids = []
+      for (let j = i + 1; j < NAV.length && !('group' in NAV[j]); j++) {
+        if (hits.includes(NAV[j])) kids.push(NAV[j])
+      }
+      if (kids.length) out.push(item, ...kids)
+    }
+    return out
+  }, [find])
 
   return (
     <>
@@ -105,9 +140,30 @@ export default function Sidebar({ open, onClose }: Props) {
           <button onClick={onClose} className="lg:hidden p-1 shrink-0" style={{ color: 'var(--text-4)' }}><X size={16} /></button>
         </div>
 
+        {/* Search — moved down from the top bar */}
+        <div className="px-3 pt-3 pb-1 shrink-0">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--text-4)' }} />
+            <input value={find} onChange={e => setFind(e.target.value)}
+              placeholder="Search screens…"
+              className="input w-full !pl-8 !py-1.5 !text-xs" />
+            {find && (
+              <button onClick={() => setFind('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5"
+                style={{ color: 'var(--text-4)' }}><X size={12} /></button>
+            )}
+          </div>
+        </div>
+
         {/* Nav */}
         <nav className="flex-1 px-3 pb-3 overflow-y-auto">
-          {NAV.map((item, i) =>
+          {shown.length === 0 && (
+            <p className="text-[11.5px] px-2 py-4" style={{ color: 'var(--text-4)' }}>
+              No screen matches "{find}".
+            </p>
+          )}
+          {shown.map((item, i) =>
             'group' in item
               ? <p key={`g${i}`} className="nav-group">{item.group}</p>
               : (

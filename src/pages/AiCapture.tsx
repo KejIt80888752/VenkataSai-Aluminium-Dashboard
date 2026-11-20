@@ -10,22 +10,32 @@ import {
   type CapturedBill,
 } from '@/data/aidocs'
 import { inr, inr2, csvDownload, fmtDate, cn } from '@/lib/utils'
+import ManualToComputerised from '@/components/ManualToComputerised'
 
-const TABS = ['Capture Queue', 'Upload Batches', 'Correction Report', 'Export Patterns', 'API'] as const
+/* "Manual bill to computerised" comes first and opens first, because it is
+   the one they asked to be shown and the only one running on their own
+   paper. The rest wait on documents being put through the system. */
+const TABS = [
+  'Manual → Computerised', 'Capture Queue', 'Upload Batches',
+  'Correction Report', 'Export Patterns', 'API',
+] as const
 
 export default function AiCapture() {
-  const [tab, setTab] = useState<typeof TABS[number]>('Capture Queue')
+  const [tab, setTab] = useState<typeof TABS[number]>('Manual → Computerised')
 
   return (
     <div>
-      <PageHead title="AI Document Capture" sub="Photograph the counter book — each customer slip on the page becomes its own record" />
+      <PageHead title="AI Document Capture"
+        sub="Your own shorthand, learned once — the counter book becomes records without being re-explained" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label="Bills Extracted"  value={String(AI_SUMMARY.bills)} icon={ScanLine} tone="brand" sub={`From ${AI_SUMMARY.batches} uploads`} />
-        <Stat label="Straight Through" value={`${AI_SUMMARY.straightThroughPct}%`} icon={FileCheck2} tone="green" sub={`${AI_SUMMARY.autoApproved} posted without a touch`} />
-        <Stat label="Needs Review"     value={String(AI_SUMMARY.needsReview)} icon={AlertTriangle} tone={AI_SUMMARY.needsReview ? 'amber' : 'green'} sub="Low confidence or total mismatch" />
-        <Stat label="Model Confidence" value={`${AI_SUMMARY.avgConfidence}%`} icon={Sparkles} tone="violet" sub={`${AI_SUMMARY.modelVersion} · ${AI_SUMMARY.trainingSamples.toLocaleString('en-IN')} samples`} />
-      </div>
+      {tab !== 'Manual → Computerised' && AI_SUMMARY.bills > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+          <Stat label="Bills Extracted"  value={String(AI_SUMMARY.bills)} icon={ScanLine} tone="brand" sub={`From ${AI_SUMMARY.batches} uploads`} />
+          <Stat label="Straight Through" value={`${AI_SUMMARY.straightThroughPct}%`} icon={FileCheck2} tone="green" sub={`${AI_SUMMARY.autoApproved} posted without a touch`} />
+          <Stat label="Needs Review"     value={String(AI_SUMMARY.needsReview)} icon={AlertTriangle} tone={AI_SUMMARY.needsReview ? 'amber' : 'green'} sub="Low confidence or total mismatch" />
+          <Stat label="Model Confidence" value={`${AI_SUMMARY.avgConfidence}%`} icon={Sparkles} tone="violet" sub={`${AI_SUMMARY.modelVersion} · ${AI_SUMMARY.trainingSamples.toLocaleString('en-IN')} samples`} />
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-lg w-fit" style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
         {TABS.map(t => (
@@ -35,6 +45,7 @@ export default function AiCapture() {
         ))}
       </div>
 
+      {tab === 'Manual → Computerised' && <ManualToComputerised />}
       {tab === 'Capture Queue'    && <Queue />}
       {tab === 'Upload Batches'   && <Batches />}
       {tab === 'Correction Report'&& <Corrections />}

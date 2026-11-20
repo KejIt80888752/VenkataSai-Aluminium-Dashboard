@@ -174,5 +174,10 @@ export const isLow = (p: Product) => p.stockPcs <= p.reorderPcs
     anything showing a taught section has to turn it back into words. */
 export function sectionName(code: string | undefined): string | undefined {
   if (!code) return undefined
-  return P.find(p => p.code === code)?.name ?? code
+  /* An alias may hold either the catalogue's code or the master's own id,
+     depending on which screen taught it. Both have to come back as words,
+     or a taught section reads as "20033|16|DG" wherever it is shown. */
+  return P.find(p => p.code === code)?.name
+    ?? MASTER.find(m => m.id === code)?.name
+    ?? code
 }

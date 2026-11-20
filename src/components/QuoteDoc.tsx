@@ -18,9 +18,12 @@ import type { Quotation } from '@/data/txns'
 
 export default function QuoteDoc({ doc, kind, onClose }: {
   doc: Quotation
-  kind: 'Quotation' | 'Proforma Invoice'
+  kind: 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoice'
   onClose: () => void
 }) {
+  /* An estimate and a quotation are offers; a proforma and a tax invoice are
+     raised against goods, so they close on a due date and ask for payment. */
+  const isOffer = kind === 'Quotation' || kind === 'Estimate'
   /* The master may hold nothing yet, so the document's own buyer is what
      prints and the master only fills in what the document does not carry. */
   const client = CLIENTS.find(c => c.id === doc.clientId)
@@ -56,7 +59,9 @@ export default function QuoteDoc({ doc, kind, onClose }: {
           <div className="text-right">
             <p className="text-[15px] font-bold uppercase tracking-wider text-slate-900">{kind}</p>
             <p className="text-[10px] text-slate-500 mt-0.5">
-              {kind === 'Quotation' ? 'Not a tax invoice' : 'Not a tax invoice — raised before despatch'}
+              {kind === 'Tax Invoice' ? 'Original for Recipient'
+                : isOffer ? 'Not a tax invoice'
+                : 'Not a tax invoice — raised before despatch'}
             </p>
           </div>
         </div>
@@ -64,7 +69,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         <div className="grid grid-cols-2 gap-4 py-3 border-b border-slate-300">
           <div className="space-y-0.5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-              {kind === 'Quotation' ? 'Quotation For' : 'Billed To'}
+              {isOffer ? `${kind} For` : 'Billed To'}
             </p>
             <p className="font-semibold text-slate-900">{buyer.name}</p>
             {buyer.place && <p className="text-slate-600">{buyer.place}</p>}
@@ -74,7 +79,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
           <div className="text-right space-y-0.5">
             <Meta k={`${kind} No.`} v={doc.no} bold />
             <Meta k="Date" v={fmtDate(doc.date)} />
-            <Meta k={kind === 'Quotation' ? 'Valid Till' : 'Due On'} v={fmtDate(doc.validTill)} />
+            <Meta k={isOffer ? 'Valid Till' : 'Due On'} v={fmtDate(doc.validTill)} />
             {doc.subject && <Meta k="Subject" v={doc.subject} />}
             {doc.owner && <Meta k="Prepared By" v={doc.owner} />}
           </div>
@@ -148,19 +153,23 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             <ol className="list-decimal list-inside text-[10px] text-slate-600 space-y-0.5">
               <li>Rates quoted ex-godown, {COMPANY.address.line3}.</li>
               <li>
-                {kind === 'Quotation'
+                {isOffer
                   ? `Valid till ${fmtDate(doc.validTill)}. Aluminium rates are linked to LME and may be revised after validity.`
                   : `Goods remain our property until paid for in full. Payment due ${fmtDate(doc.validTill)}.`}
               </li>
-              <li>This document does not carry input tax credit. A tax invoice follows on despatch.</li>
+              {kind !== 'Tax Invoice' && (
+                <li>This document does not carry input tax credit. A tax invoice follows on despatch.</li>
+              )}
               {COMPANY.terms.slice(0, 2).map(t => <li key={t}>{t}</li>)}
             </ol>
           </div>
           <div className="text-right flex flex-col justify-between">
             <p className="text-[10px] text-slate-500">
-              {kind === 'Quotation'
+              {isOffer
                 ? 'Please confirm in writing to convert this into an order.'
-                : 'Please remit against this proforma to release despatch.'}
+                : kind === 'Proforma Invoice'
+                ? 'Please remit against this proforma to release despatch.'
+                : 'Certified that the particulars given above are true and correct.'}
             </p>
             <div className="mt-10">
               <p className="text-[11px] font-semibold text-slate-900">For {COMPANY.name}</p>

@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
-import { Scale, Boxes, Plus, Trash2, Ruler, Send } from 'lucide-react'
+import { Scale, Boxes, Plus, Trash2, Ruler, Send, FileSpreadsheet, Printer } from 'lucide-react'
 import { PageHead, Stat, Select, SearchBox, ExportBtn, Empty } from '@/components/ui'
+import DcDoc, { type DcPrintLine } from '@/components/DcDoc'
+import { xlsDownload } from '@/lib/sheetexport'
 import { SAMPLE_DC, lengthCheck, suspectLines, type DcLine } from '@/data/despatch'
 import { LOADED } from '@/data/coatbook'
 import { PICK_OPTIONS, productById, masterIdOf, LENGTHS } from '@/data/productmaster'
@@ -132,17 +134,47 @@ const febSheet = (): Sheet => ({
 const SHEETS = [loadedSheet(), febSheet()]
 
 /** Everywhere a load can be sent: the coater, and our own four places. */
-const DESTINATIONS = [
+const BUILT_IN_DESTINATIONS = [
   ...PARTY_CODES.filter(p => p.kind === 'coater').map(p => `${p.code} — ${p.name}`),
   ...LOCATION_CODES.map(l => `${l.code} — ${l.name}`),
 ]
-const destLabel = (code: string) => DESTINATIONS.find(d => d.startsWith(code + ' ')) ?? code
+
+/* A place they add themselves. Their godowns and coaters will outgrow the
+   four codes they first gave us, and a load has to be able to go somewhere
+   new without waiting on us — theirs: "sent to, give the option to create
+   new". Kept beside the built-in list rather than in it, so a name typed in
+   a hurry can be told apart from the codes off their own sheets. */
+const EXTRA_KEY = 'vsa-extra-destinations'
+const readExtra = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(EXTRA_KEY) ?? '[]') } catch { return [] }
+}
+const writeExtra = (xs: string[]) => {
+  try { localStorage.setItem(EXTRA_KEY, JSON.stringify(xs)) } catch { /* blocked */ }
+}
+
+const ADD_PLACE = '+ Somewhere new…'
 
 export default function PurchaseDC() {
   const [sheetId, setSheetId] = useState(SHEETS[0].id)
   const [sheets, setSheets] = useState<Sheet[]>(SHEETS)
   const [lenFilter, setLenFilter] = useState('All lengths')
   const [find, setFind] = useState('')
+  const [extra, setExtra] = useState<string[]>(() => readExtra())
+  const [printing, setPrinting] = useState(false)
+
+  const destinations = useMemo(() => [...BUILT_IN_DESTINATIONS, ...extra], [extra])
+  const destLabel = (code: string) =>
+    destinations.find(d => d === code || d.startsWith(code + ' ')) ?? code
+
+  const addPlace = () => {
+    const name = window.prompt('Where is this load going? Name the godown, shop or coater.')?.trim()
+    if (!name) return
+    if (!destinations.includes(name)) {
+      const next = [...extra, name]
+      setExtra(next); writeExtra(next)
+    }
+    edit({ sentTo: name })
+  }
 
   const sheet = sheets.find(s => s.id === sheetId)!
   const rows = sheet.rows
@@ -243,6 +275,35 @@ export default function PurchaseDC() {
     return l ? lengthCheck(asDcLines, l) : null
   }
 
+  /** The sheet's own particulars, carried onto whatever comes out of it. */
+  const headMeta = () => [
+    { label: 'DC No', value: sheet.dcNo || '—' },
+    { label: 'Supplier', value: sheet.supplier },
+    { label: 'Date', value: sheet.date },
+    { label: 'P.O. No', value: sheet.poNo },
+    { label: 'Vehicle', value: sheet.vehicleNo },
+    { label: 'Sent to', value: destLabel(sheet.sentTo) },
+  ]
+
+  const printLines = (): DcPrintLine[] => rows.map(r => ({
+    slNo: r.slNo,
+    code: r.code,
+    name: productById(r.productId)?.name ?? r.written,
+    nos: r.nos,
+    kgPerPiece: r.kgPerPiece,
+    kg: r.kg,
+    internal: r.internal,
+  }))
+
+  const exportXls = () => xlsDownload(
+    `vsa-purchase-dc-${sheet.id}`,
+    `Purchase DC — ${sheet.label}`,
+    headMeta(),
+    ['Sl', 'Code', 'Product Name', 'Qty (nos)', 'Kg / Piece', 'Weight (kgs)', 'Internal Name'],
+    printLines().map(l => [l.slNo, l.code, l.name, l.nos, l.kgPerPiece, l.kg, l.internal]),
+    ['', '', 'Total', totalNos, null, totalKg, overallTyped ? `Overall ${printKg}` : ''],
+  )
+
   const exportCsv = () => csvDownload(`vsa-purchase-dc-${sheet.id}.csv`, [
     [`Purchase DC — ${sheet.label}`, FY],
     ['DC No', sheet.dcNo, 'Supplier', sheet.supplier, 'Date', sheet.date,
@@ -264,8 +325,26 @@ export default function PurchaseDC() {
         <Select value={sheet.label}
           onChange={v => { setSheetId(sheets.find(s => s.label === v)!.id); setLenFilter('All lengths') }}
           options={sheets.map(s => s.label)} className="min-w-[18rem]" />
-        <ExportBtn onClick={exportCsv} />
+        <button className="btn-outline" onClick={() => setPrinting(true)}>
+          <Printer size={14} /> PDF
+        </button>
+        <button className="btn-outline" onClick={exportXls}>
+          <FileSpreadsheet size={14} /> Excel
+        </button>
+        <ExportBtn onClick={exportCsv} label="CSV" />
       </PageHead>
+
+      {printing && (
+        <DcDoc
+          head={{
+            label: sheet.label, dcNo: sheet.dcNo, supplier: sheet.supplier,
+            date: sheet.date, poNo: sheet.poNo, vehicleNo: sheet.vehicleNo,
+            sentTo: destLabel(sheet.sentTo),
+          }}
+          lines={printLines()} totalKg={totalKg} totalNos={totalNos}
+          overall={overallTyped ? printKg : null}
+          onClose={() => setPrinting(false)} />
+      )}
 
       {/* Their two stats, and only their two. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
@@ -321,8 +400,11 @@ export default function PurchaseDC() {
           <table className="w-full">
             <thead>
               <tr>
-                <th className="num">Sl</th>
-                <th>Code</th>
+                {/* The two ran into each other on the paper-like layout, so
+                    the serial gets its own room — theirs: "give space between
+                    Sl.No and Code". */}
+                <th className="num !pr-5">Sl</th>
+                <th className="!pl-1">Code</th>
                 <th>Product Name</th>
                 <th className="num">Qty (nos)</th>
                 <th className="num">Kg / Piece</th>
@@ -337,8 +419,8 @@ export default function PurchaseDC() {
                 const bad = checkOf(r.slNo)?.suspect
                 return (
                   <tr key={r.slNo}>
-                    <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>
-                    <td className="font-mono text-xs whitespace-nowrap"
+                    <td className="num tabular-nums text-xs !pr-5" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>
+                    <td className="font-mono text-xs whitespace-nowrap !pl-1"
                       style={{ color: p ? 'var(--text-1)' : 'var(--text-4)' }}>{r.code || '—'}</td>
                     <td className="min-w-[15rem]">
                       {/* Selection only — the name is never typed over. */}
@@ -403,8 +485,8 @@ export default function PurchaseDC() {
             <div>
               <label className="label flex items-center gap-1.5"><Send size={11} /> Sent to</label>
               <Select value={destLabel(sheet.sentTo)}
-                onChange={v => edit({ sentTo: v.split(' — ')[0] })}
-                options={DESTINATIONS} className="min-w-[13rem]" />
+                onChange={v => v === ADD_PLACE ? addPlace() : edit({ sentTo: v.split(' — ')[0] })}
+                options={[...destinations, ADD_PLACE]} className="min-w-[13rem]" />
             </div>
             <div className="text-right">
               <p className="label">Total</p>

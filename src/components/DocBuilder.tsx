@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Info } from 'lucide-react'
+import { Plus, Trash2, Info, X } from 'lucide-react'
 import { Modal, Select } from '@/components/ui'
 import { SectionPicker } from '@/components/SectionPicker'
 import { PICK_OPTIONS, productById } from '@/data/productmaster'
@@ -7,6 +7,7 @@ import { CLIENTS, SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES } from '@/data/partycodes'
 import { inr2 } from '@/lib/utils'
 import { today, validTill, DEFAULT_VALID_DAYS, revisionNumber } from '@/lib/docnos'
+import { recallRate, recallSlab, rememberAll } from '@/lib/ratememory'
 
 /* ── Raising a quotation or a proforma ─────────────────────────────────────
    The shop opened the old form and asked the question that mattered: "where
@@ -32,6 +33,8 @@ export interface BuiltLine {
   code: string
   name: string
   hsn: string
+  /** true where the rate came out of what this product last went out at */
+  recalled?: boolean
   /** 'kg' where the product has a weight per piece, otherwise 'nos' */
   basis: 'kg' | 'nos'
   nos: number
@@ -56,7 +59,7 @@ export interface BuiltDoc {
   interState: boolean
 }
 
-export type DocKind = 'Quotation' | 'Proforma Invoice' | 'Tax Invoice' | 'Purchase Bill'
+export type DocKind = 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoice' | 'Purchase Bill'
 
 export const amountOf = (l: BuiltLine) =>
   +((l.basis === 'kg' ? l.kg : l.nos) * l.rate).toFixed(2)
@@ -68,13 +71,15 @@ export function totalsOf(lines: BuiltLine[]) {
 }
 
 const GST_RATES = ['18', '12', '5', '28', '0']
+const ADD_NEW = '+ Someone new'
+const CHOOSE = '— choose —'
 const blankLine = (): BuiltLine => ({
   key: Math.random().toString(36).slice(2),
   productId: '', code: '', name: '', hsn: '7604',
   basis: 'nos', nos: 0, kg: 0, rate: 0, gst: 18,
 })
 
-export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial, owner }: {
+export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial, parties = [], owner }: {
   open: boolean
   onClose: () => void
   onSave: (doc: BuiltDoc) => void
@@ -84,6 +89,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   docNo: string
   /** the document being revised or copied, where there is one */
   initial?: Partial<BuiltDoc> | null
+  /** every party already dealt with, so a name is picked and not retyped */
+  parties?: string[]
   owner: string
 }) {
   const [date, setDate] = useState(today())
@@ -91,6 +98,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [clientName, setClientName] = useState('')
   const [subject, setSubject] = useState('')
   const [interState, setInterState] = useState(false)
+  const [newParty, setNewParty] = useState(false)
   const [lines, setLines] = useState<BuiltLine[]>([blankLine()])
 
   /* An invoice is the same document with the dates read differently: validity
@@ -102,6 +110,12 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      number a date, that is fine". Everything else still comes off the lines. */
   const isInvoice = kind === 'Tax Invoice' || kind === 'Purchase Bill'
   const isPurchase = kind === 'Purchase Bill'
+  /* Weight came off the quotation and the estimate — theirs, on 20-11. It is
+     still worked out behind the column and shown under the count, because the
+     rate on a section is per kilo and the amount has to come from somewhere.
+     The despatch documents keep the column: a bill for aluminium sold by
+     weight has to show the weight it was sold at. */
+  const showWeight = !(kind === 'Quotation' || kind === 'Estimate')
   const [theirNo, setTheirNo] = useState('')
   const [theirDate, setTheirDate] = useState(today())
 
@@ -115,10 +129,20 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setClientName(initial?.clientName ?? '')
     setSubject(initial?.subject ?? '')
     setInterState(initial?.interState ?? false)
+    setNewParty(false)
     setLines(initial?.lines?.length
       ? initial.lines.map(l => ({ ...l, key: Math.random().toString(36).slice(2) }))
       : [blankLine()])
   }, [open, initial])
+
+  /* Everyone already dealt with: the master, the party codes on their own
+     sheets, and every name used on a document so far. */
+  const known = useMemo(() => [...new Set([
+    ...parties,
+    ...(isPurchase
+      ? [...SUPPLIERS.map(x => x.name), ...PARTY_CODES.map(x => `${x.code} — ${x.name}`)]
+      : CLIENTS.map(c => c.name)),
+  ].filter(Boolean))].sort(), [parties, isPurchase])
 
   const t = useMemo(() => totalsOf(lines), [lines])
   const rev = revisionNumber(docNo)
@@ -133,10 +157,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     const p = productById(id)
     if (!p) return { ...l, productId: '', name: '', code: '' }
     const basis: 'kg' | 'nos' = p.kgPerPiece !== null ? 'kg' : 'nos'
+    /* What this product went out at last time, and failing that the slab this
+       kind of material usually carries. A rate typed once is not typed again. */
+    const seen = recallRate(id)
     return {
       ...l, productId: id, code: p.code, name: p.name, basis,
       hsn: p.kind === 'section' ? '7604' : p.kind === 'rubber' ? '4016' : '8302',
       kg: p.kgPerPiece !== null ? +(p.kgPerPiece * l.nos).toFixed(3) : 0,
+      rate: l.rate > 0 ? l.rate : (seen?.rate ?? 0),
+      gst: seen?.gst ?? recallSlab(p.kind) ?? l.gst,
+      recalled: !!seen?.rate && l.rate <= 0,
     }
   }))
 
@@ -149,12 +179,26 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const theDate = isPurchase ? theirDate : date
   const theNo = isPurchase ? theirNo.trim() : docNo
 
+  /* ── What makes a document raisable ───────────────────────────────────
+     This asked for money on the line and would not let anything out until it
+     saw some, which is why they could not raise a quotation at all: not one
+     product in the master has a price yet, so every amount was nought and the
+     button never lit. A quotation for material at a rate still to be settled
+     is an ordinary thing to send. A party and material on it is the test. */
   const ready = clientName.trim() !== ''
     && (!isPurchase || theNo !== '')
-    && lines.some(l => l.productId && amountOf(l) > 0)
+    && lines.some(l => l.productId && (l.basis === 'kg' ? l.kg : l.nos) > 0)
+
+  const unpriced = lines.filter(l => l.productId && l.rate <= 0).length
 
   const save = () => {
     const keep = lines.filter(l => l.productId)
+    /* Whatever went out is what the next one opens with. */
+    rememberAll(keep.map(l => ({
+      productId: l.productId,
+      kind: productById(l.productId)?.kind ?? '',
+      rate: l.rate, gst: l.gst,
+    })))
     onSave({
       no: theNo, date: theDate, validTill: validTill(theDate, days),
       clientName: clientName.trim(), subject: subject.trim(), owner,
@@ -212,15 +256,32 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div><label className="label">{isPurchase ? 'Supplier' : 'Customer'}</label>
-            <input className="input w-full" value={clientName} list="vsa-doc-parties"
-              placeholder={isPurchase ? 'Who it is from' : 'Who it is for'}
-              onChange={e => setClientName(e.target.value)} />
-            <datalist id="vsa-doc-parties">
-              {(isPurchase
-                ? [...SUPPLIERS.map(x => x.name), ...PARTY_CODES.map(x => `${x.code} — ${x.name}`)]
-                : CLIENTS.map(c => c.name)
-              ).map(n => <option key={n} value={n} />)}
-            </datalist>
+            {/* Picked from who you have dealt with, not retyped every time —
+                theirs, on 20-11: "customer name from data selection". Anyone
+                new is typed once and is on the list from then on. */}
+            {known.length > 0 && !newParty ? (
+              /* The blank first entry matters: without it the box showed the
+                 first name on the list while nothing was actually chosen, and
+                 the form sat there asking for a customer it appeared to have. */
+              <Select value={clientName || CHOOSE}
+                onChange={v => {
+                  if (v === ADD_NEW) { setNewParty(true); setClientName('') }
+                  else setClientName(v === CHOOSE ? '' : v)
+                }}
+                options={[CHOOSE, ...known, ADD_NEW]} className="!w-full" />
+            ) : (
+              <div className="flex gap-1.5">
+                <input className="input w-full" value={clientName} autoFocus={newParty}
+                  placeholder={isPurchase ? 'Who it is from' : 'Who it is for'}
+                  onChange={e => setClientName(e.target.value)} />
+                {known.length > 0 && (
+                  <button className="btn-ghost !px-2 shrink-0" title="Back to the list"
+                    onClick={() => { setNewParty(false); setClientName('') }}>
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div><label className="label">{isPurchase ? 'Category / reference' : isInvoice ? 'Site / reference' : 'Subject'}</label>
             <input className="input w-full" value={subject} placeholder="What it is for"
@@ -237,7 +298,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             <table className="tbl">
               <thead>
                 <tr><th className="min-w-[13rem]">Product</th><th>Code</th>
-                  <th className="num">Qty (nos)</th><th className="num">Weight (kg)</th>
+                  <th className="num">Qty (nos)</th>
+                  {showWeight && <th className="num">Weight (kg)</th>}
                   <th className="num">Rate</th><th className="num">GST %</th>
                   <th className="num">Amount</th><th /></tr>
               </thead>
@@ -251,16 +313,31 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>{l.code || '—'}</td>
                     <td className="num">
                       <input className="input !w-20 !py-1 text-right tabular-nums !text-xs" value={l.nos}
-                        onChange={e => setNos(l.key, Number(e.target.value) || 0)} /></td>
-                    <td className="num">
-                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs" value={l.kg}
-                        disabled={l.basis === 'nos'}
-                        title={l.basis === 'nos' ? 'No weight per piece in your books — priced per piece' : undefined}
-                        onChange={e => patch(l.key, { kg: Number(e.target.value) || 0 })} /></td>
+                        onChange={e => setNos(l.key, Number(e.target.value) || 0)} />
+                      {!showWeight && l.basis === 'kg' && l.kg > 0 && (
+                        <p className="text-[10px] text-right mt-0.5 tabular-nums"
+                          style={{ color: 'var(--text-4)' }}>{l.kg} kg</p>
+                      )}
+                    </td>
+                    {showWeight && (
+                      <td className="num">
+                        <input className="input !w-24 !py-1 text-right tabular-nums !text-xs" value={l.kg}
+                          disabled={l.basis === 'nos'}
+                          title={l.basis === 'nos' ? 'No weight per piece in your books — priced per piece' : undefined}
+                          onChange={e => patch(l.key, { kg: Number(e.target.value) || 0 })} /></td>
+                    )}
                     <td className="num">
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs" value={l.rate}
                         placeholder={l.basis === 'kg' ? 'per kg' : 'per piece'}
-                        onChange={e => patch(l.key, { rate: Number(e.target.value) || 0 })} /></td>
+                        style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
+                        title={l.recalled
+                          ? 'What this product last went out at. Type over it to change it.'
+                          : l.basis === 'kg' ? 'Rate per kilogram' : 'Rate per piece'}
+                        onChange={e => patch(l.key, { rate: Number(e.target.value) || 0, recalled: false })} />
+                      {l.recalled && (
+                        <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--green)' }}>last rate</p>
+                      )}
+                    </td>
                     <td className="num">
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
                         options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" /></td>
@@ -310,7 +387,23 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
           </p>
         </div>
 
-        <div className="flex justify-end gap-2 pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-3"
+          style={{ borderTop: '1px solid var(--border-2)' }}>
+          {!ready && (
+            <span className="text-[11px] mr-auto" style={{ color: 'var(--text-4)' }}>
+              {clientName.trim() === ''
+                ? `Name the ${isPurchase ? 'supplier' : 'customer'} to carry on.`
+                : isPurchase && theNo === ''
+                ? 'Put in the supplier\u2019s bill number.'
+                : 'Pick a product and a quantity on at least one line.'}
+            </span>
+          )}
+          {ready && unpriced > 0 && (
+            <span className="text-[11px] mr-auto" style={{ color: 'var(--text-4)' }}>
+              {unpriced} {unpriced === 1 ? 'line has' : 'lines have'} no rate yet — it will go out showing
+              nil against {unpriced === 1 ? 'it' : 'them'}.
+            </span>
+          )}
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn" disabled={!ready} onClick={save}
             style={ready ? undefined : { opacity: .45, cursor: 'not-allowed' }}>

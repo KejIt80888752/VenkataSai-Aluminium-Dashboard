@@ -25,6 +25,27 @@ export interface PickOption {
     brings its own id is identified by that and not by the code it shares. */
 export const optValue = (o: PickOption) => o.id ?? o.code
 
+/* ── Matching the way the shop types ──────────────────────────────────────
+   Asked for on 20-11-2026:
+
+     "' symbol, space, should be ignored. For 2.5x1.5 16' SG I will type
+      16SG or 2.5*1.5 — both should get recognised."
+
+   So the foot mark, the spaces, the hyphens and whichever of x, X, * or the
+   multiplication sign somebody reaches for are all flattened on both sides
+   before anything is compared. Dots are left alone, because 2.5 and 25 are
+   not the same section.
+
+   Each word is still matched on its own, so "2 shutter" finds a two track
+   sliding shutter and "16 sg" finds the sixteen foot single groove — and a
+   word typed with no spaces at all, like 16SG, is simply one word.        */
+export const loose = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .replace(/[×✕✖*]/g, 'x')
+    .replace(/[''"″`]/g, '')
+    .replace(/[\s\-_/]/g, '')
+
 export function SectionPicker({ options, value, onChange, placeholder = 'Type a section name…', className }: {
   options: PickOption[]
   /** the chosen section's code, or '' for none */
@@ -42,11 +63,11 @@ export function SectionPicker({ options, value, onChange, placeholder = 'Type a 
   const chosen = options.find(o => optValue(o) === value)
 
   const hits = useMemo(() => {
-    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    const words = query.trim().split(/\s+/).map(loose).filter(Boolean)
     if (!words.length) return options.slice(0, 50)
     return options
       .filter(o => {
-        const hay = `${o.name} ${o.code} ${o.alt ?? ''}`.toLowerCase()
+        const hay = loose(`${o.name} ${o.code} ${o.alt ?? ''}`)
         return words.every(w => hay.includes(w))
       })
       .slice(0, 50)
@@ -108,7 +129,8 @@ export function SectionPicker({ options, value, onChange, placeholder = 'Type a 
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)' }}>
               {hits.length === 0 ? (
                 <p className="px-3 py-2.5 text-[11.5px]" style={{ color: 'var(--text-4)' }}>
-                  Nothing matches "{query}". Try one word of the name, or the code.
+                  Nothing matches "{query}". Try one word of the name, or the code — spaces, the foot
+                  mark and × or * are ignored, so 16SG and 2.5*1.5 both work.
                 </p>
               ) : hits.map((o, i) => (
                 <button key={optValue(o)} type="button"

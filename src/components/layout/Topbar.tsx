@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Menu, Bell, Search, Sun, Moon, AlertTriangle, PackageX, IndianRupee, X } from 'lucide-react'
+import { Menu, Bell, Sun, Moon, AlertTriangle, PackageX, IndianRupee, X } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useDarkMode } from '@/hooks/useDarkMode'
 import { P, isLow } from '@/data/catalogue'
@@ -53,14 +53,9 @@ export default function Topbar({ onMenu, title }: Props) {
 
       <h1 className="text-sm font-semibold whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{title}</h1>
 
-      <div className="flex-1 max-w-xs hidden md:block ml-3">
-        <div className="relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-4)' }} />
-          <input placeholder="Search invoices, products, customers…"
-            className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs focus:outline-none"
-            style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)', color: 'var(--text-2)' }} />
-        </div>
-      </div>
+      {/* The search box moved down into the sidebar on 20-11, where the list
+          it searches actually lives. The bar keeps the page name and the
+          things that belong to the session. */}
 
       <div className="ml-auto flex items-center gap-2">
         <span className="badge-brand hidden lg:inline-flex">{FY}</span>

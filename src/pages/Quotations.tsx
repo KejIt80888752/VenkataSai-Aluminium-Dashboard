@@ -28,9 +28,17 @@ import { nextDocNo, revisionOf, revisionNumber, baseDocNo, today, validTill } fr
    own or made from a quotation in one click — "either of these should be
    there... then we should have the proforma invoice and the quotation."   */
 
+/* Four documents, four series, asked for on 20-11: "give / create proforma
+   invoice option, estimate, tax invoice" — beside the quotation that was
+   already here. An estimate is the rough one, a quotation the formal one, a
+   proforma the one raised before despatch, and the tax invoice the one that
+   carries credit. They are the same document under four headings, so they
+   share one form and keep four numbering series that cannot collide. */
 const SERIES = {
-  'Quotation':        { prefix: 'VSA/Q/26-27',  store: 'quotations' },
-  'Proforma Invoice': { prefix: 'VSA/PI/26-27', store: 'proformas'  },
+  'Quotation':        { prefix: 'VSA/Q/26-27',   store: 'quotations' },
+  'Estimate':         { prefix: 'VSA/EST/26-27', store: 'estimates'  },
+  'Proforma Invoice': { prefix: 'VSA/PI/26-27',  store: 'proformas'  },
+  'Tax Invoice':      { prefix: 'VSA/INV/26-27', store: 'invoices'   },
 } as const
 type Kind = keyof typeof SERIES
 
@@ -84,11 +92,24 @@ export default function Quotations() {
   const [building, setBuilding] = useState<{ no: string; from: Partial<BuiltDoc> | null } | null>(null)
   const [printing, setPrinting] = useState<Quotation | null>(null)
 
-  /* The two series are kept apart so their numbering cannot collide. */
+  /* The series are kept apart so their numbering cannot collide. Tax invoices
+     share the billing screen's own store, so a bill raised here is the same
+     bill there rather than a second copy of it. */
   const quotes = useCrud<Quotation>('quotations', QUOTATIONS, idOf)
+  const ests = useCrud<Quotation>('estimates', [], idOf)
   const pis = useCrud<Quotation>('proformas', [], idOf)
-  const crud = kind === 'Quotation' ? quotes : pis
+  const invs = useCrud<Quotation>('invoices', [], idOf)
+  const crud = kind === 'Quotation' ? quotes
+    : kind === 'Estimate' ? ests
+    : kind === 'Proforma Invoice' ? pis
+    : invs
   const list = crud.rows
+
+  /* Everyone already billed or quoted, across all four, so a name is picked
+     rather than retyped — theirs: "customer name from data selection". */
+  const parties = useMemo(() => [...new Set(
+    [...quotes.rows, ...ests.rows, ...pis.rows, ...invs.rows].map(x => x.clientName).filter(Boolean),
+  )], [quotes.rows, ests.rows, pis.rows, invs.rows])
 
   const rows = useMemo(() => list.filter(x =>
     (status === 'All Status' || x.status === status) &&
@@ -117,7 +138,7 @@ export default function Quotations() {
   const open = current.filter(x => x.status === 'Sent' || x.status === 'Under Negotiation')
   const winRate = current.length ? Math.round((won.length / current.length) * 100) : 0
   const superseded = list.length - current.length
-  const noun = kind === 'Quotation' ? 'quotation' : 'proforma invoice'
+  const noun = kind.toLowerCase()
 
   /** Every version of the document this row revises, newest first. */
   const versionsOf = (x: Quotation) =>
@@ -131,19 +152,32 @@ export default function Quotations() {
   const startRevision = (x: Quotation) =>
     setBuilding({ no: revisionOf(x.no), from: toBuilt(x) })
 
-  /* A quotation becomes a proforma under the proforma series. */
-  const makeProforma = (x: Quotation) => {
-    const no = nextDocNo(SERIES['Proforma Invoice'].prefix, pis.rows.map(r => r.no))
-    pis.add(asQuotation({
+  /* Carrying a document forward: estimate → quotation → proforma → invoice,
+     which is the order the trade works in. Nothing is retyped. */
+  const NEXT_STEP: Partial<Record<Kind, Kind>> = {
+    'Estimate': 'Quotation',
+    'Quotation': 'Proforma Invoice',
+    'Proforma Invoice': 'Tax Invoice',
+  }
+
+  const storeFor = (k: Kind) => k === 'Quotation' ? quotes
+    : k === 'Estimate' ? ests : k === 'Proforma Invoice' ? pis : invs
+
+  const carryForward = (x: Quotation) => {
+    const to = NEXT_STEP[kind]
+    if (!to) return
+    const target = storeFor(to)
+    const no = nextDocNo(SERIES[to].prefix, target.rows.map(r => r.no))
+    target.add(asQuotation({
       no, date: today(), validTill: validTill(today()),
       clientName: x.clientName, subject: x.subject, owner: x.owner,
       lines: (toBuilt(x).lines ?? []),
       taxable: x.taxable, tax: x.tax, total: x.total,
-      /* A quotation carries no place of supply, so the proforma opens on the
-         shop's own state and is changed there if the customer is outside it. */
+      /* No place of supply travels with a quotation, so it opens on the shop's
+         own state and is changed if the customer is outside it. */
       interState: false,
-    }, 'Proforma Invoice'))
-    setKind('Proforma Invoice')
+    }, to))
+    setKind(to)
   }
 
   const exportCsv = () => csvDownload(`vsa-${kind === 'Quotation' ? 'quotations' : 'proformas'}.csv`, [
@@ -153,8 +187,8 @@ export default function Quotations() {
 
   return (
     <div>
-      <PageHead title="Quotations & Proforma"
-        sub={`Numbers issue themselves, revisions keep their number · ${FY}`}>
+      <PageHead title="Sales Documents"
+        sub={`Estimate, quotation, proforma, tax invoice — numbers issue themselves · ${FY}`}>
         <ExportBtn onClick={exportCsv} />
         <button className="btn" onClick={startNew}>
           <Plus size={14} /> New {noun}
@@ -215,9 +249,10 @@ export default function Quotations() {
                   <span className="flex items-center gap-1 justify-end">
                     <button className="btn-ghost !px-1.5 !py-1" title={`Print or save this ${noun} as a PDF`}
                       onClick={() => setPrinting(x)}><Printer size={13} /></button>
-                    {kind === 'Quotation' && (
-                      <button className="btn-ghost !px-1.5 !py-1" title="Make a proforma invoice from this"
-                        onClick={() => makeProforma(x)}><FileCheck2 size={13} /></button>
+                    {NEXT_STEP[kind] && (
+                      <button className="btn-ghost !px-1.5 !py-1"
+                        title={`Carry this forward into a ${NEXT_STEP[kind]!.toLowerCase()}`}
+                        onClick={() => carryForward(x)}><FileCheck2 size={13} /></button>
                     )}
                     <RowActions label={x.no} onEdit={() => startRevision(x)}
                       onDelete={() => crud.remove(x.no)} />
@@ -246,7 +281,8 @@ export default function Quotations() {
       )}
 
       <DocBuilder open={!!building} onClose={() => setBuilding(null)} kind={kind}
-        docNo={building?.no ?? ''} initial={building?.from} owner="D. Nageswara Rao"
+        docNo={building?.no ?? ''} initial={building?.from} parties={parties}
+        owner="D. Nageswara Rao"
         onSave={d => crud.add(asQuotation(d, kind))} />
 
       <Modal open={!!sel} onClose={() => setSel(null)}
