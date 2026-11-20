@@ -72,6 +72,13 @@ export interface AluminiumBlock {
 
 export type CoatingMode = 'section' | 'cumulative'
 
+/** The coating, where it is charged once for the whole lot. */
+export interface CoatingBlock {
+  mode: CoatingMode
+  /** rupees a kilo, used only when the whole lot is charged together */
+  rate: number
+}
+
 export interface BuiltDoc {
   no: string
   date: string
@@ -90,6 +97,8 @@ export interface BuiltDoc {
   aluminium: AluminiumBlock
   /** whether the coating is charged on each section or once for the lot */
   coatingMode: CoatingMode
+  /** the one rate, where the lot is charged together */
+  coatingRate: number
 }
 
 /** The weight of every section on a document — what the metal is priced on. */
@@ -113,6 +122,7 @@ export function totalsOf(
   lines: BuiltLine[],
   aluminium: AluminiumBlock = { on: false, rate: 0 },
   coatingMode: CoatingMode = 'section',
+  coatingRate = 0,
 ) {
   const picked = lines.filter(l => l.productId)
   const kg = totalKgOf(picked)
@@ -120,9 +130,10 @@ export function totalsOf(
   const metal = aluminium.on ? +(kg * aluminium.rate).toFixed(2) : 0
   const coating = aluminium.on
     ? (coatingMode === 'cumulative'
-        /* One figure for the lot: the first rate typed stands for all of it,
-           which is what "only for quotation it can be cumulative" asks for. */
-        ? +(kg * (picked.find(l => l.rate > 0)?.rate ?? 0)).toFixed(2)
+        /* One figure for the lot, at its own rate — which has to be asked for
+           rather than taken off whichever section happens to be first, or
+           changing the order of the lines would change the money. */
+        ? +(kg * coatingRate).toFixed(2)
         : +picked.reduce((s, l) => s + amountOf(l), 0).toFixed(2))
     : +picked.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
 
@@ -171,6 +182,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [aluOn, setAluOn] = useState(true)
   const [aluRate, setAluRate] = useState(0)
   const [coatingMode, setCoatingMode] = useState<CoatingMode>('section')
+  const [coatingRate, setCoatingRate] = useState(0)
 
   /* Products the shop has added itself sit beside the master, so a door
      closer typed on one quotation is picked on the next. */
@@ -219,6 +231,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setAluOn(initial?.aluminium?.on ?? kind !== 'Purchase Bill')
     setAluRate(initial?.aluminium?.rate ?? 0)
     setCoatingMode(initial?.coatingMode ?? 'section')
+    setCoatingRate(initial?.coatingRate ?? 0)
     setLines(initial?.lines?.length
       ? initial.lines.map(l => ({ ...l, key: Math.random().toString(36).slice(2) }))
       : [blankLine()])
@@ -234,8 +247,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   ].filter(Boolean))].sort(), [parties, isPurchase])
 
   const alu = { on: aluOn && !isPurchase, rate: aluRate }
-  const t = useMemo(() => totalsOf(lines, alu, coatingMode),
-    [lines, aluOn, aluRate, coatingMode, isPurchase])
+  const t = useMemo(() => totalsOf(lines, alu, coatingMode, coatingRate),
+    [lines, aluOn, aluRate, coatingMode, coatingRate, isPurchase])
   const rev = revisionNumber(docNo)
 
   const patch = (key: string, p: Partial<BuiltLine>) =>
@@ -313,8 +326,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     onSave({
       no: theNo, date: theDate, validTill: validTill(theDate, days),
       clientName: clientName.trim(), subject: subject.trim(), owner,
-      lines: keep, interState, aluminium: alu, coatingMode,
-      ...totalsOf(keep, alu, coatingMode),
+      lines: keep, interState, aluminium: alu, coatingMode, coatingRate,
+      ...totalsOf(keep, alu, coatingMode, coatingRate),
     })
     onClose()
   }
@@ -443,6 +456,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   onChange={v => setCoatingMode(v.startsWith('Section') ? 'section' : 'cumulative')}
                   options={['Section by section', 'Once for the lot']} className="min-w-[11rem]" />
               </div>
+              {coatingMode === 'cumulative' && (
+                <div>
+                  <label className="label">Coating per kg</label>
+                  <input className="input !w-24 text-right tabular-nums" value={coatingRate || ''}
+                    placeholder="0" onChange={e => setCoatingRate(Number(e.target.value) || 0)} />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -492,8 +512,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           onChange={e => patch(l.key, { kg: Number(e.target.value) || 0 })} /></td>
                     )}
                     <td className="num">
-                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs" value={l.rate}
-                        placeholder={alu.on ? 'coating / kg' : l.basis === 'kg' ? 'per kg' : 'per piece'}
+                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                        value={alu.on && coatingMode === 'cumulative' ? '' : l.rate}
+                        disabled={alu.on && coatingMode === 'cumulative'}
+                        placeholder={alu.on && coatingMode === 'cumulative' ? 'charged once'
+                          : alu.on ? 'coating / kg' : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
                           ? 'What this product last went out at. Type over it to change it.'

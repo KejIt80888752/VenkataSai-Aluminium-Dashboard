@@ -193,7 +193,7 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
       interState: false,
       /* Carried forward already priced, so the next document keeps the
          figures rather than re-deriving them from a rate it does not have. */
-      aluminium: { on: false, rate: 0 }, coatingMode: 'section' as const,
+      aluminium: { on: false, rate: 0 }, coatingMode: 'section' as const, coatingRate: 0,
     }
     if (to === 'Tax Invoice') invs.add(asInvoice(built))
     else (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).add(asQuotation(built, to))

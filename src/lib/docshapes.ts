@@ -60,7 +60,7 @@ const linesOf = (d: BuiltDoc): Line[] => {
   }, ...sectionLines(d)]
 
   if (d.coatingMode === 'cumulative') {
-    const rate = d.lines.find(l => l.rate > 0)?.rate ?? 0
+    const rate = d.coatingRate ?? 0
     out.push({
       code: '', name: 'POWDER COATING', hsn: '9988',
       unit: 'kg', qty: kg, rate,
