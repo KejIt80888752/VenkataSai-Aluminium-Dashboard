@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, X, Search, Plus } from 'lucide-react'
 
 /* ── Picking one of our sections by typing ─────────────────────────────────
@@ -63,6 +64,43 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  /* ── Why the list is drawn outside the table ──────────────────────────
+     The shop typed DV into a quotation and no list came up. It was coming
+     up — and being cut off, because the row sits in a table that scrolls
+     sideways, and anything a browser draws inside a scrolling box is
+     clipped to it. On the last row of a short table there was nowhere left
+     inside the box for the list to go.
+
+     So it is drawn at the top of the page instead and placed over the
+     input, which no box can clip. It follows the input while the page or
+     the table scrolls, and flips above it when there is more room there. */
+  const [at, setAt] = useState<{ left: number; top: number; width: number; drop: 'down' | 'up' } | null>(null)
+
+  const place = useCallback(() => {
+    const el = boxRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const below = window.innerHeight - r.bottom
+    const drop: 'down' | 'up' = below < 180 && r.top > below ? 'up' : 'down'
+    setAt({
+      left: r.left,
+      top: drop === 'down' ? r.bottom + 4 : r.top - 4,
+      width: Math.max(r.width, 220),
+      drop,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    place()
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open, place])
+
   const chosen = options.find(o => optValue(o) === value)
 
   const hits = useMemo(() => {
@@ -76,11 +114,16 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
       .slice(0, 50)
   }, [options, query])
 
-  /* A click anywhere else closes it, which is what a dropdown would do. */
+  /* A click anywhere else closes it, which is what a dropdown would do.
+     The list itself is outside this element now, so it is marked and the
+     mark is checked — otherwise choosing from it would close it first. */
   useEffect(() => {
     if (!open) return
     const away = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as HTMLElement
+      if (boxRef.current?.contains(t)) return
+      if (t.closest?.('[data-section-picker-list]')) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', away)
     return () => document.removeEventListener('mousedown', away)
@@ -127,9 +170,16 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
               onKeyDown={onKey}
             />
           </div>
-          {open && (
-            <div className="absolute z-30 mt-1 w-full max-h-60 overflow-auto rounded-lg shadow-lg"
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)' }}>
+          {open && at && createPortal(
+            <div data-section-picker-list
+              className="fixed z-[70] max-h-60 overflow-auto rounded-lg shadow-2xl"
+              style={{
+                left: at.left, width: at.width,
+                ...(at.drop === 'down'
+                  ? { top: at.top }
+                  : { bottom: window.innerHeight - at.top }),
+                background: 'var(--bg-card)', border: '1px solid var(--border-2)',
+              }}>
               {hits.length === 0 ? (
                 <div>
                   {onCreate && query.trim() !== '' && (
@@ -159,7 +209,8 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
                   {optValue(o) === value && <Check size={12} style={{ color: 'var(--green)' }} />}
                 </button>
               ))}
-            </div>
+            </div>,
+            document.body,
           )}
         </>
       )}

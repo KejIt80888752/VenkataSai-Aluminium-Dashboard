@@ -283,21 +283,35 @@ export function pieceKgAt(id: string | null | undefined, lengthFt: number): numb
   return productById(id)?.kgPerPiece ?? null
 }
 
-/** What the picker shows: the name, their code beside it, every spelling
-    searched — and the cross sections, for a shorthand that travels at more
-    than one length. */
+/* ── Two lists, because two jobs ───────────────────────────────────────────
+   A cross section is the right answer when a shorthand is being pointed at a
+   die: the depot's SP is SG at whatever length the line says, and no one
+   length would be true of it.
+
+   It is the wrong answer on a quotation. There a piece has a definite length,
+   and a cross section carries no weight per piece — so quoting one silently
+   priced by the piece and showed nothing in the weight column, which is
+   exactly what went wrong when a line was picked with the Enter key and the
+   cross section happened to be first in the list.
+
+   So the mapping screens get the cross sections and the documents do not. */
+
+/** Every product at a definite length — for anything being bought or sold. */
+export const PICK_PRODUCTS = MASTER.map(p => ({
+  id: p.id,
+  code: p.code || '—',
+  name: p.name,
+  alt: p.alt,
+}))
+
+/** The same, with the cross sections — for pointing a shorthand at a die. */
 export const PICK_OPTIONS = [
+  ...PICK_PRODUCTS,
   ...CROSS_SECTIONS.map(x => ({
     id: x.id,
     code: x.code,
     name: `${x.name} — any length`,
     alt: `${x.name} ${x.groove} cross section die ${x.lengths.join(' ')}`,
-  })),
-  ...MASTER.map(p => ({
-    id: p.id,
-    code: p.code || '—',
-    name: p.name,
-    alt: p.alt,
   })),
 ]
 

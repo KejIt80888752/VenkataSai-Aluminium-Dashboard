@@ -46,6 +46,9 @@ export interface Line {
   productId?: string
   /** pieces, where the line is priced by weight — qty then holds the kilos */
   nos?: number
+  /** what part of the document this line is: the metal priced by total
+      weight, a coating charge, or an ordinary priced item */
+  group?: 'aluminium' | 'coating' | 'item'
 }
 export interface Invoice {
   id: string; no: string; date: string; dueDate: string

@@ -18,7 +18,7 @@
 
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc } from '@/components/DocBuilder'
-import { amountOf } from '@/components/DocBuilder'
+import { amountOf, totalKgOf } from '@/components/DocBuilder'
 import { COMPANY } from '@/data/company'
 
 export type SalesKind = 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoice'
@@ -27,14 +27,49 @@ const PREFIX: Record<SalesKind, string> = {
   'Quotation': 'Q', 'Estimate': 'EST', 'Proforma Invoice': 'PI', 'Tax Invoice': 'INV',
 }
 
-/** The material on a built document, as a stored line. */
-const linesOf = (d: BuiltDoc): Line[] => d.lines.map(l => ({
-  code: l.code, name: l.name, hsn: l.hsn,
-  unit: l.basis === 'kg' ? 'kg' : 'nos',
-  qty: l.basis === 'kg' ? l.kg : l.nos,
-  rate: l.rate, gst: l.gst, amount: amountOf(l), cost: 0,
-  productId: l.productId, nos: l.nos,
-}))
+/* ── The material on a built document, as stored lines ─────────────────────
+   Where the metal is priced at the top, the document that goes out has an
+   aluminium line carrying every kilo on it and sections underneath carrying
+   only the coating. The sections are always listed, even when the coating is
+   charged once for the lot, because they are the specification of what is
+   being supplied and a customer has to be able to read it.               */
+const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
+  const charged = !(d.aluminium?.on && d.coatingMode === 'cumulative')
+  return {
+    code: l.code, name: l.name, hsn: l.hsn,
+    unit: l.basis === 'kg' ? 'kg' : 'nos',
+    qty: l.basis === 'kg' ? l.kg : l.nos,
+    rate: charged ? l.rate : 0,
+    gst: l.gst,
+    amount: charged ? amountOf(l) : 0,
+    cost: 0,
+    productId: l.productId, nos: l.nos,
+    group: d.aluminium?.on ? ('coating' as const) : ('item' as const),
+  }
+})
+
+const linesOf = (d: BuiltDoc): Line[] => {
+  if (!d.aluminium?.on) return sectionLines(d)
+  const kg = totalKgOf(d.lines)
+  const slab = d.lines[0]?.gst ?? 18
+  const out: Line[] = [{
+    code: '', name: 'ALUMINIUM EXTRUDED PROFILES', hsn: '7604',
+    unit: 'kg', qty: kg, rate: d.aluminium.rate,
+    gst: slab, amount: +(kg * d.aluminium.rate).toFixed(2), cost: 0,
+    group: 'aluminium',
+  }, ...sectionLines(d)]
+
+  if (d.coatingMode === 'cumulative') {
+    const rate = d.lines.find(l => l.rate > 0)?.rate ?? 0
+    out.push({
+      code: '', name: 'POWDER COATING', hsn: '9988',
+      unit: 'kg', qty: kg, rate,
+      gst: slab, amount: +(kg * rate).toFixed(2), cost: 0,
+      group: 'coating',
+    })
+  }
+  return out
+}
 
 /** An offer or a proforma: quotation, estimate, proforma invoice. */
 export function asQuotation(d: BuiltDoc, kind: SalesKind): Quotation {

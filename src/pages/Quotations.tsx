@@ -191,6 +191,9 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
       /* No place of supply travels with an offer, so it opens on the shop's
          own state and is changed if the customer is outside it. */
       interState: false,
+      /* Carried forward already priced, so the next document keeps the
+         figures rather than re-deriving them from a rate it does not have. */
+      aluminium: { on: false, rate: 0 }, coatingMode: 'section' as const,
     }
     if (to === 'Tax Invoice') invs.add(asInvoice(built))
     else (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).add(asQuotation(built, to))

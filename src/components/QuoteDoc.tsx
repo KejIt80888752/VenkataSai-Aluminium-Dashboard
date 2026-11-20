@@ -33,7 +33,11 @@ export default function QuoteDoc({ doc, kind, onClose }: {
     contact: [client?.contact, client?.phone].filter(Boolean).join(' · '),
     gstin: client?.gstin ?? '',
   }
-  const totalQty = doc.lines.reduce((s, l) => s + l.qty, 0)
+  /* The aluminium line already carries every kilo on the document, so adding
+     the sections to it would count the same metal twice. */
+  const totalQty = doc.lines.some(l => l.group === 'aluminium')
+    ? doc.lines.find(l => l.group === 'aluminium')!.qty
+    : doc.lines.reduce((s, l) => s + l.qty, 0)
 
   return createPortal(
     <div className="print-modal-overlay fixed inset-0 z-[60] bg-black/50 overflow-y-auto p-4" onClick={onClose}>
@@ -97,12 +101,22 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             </tr>
           </thead>
           <tbody>
-            {doc.lines.map((l, i) => (
-              <tr key={`${l.code}-${i}`}>
+            {/* The metal sits at the head in its own right, and the sections
+                under it carry what it costs to coat them — the way the shop
+                quotes, and the way a customer can argue with it line by line. */}
+            {doc.lines.map((l, i) => {
+              const metal = l.group === 'aluminium'
+              const coat = l.group === 'coating'
+              return (
+              <tr key={`${l.code}-${i}`} className={metal ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
-                  <span className="font-medium text-slate-900">{l.name}</span>
+                  <span className={metal ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
+                    {coat && <span className="text-slate-400 mr-1">↳</span>}
+                    {l.name}
+                  </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
+                  {coat && l.nos ? <span className="text-slate-500 text-[10px]"> · {l.nos} nos, coating</span> : null}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
@@ -110,11 +124,11 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(l.rate)}</td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums font-medium">
-                  {inr2(l.amount)}
+                <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${metal ? 'font-bold' : 'font-medium'}`}>
+                  {l.amount ? inr2(l.amount) : <span className="text-slate-400">—</span>}
                 </td>
               </tr>
-            ))}
+            )})}
             {doc.lines.length === 0 && (
               <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={7}>
                 No material on this {kind.toLowerCase()} yet.

@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Info, X } from 'lucide-react'
+import { Plus, Trash2, Info, X, AlertTriangle } from 'lucide-react'
 import { Modal, Select } from '@/components/ui'
 import { SectionPicker } from '@/components/SectionPicker'
-import { PICK_OPTIONS, productById } from '@/data/productmaster'
+import { PICK_PRODUCTS, productById } from '@/data/productmaster'
 import { useExtraProducts, addExtraProduct } from '@/lib/extraproducts'
 import { CLIENTS, SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES } from '@/data/partycodes'
 import { inr2 } from '@/lib/utils'
 import { today, validTill, DEFAULT_VALID_DAYS, revisionNumber } from '@/lib/docnos'
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { recallRate, recallSlab, rememberAll } from '@/lib/ratememory'
 
 /* ── Raising a quotation or a proforma ─────────────────────────────────────
@@ -44,6 +45,33 @@ export interface BuiltLine {
   gst: number
 }
 
+/* ── How a fabricator quotes ───────────────────────────────────────────────
+   Asked for on 20-11-2026:
+
+     "What we require is at the top WEIGHT ALUMINIUM EXTRUDED PROFILES is
+      entered and cumulative weight is entered there only, and at the
+      individual sections only coating charge is mentioned, so it has to
+      calculate both... cumulative weight to be displayed as a separate
+      inventory at the top. Coating charge is displayed section wise or only
+      for quotation it can be cumulative."
+
+   Which is how the trade prices it. The metal is one commodity sold by total
+   weight at one rate, whatever it has been cut into; the coating is a job
+   done to particular sections. Pricing each section at a rate that silently
+   mixes the two makes a quotation nobody can argue with line by line.
+
+   So the document has an aluminium line at the top carrying every kilo on it,
+   and the sections underneath carry only what it costs to coat them — either
+   each on its own, or as one figure for the lot.                          */
+export interface AluminiumBlock {
+  /** false prices each section at one rate, the way it was before */
+  on: boolean
+  /** rupees a kilo for the metal itself */
+  rate: number
+}
+
+export type CoatingMode = 'section' | 'cumulative'
+
 export interface BuiltDoc {
   no: string
   date: string
@@ -58,17 +86,55 @@ export interface BuiltDoc {
   total: number
   /** true where the customer is outside Karnataka, so the tax is IGST */
   interState: boolean
+  /** the metal, priced once at the top by total weight */
+  aluminium: AluminiumBlock
+  /** whether the coating is charged on each section or once for the lot */
+  coatingMode: CoatingMode
 }
+
+/** The weight of every section on a document — what the metal is priced on. */
+export const totalKgOf = (lines: BuiltLine[]) =>
+  +lines.filter(l => l.productId && l.basis === 'kg')
+    .reduce((s, l) => s + l.kg, 0).toFixed(3)
 
 export type DocKind = 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoice' | 'Purchase Bill'
 
 export const amountOf = (l: BuiltLine) =>
   +((l.basis === 'kg' ? l.kg : l.nos) * l.rate).toFixed(2)
 
-export function totalsOf(lines: BuiltLine[]) {
-  const taxable = +lines.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
-  const tax = +lines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0).toFixed(2)
-  return { taxable, tax, total: +(taxable + tax).toFixed(2) }
+/**
+ * What the document comes to.
+ *
+ * With the metal priced at the top, a section's own rate is the coating
+ * charge and nothing else, and the metal is one line of its own. Without it,
+ * every section carries its own all-in rate, as before.
+ */
+export function totalsOf(
+  lines: BuiltLine[],
+  aluminium: AluminiumBlock = { on: false, rate: 0 },
+  coatingMode: CoatingMode = 'section',
+) {
+  const picked = lines.filter(l => l.productId)
+  const kg = totalKgOf(picked)
+
+  const metal = aluminium.on ? +(kg * aluminium.rate).toFixed(2) : 0
+  const coating = aluminium.on
+    ? (coatingMode === 'cumulative'
+        /* One figure for the lot: the first rate typed stands for all of it,
+           which is what "only for quotation it can be cumulative" asks for. */
+        ? +(kg * (picked.find(l => l.rate > 0)?.rate ?? 0)).toFixed(2)
+        : +picked.reduce((s, l) => s + amountOf(l), 0).toFixed(2))
+    : +picked.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+
+  const taxable = +(metal + coating).toFixed(2)
+  /* The metal and the coating are both 18% on a section, so one rate carries
+     the lot; where a line says otherwise its own rate is used on its own. */
+  const slab = picked[0]?.gst ?? 18
+  const tax = aluminium.on
+    ? +(taxable * (slab / 100)).toFixed(2)
+    : +picked.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0).toFixed(2)
+
+  return { metal, coating, kg, taxable, tax, total: +(taxable + tax).toFixed(2) }
 }
 
 const GST_RATES = ['18', '12', '5', '28', '0']
@@ -100,12 +166,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [subject, setSubject] = useState('')
   const [interState, setInterState] = useState(false)
   const [newParty, setNewParty] = useState(false)
+  /* The metal priced once at the top. On for an offer, where the shop quotes
+     this way; off for a purchase bill, which copies a supplier's own lines. */
+  const [aluOn, setAluOn] = useState(true)
+  const [aluRate, setAluRate] = useState(0)
+  const [coatingMode, setCoatingMode] = useState<CoatingMode>('section')
 
   /* Products the shop has added itself sit beside the master, so a door
      closer typed on one quotation is picked on the next. */
   const extras = useExtraProducts()
   const options = useMemo(() => [
-    ...PICK_OPTIONS,
+    ...PICK_PRODUCTS,
     ...extras.map(x => ({ id: x.id, code: x.code || '—', name: x.name, alt: x.alt })),
   ], [extras])
 
@@ -145,10 +216,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setSubject(initial?.subject ?? '')
     setInterState(initial?.interState ?? false)
     setNewParty(false)
+    setAluOn(initial?.aluminium?.on ?? kind !== 'Purchase Bill')
+    setAluRate(initial?.aluminium?.rate ?? 0)
+    setCoatingMode(initial?.coatingMode ?? 'section')
     setLines(initial?.lines?.length
       ? initial.lines.map(l => ({ ...l, key: Math.random().toString(36).slice(2) }))
       : [blankLine()])
-  }, [open, initial])
+  }, [open, initial, kind])
 
   /* Everyone already dealt with: the master, the party codes on their own
      sheets, and every name used on a document so far. */
@@ -159,7 +233,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       : CLIENTS.map(c => c.name)),
   ].filter(Boolean))].sort(), [parties, isPurchase])
 
-  const t = useMemo(() => totalsOf(lines), [lines])
+  const alu = { on: aluOn && !isPurchase, rate: aluRate }
+  const t = useMemo(() => totalsOf(lines, alu, coatingMode),
+    [lines, aluOn, aluRate, coatingMode, isPurchase])
   const rev = revisionNumber(docNo)
 
   const patch = (key: string, p: Partial<BuiltLine>) =>
@@ -237,7 +313,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     onSave({
       no: theNo, date: theDate, validTill: validTill(theDate, days),
       clientName: clientName.trim(), subject: subject.trim(), owner,
-      lines: keep, interState, ...totalsOf(keep),
+      lines: keep, interState, aluminium: alu, coatingMode,
+      ...totalsOf(keep, alu, coatingMode),
     })
     onClose()
   }
@@ -261,7 +338,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div><label className="label">{isPurchase ? "Supplier's bill no" : `${kind} no`}</label>
+          <div><label className="label">
+              {isPurchase ? "Supplier's bill no" : `${kind} no`}
+              {isPurchase && <span style={{ color: 'var(--red)' }}> *</span>}
+            </label>
             {isPurchase ? (
               <input className="input w-full font-mono !text-xs" value={theirNo}
                 placeholder="as on their bill" onChange={e => setTheirNo(e.target.value)} />
@@ -290,7 +370,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div><label className="label">{isPurchase ? 'Supplier' : 'Customer'}</label>
+          <div><label className="label">
+              {isPurchase ? 'Supplier' : 'Customer'}
+              <span style={{ color: 'var(--red)' }}> *</span>
+            </label>
             {/* Picked from who you have dealt with, not retyped every time —
                 theirs, on 20-11: "customer name from data selection". Anyone
                 new is typed once and is on the list from then on. */}
@@ -306,8 +389,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 options={[CHOOSE, ...known, ADD_NEW]} className="!w-full" />
             ) : (
               <div className="flex gap-1.5">
-                <input className="input w-full" value={clientName} autoFocus={newParty}
+                <input className="input w-full" value={clientName} autoFocus
                   placeholder={isPurchase ? 'Who it is from' : 'Who it is for'}
+                  style={clientName.trim() === '' ? { borderColor: 'var(--amber)' } : undefined}
                   onChange={e => setClientName(e.target.value)} />
                 {known.length > 0 && (
                   <button className="btn-ghost !px-2 shrink-0" title="Back to the list"
@@ -327,15 +411,60 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               options={['Karnataka — CGST + SGST', 'Outside Karnataka — IGST']} className="!w-full" /></div>
         </div>
 
+        {alu.on && (
+          <div className="rounded-lg p-3"
+            style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: 'var(--text-4)' }}>
+                  Aluminium Extruded Profiles
+                </p>
+                <p className="text-lg font-bold tabular-nums" style={{ color: 'var(--text-1)' }}>
+                  {t.kg} kg
+                </p>
+                <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+                  every section below, added up — not typed
+                </p>
+              </div>
+              <div>
+                <label className="label">Rate per kg</label>
+                <input className="input !w-28 text-right tabular-nums" value={aluRate || ''}
+                  placeholder="0" onChange={e => setAluRate(Number(e.target.value) || 0)} />
+              </div>
+              <div className="text-right">
+                <p className="label">Aluminium</p>
+                <p className="text-lg font-bold tabular-nums" style={{ color: 'var(--brand)' }}>
+                  {inr2(t.metal)}
+                </p>
+              </div>
+              <div>
+                <label className="label">Coating charged</label>
+                <Select value={coatingMode === 'section' ? 'Section by section' : 'Once for the lot'}
+                  onChange={v => setCoatingMode(v.startsWith('Section') ? 'section' : 'cumulative')}
+                  options={['Section by section', 'Once for the lot']} className="min-w-[11rem]" />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div>
-          <p className="label mb-1.5">Material</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <p className="label !mb-0">{alu.on ? 'Sections, and what it costs to coat them' : 'Material'}</p>
+            {!isPurchase && (
+              <label className="text-[11px] flex items-center gap-1.5" style={{ color: 'var(--text-4)' }}>
+                <input type="checkbox" checked={aluOn} onChange={e => setAluOn(e.target.checked)} />
+                Price the aluminium once at the top
+              </label>
+            )}
+          </div>
           <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--border-2)' }}>
             <table className="tbl">
               <thead>
                 <tr><th className="min-w-[13rem]">Product</th><th>Code</th>
                   <th className="num">Qty (nos)</th>
                   {showWeight && <th className="num">Weight (kg)</th>}
-                  <th className="num">Rate</th><th className="num">GST %</th>
+                  <th className="num">{alu.on ? 'Coating Rate' : 'Rate'}</th>
+                  <th className="num">GST %</th>
                   <th className="num">Amount</th><th /></tr>
               </thead>
               <tbody>
@@ -364,7 +493,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     )}
                     <td className="num">
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs" value={l.rate}
-                        placeholder={l.basis === 'kg' ? 'per kg' : 'per piece'}
+                        placeholder={alu.on ? 'coating / kg' : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
                           ? 'What this product last went out at. Type over it to change it.'
@@ -378,7 +507,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
                         options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" /></td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {amountOf(l) ? inr2(amountOf(l)) : '—'}</td>
+                      {alu.on && coatingMode === 'cumulative'
+                        ? <span style={{ color: 'var(--text-4)' }}>in the lot</span>
+                        : amountOf(l) ? inr2(amountOf(l)) : '—'}</td>
                     <td>
                       <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
                         onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : ls)}>
@@ -394,6 +525,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             </button>
             <table className="text-sm">
               <tbody>
+                {alu.on && (
+                  <>
+                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>
+                      Aluminium · {t.kg} kg</td>
+                      <td className="text-right tabular-nums">{inr2(t.metal)}</td></tr>
+                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>
+                      Powder coating</td>
+                      <td className="text-right tabular-nums">{inr2(t.coating)}</td></tr>
+                  </>
+                )}
                 <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>Taxable</td>
                   <td className="text-right tabular-nums">{inr2(t.taxable)}</td></tr>
                 {interState ? (
@@ -426,12 +567,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
         <div className="flex flex-wrap items-center justify-end gap-2 pt-3"
           style={{ borderTop: '1px solid var(--border-2)' }}>
           {!ready && (
-            <span className="text-[11px] mr-auto" style={{ color: 'var(--text-4)' }}>
+            /* They filled a line in, pressed the button and nothing happened,
+               twice. The reason was on the screen both times, in grey, at the
+               far end of a wide form. It is in amber beside the button now. */
+            <span className="text-[12px] mr-auto flex items-center gap-1.5 font-medium"
+              style={{ color: 'var(--amber)' }}>
+              <AlertTriangle size={13} />
               {clientName.trim() === ''
-                ? `Name the ${isPurchase ? 'supplier' : 'customer'} to carry on.`
+                ? `${isPurchase ? 'Supplier' : 'Customer'} is needed before this can go out.`
                 : isPurchase && theNo === ''
-                ? 'Put in the supplier\u2019s bill number.'
-                : 'Pick a product and a quantity on at least one line.'}
+                ? 'The supplier\u2019s bill number is needed.'
+                : 'Pick a product and put a quantity against it.'}
             </span>
           )}
           {ready && unpriced > 0 && (

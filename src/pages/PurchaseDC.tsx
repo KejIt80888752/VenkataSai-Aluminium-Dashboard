@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Scale, Boxes, Plus, Trash2, Ruler, Send, FileSpreadsheet, Printer } from 'lucide-react'
-import { PageHead, Stat, Select, SearchBox, ExportBtn, Empty } from '@/components/ui'
+import {
+  Scale, Boxes, Plus, Trash2, Ruler, Send, FileSpreadsheet, Printer,
+  FileInput, ChevronRight, ChevronLeft,
+} from 'lucide-react'
+import { PageHead, Stat, Select, SearchBox, ExportBtn, TableCard, Empty } from '@/components/ui'
 import DcDoc, { type DcPrintLine } from '@/components/DcDoc'
 import { xlsDownload } from '@/lib/sheetexport'
 import { SAMPLE_DC, lengthCheck, suspectLines, type DcLine } from '@/data/despatch'
@@ -8,10 +11,11 @@ import { LOADED } from '@/data/coatbook'
 import { PICK_OPTIONS, productById, masterIdOf, pieceKgAt, LENGTHS } from '@/data/productmaster'
 import { SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
-import { csvDownload, kg as kgFmt } from '@/lib/utils'
+import { csvDownload, kg as kgFmt, fmtDate } from '@/lib/utils'
 import { SectionPicker, loose } from '@/components/SectionPicker'
 import { useAliases } from '@/lib/useAliases'
 import { FY } from '@/data/company'
+import { today } from '@/lib/docnos'
 
 /* ── The purchase DC, as the shop asked for it on 20-11-2026 ───────────────
    Their words, and what each one changed:
@@ -86,6 +90,8 @@ const nominalOf = (productId: string, lengthFt: number) => pieceKgAt(productId, 
 interface Sheet {
   id: string
   label: string
+  /** a line of plain words for the list, saying what is on it */
+  note: string
   /** the number on the supplier's own DC — what a query is quoted against */
   dcNo: string
   supplier: string
@@ -105,39 +111,65 @@ interface Sheet {
 const per = (kg: number | null, nos: number) =>
   kg !== null && nos > 0 ? +(kg / nos).toFixed(3) : null
 
-/* Their loaded sheet. Hardware and rubber travel on it too, so they come
-   through — a DC is everything on the lorry, not only the extrusions. */
-const loadedSheet = (): Sheet => ({
-  id: 'loaded',
-  label: 'Loaded out 16 / 17-09-2026 — M1 to PC1',
-  dcNo: '',
-  supplier: 'M1 — Manufacturer 1',
-  date: '2026-09-17', poNo: '—', vehicleNo: '—', ccNo: '',
-  sentTo: 'PC1', overall: '', paperKg: null,
-  rows: LOADED.map((l, i) => {
-    const productId = masterIdOf(l) ?? ''
-    const lengthFt = productById(productId)?.lengthFt ?? 0
-    return {
-      slNo: i + 1,
-      productId,
-      code: l.code ?? '',
-      written: l.name,
-      nos: l.nos,
-      /* Their loading sheet writes no range, so the section's own figure
-         stands in — worked out from every weighed line of it in their books. */
-      weightRange: nominalOf(productId, lengthFt) ?? per(l.kg, l.nos),
-      kg: l.kg,
-      lengthFt,
-      internal: l.internal ?? '',
-    }
-  }),
+/* ── One lorry, one DC ─────────────────────────────────────────────────────
+   Theirs, on 20-11: "3 purchase DC should have been there as per excel, it's
+   clubbed into one."
+
+   They are right, and their own sheet says so. The 16/17-09 loading runs in
+   three blocks — M1 TO PC1, S2 TO PC1, V1 TO PC1 — which is three suppliers
+   sending three lots on three documents. Clubbing them put a mill's
+   extrusions, a retailer's door parts and a hardware agency's handles on one
+   purchase DC, which is not a document anybody could take to any of them.
+
+   So each block is its own DC, and the page opens on the list of them.   */
+
+interface Block {
+  route: string
+  supplier: string
+  label: string
+}
+
+const BLOCKS: Block[] = [
+  { route: 'M1 TO PC1', supplier: 'M1 — Manufacturer 1',      label: 'Sections from the mill' },
+  { route: 'S2 TO PC1', supplier: 'S2 — Retail Supplier 2',   label: 'Bought-out door parts' },
+  { route: 'V1 TO PC1', supplier: 'V1 — Hardware Supplier 1', label: 'Handles, hinges, rubber' },
+]
+
+const loadedSheets = (): Sheet[] => BLOCKS.map((b, i) => {
+  const lines = LOADED.filter(l => l.route === b.route)
+  return {
+    id: `loaded-${i + 1}`,
+    label: `${b.supplier.split(' — ')[0]} → PC1 · 16/17-09-2026`,
+    note: b.label,
+    dcNo: '',
+    supplier: b.supplier,
+    date: '2026-09-17', poNo: '—', vehicleNo: '—', ccNo: '',
+    sentTo: 'PC1', overall: '', paperKg: null,
+    rows: lines.map((l, j) => {
+      const productId = masterIdOf(l) ?? ''
+      const lengthFt = productById(productId)?.lengthFt ?? 0
+      return {
+        slNo: j + 1,
+        productId,
+        code: l.code ?? '',
+        written: l.name,
+        nos: l.nos,
+        /* Their loading sheet writes no range, so the section's own figure
+           stands in — worked out from every weighed line of it in their books. */
+        weightRange: nominalOf(productId, lengthFt) ?? per(l.kg, l.nos),
+        kg: l.kg,
+        lengthFt,
+        internal: l.internal ?? '',
+      }
+    }),
+  }
 })
 
-/* The February depot sheet. No codes on it, and SP / DP / DIV have not been
-   pointed at a section yet — so the product column opens empty and waits. */
+/* The February depot sheet, which is a document of its own. */
 const febSheet = (): Sheet => ({
   id: 'feb',
-  label: 'Despatch 13-02-2026 — Jindal depot',
+  label: 'Jindal depot · 13-02-2026',
+  note: 'Extruded sections, taken into Godown 1',
   dcNo: SAMPLE_DC.no,
   supplier: SAMPLE_DC.supplier,
   date: SAMPLE_DC.date, poNo: SAMPLE_DC.poNo, vehicleNo: SAMPLE_DC.vehicleNo,
@@ -164,7 +196,7 @@ const febSheet = (): Sheet => ({
   })),
 })
 
-const SHEETS = [loadedSheet(), febSheet()]
+const SHEETS = [...loadedSheets(), febSheet()]
 
 /** Everywhere a load can be sent: the coater, and our own four places. */
 const BUILT_IN_DESTINATIONS = [
@@ -188,7 +220,11 @@ const writeExtra = (xs: string[]) => {
 const ADD_PLACE = '+ Somewhere new…'
 
 export default function PurchaseDC() {
-  const [sheetId, setSheetId] = useState(SHEETS[0].id)
+  /* ── The list comes first ─────────────────────────────────────────────
+     Theirs: "DC list to be visible. Once we open, only then details list to
+     be visible." A register of documents, and the lines inside one of them
+     only when you have said which one. */
+  const [sheetId, setSheetId] = useState<string | null>(null)
   const [sheets, setSheets] = useState<Sheet[]>(SHEETS)
   const [lenFilter, setLenFilter] = useState('All lengths')
   const [find, setFind] = useState('')
@@ -208,6 +244,22 @@ export default function PurchaseDC() {
   const destLabel = (code: string) =>
     destinations.find(d => d === code || d.startsWith(code + ' ')) ?? code
 
+  /** A DC they start themselves — theirs: "option to add new purchase DC is
+      missing". Numbered from the register so two cannot collide. */
+  const newDc = () => {
+    const n = sheets.filter(x => x.id.startsWith('new-')).length + 1
+    const fresh: Sheet = {
+      id: `new-${Date.now().toString(36)}`,
+      label: `New DC ${n}`,
+      note: 'Started here, nothing on it yet',
+      dcNo: '', supplier: '', date: today(), poNo: '—', vehicleNo: '—', ccNo: '',
+      sentTo: 'GODOWN 1', overall: '', paperKg: null,
+      rows: [],
+    }
+    setSheets(ss => [fresh, ...ss])
+    setSheetId(fresh.id)
+  }
+
   const addPlace = () => {
     const name = window.prompt('Where is this load going? Name the godown, shop or coater.')?.trim()
     if (!name) return
@@ -218,7 +270,7 @@ export default function PurchaseDC() {
     edit({ sentTo: name })
   }
 
-  const sheet = sheets.find(s => s.id === sheetId)!
+  const sheet = sheets.find(s => s.id === sheetId) ?? sheets[0]
   const rows = sheet.rows
 
   const edit = (p: Partial<Sheet>) =>
@@ -377,13 +429,77 @@ export default function PurchaseDC() {
     ['Overall', overallTyped ? printKg : `${totalKg} (calculated)`],
   ])
 
-  return (
+  /* ── The register ─────────────────────────────────────────────────────
+     Every DC with its totals, so the shop can see what it has before
+     opening any of it. */
+  const summaryOf = (x: Sheet) => ({
+    nos: x.rows.reduce((a, r) => a + r.nos, 0),
+    kg: +x.rows.reduce((a, r) => a + (r.kg ?? 0), 0).toFixed(3),
+  })
+
+  if (sheetId === null) return (
     <div>
       <PageHead title="Purchase DC"
-        sub="Entered exactly as the supplier's sheet is written — their columns, their order">
-        <Select value={sheet.label}
-          onChange={v => { setSheetId(sheets.find(s => s.label === v)!.id); setLenFilter('All lengths') }}
-          options={sheets.map(s => s.label)} className="min-w-[18rem]" />
+        sub={`Every despatch sheet received, each one its own document · ${FY}`}>
+        <button className="btn" onClick={newDc}><Plus size={14} /> New purchase DC</button>
+      </PageHead>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-5">
+        <Stat label="Purchase DCs" value={String(sheets.length)} icon={FileInput} tone="brand"
+          sub="one per supplier, per load" />
+        <Stat label="Total Weight"
+          value={kgFmt(+sheets.reduce((a, x) => a + summaryOf(x).kg, 0).toFixed(3))}
+          icon={Scale} tone="violet" sub="across every sheet" />
+        <Stat label="Total Pieces"
+          value={`${sheets.reduce((a, x) => a + summaryOf(x).nos, 0)} nos`}
+          icon={Boxes} tone="green" sub="including hardware" />
+      </div>
+
+      <TableCard>
+        <thead>
+          <tr><th className="uppercase">DC No</th><th className="uppercase">Supplier</th>
+            <th className="uppercase">Date</th><th className="uppercase">Sent To</th>
+            <th className="num uppercase">Lines</th><th className="num uppercase">Qty (nos)</th>
+            <th className="num uppercase">Weight (kgs)</th><th /></tr>
+        </thead>
+        <tbody>
+          {sheets.map(x => {
+            const sum = summaryOf(x)
+            return (
+              <tr key={x.id} className="cursor-pointer" onClick={() => { setSheetId(x.id); setLenFilter('All lengths'); setFind('') }}>
+                <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>
+                  {x.dcNo || <span style={{ color: 'var(--text-4)' }}>not numbered</span>}
+                </td>
+                <td className="max-w-[15rem] truncate">
+                  <span style={{ color: 'var(--text-1)' }}>{x.supplier || '—'}</span>
+                  <span className="block text-[11px]" style={{ color: 'var(--text-4)' }}>{x.note}</span>
+                </td>
+                <td className="whitespace-nowrap text-xs">{x.date ? fmtDate(x.date) : '—'}</td>
+                <td className="text-xs whitespace-nowrap">{destLabel(x.sentTo)}</td>
+                <td className="num tabular-nums text-xs">{x.rows.length || '—'}</td>
+                <td className="num tabular-nums font-medium" style={{ color: 'var(--text-1)' }}>{sum.nos || '—'}</td>
+                <td className="num tabular-nums">{sum.kg ? kgFmt(sum.kg) : '—'}</td>
+                <td><ChevronRight size={14} style={{ color: 'var(--text-4)' }} /></td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </TableCard>
+
+      <p className="text-[11.5px] mt-4 max-w-4xl" style={{ color: 'var(--text-4)' }}>
+        Your 16/17-09 loading runs in three blocks — M1, S2 and V1 — which is three suppliers sending three
+        lots on three documents, so it is three DCs here rather than one. Open any of them for its lines.
+      </p>
+    </div>
+  )
+
+  return (
+    <div>
+      <PageHead title={sheet.supplier || 'Purchase DC'}
+        sub={`${sheet.note} · ${sheet.label}`}>
+        <button className="btn-ghost" onClick={() => setSheetId(null)}>
+          <ChevronLeft size={14} /> All DCs
+        </button>
         <button className="btn-outline" onClick={() => setPrinting(true)}>
           <Printer size={14} /> PDF
         </button>
