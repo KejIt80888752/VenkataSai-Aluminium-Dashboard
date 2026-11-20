@@ -3,6 +3,7 @@ import { Plus, Trash2, Info, X } from 'lucide-react'
 import { Modal, Select } from '@/components/ui'
 import { SectionPicker } from '@/components/SectionPicker'
 import { PICK_OPTIONS, productById } from '@/data/productmaster'
+import { useExtraProducts, addExtraProduct } from '@/lib/extraproducts'
 import { CLIENTS, SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES } from '@/data/partycodes'
 import { inr2 } from '@/lib/utils'
@@ -99,6 +100,20 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [subject, setSubject] = useState('')
   const [interState, setInterState] = useState(false)
   const [newParty, setNewParty] = useState(false)
+
+  /* Products the shop has added itself sit beside the master, so a door
+     closer typed on one quotation is picked on the next. */
+  const extras = useExtraProducts()
+  const options = useMemo(() => [
+    ...PICK_OPTIONS,
+    ...extras.map(x => ({ id: x.id, code: x.code || '—', name: x.name, alt: x.alt })),
+  ], [extras])
+
+  const productOf = (id: string) =>
+    productById(id) ?? (() => {
+      const x = extras.find(e => e.id === id)
+      return x ? { code: x.code, name: x.name, kgPerPiece: x.kgPerPiece, kind: 'section' as const } : undefined
+    })()
   const [lines, setLines] = useState<BuiltLine[]>([blankLine()])
 
   /* An invoice is the same document with the dates read differently: validity
@@ -154,7 +169,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      the weight per piece — so the kilos follow from the count. */
   const pick = (key: string, id: string) => setLines(ls => ls.map(l => {
     if (l.key !== key) return l
-    const p = productById(id)
+    const p = productOf(id)
     if (!p) return { ...l, productId: '', name: '', code: '' }
     const basis: 'kg' | 'nos' = p.kgPerPiece !== null ? 'kg' : 'nos'
     /* What this product went out at last time, and failing that the slab this
@@ -170,9 +185,29 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     }
   }))
 
+  /* Anything typed that the list does not know is taken as it stands and
+     joins the list — theirs: DOOR CLOSER, which never went to a coater and
+     so was never in a master built out of coating sheets. */
+  const create = (key: string, typed: string) => {
+    const x = addExtraProduct(typed)
+    /* Set from what was just created rather than by picking it out of the
+       list: the list is state, and state has not caught up with the write
+       yet, so picking by id here would look the product up and not find it. */
+    const seen = recallRate(x.id)
+    setLines(ls => ls.map(l => l.key === key ? {
+      ...l,
+      productId: x.id, code: x.code, name: x.name,
+      basis: x.kgPerPiece !== null ? 'kg' : 'nos',
+      kg: x.kgPerPiece !== null ? +(x.kgPerPiece * l.nos).toFixed(3) : 0,
+      rate: l.rate > 0 ? l.rate : (seen?.rate ?? 0),
+      gst: seen?.gst ?? l.gst,
+      recalled: !!seen?.rate && l.rate <= 0,
+    } : l))
+  }
+
   const setNos = (key: string, nos: number) => setLines(ls => ls.map(l => {
     if (l.key !== key) return l
-    const p = productById(l.productId)
+    const p = productOf(l.productId)
     return { ...l, nos, kg: p?.kgPerPiece != null ? +(p.kgPerPiece * nos).toFixed(3) : l.kg }
   }))
 
@@ -196,7 +231,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     /* Whatever went out is what the next one opens with. */
     rememberAll(keep.map(l => ({
       productId: l.productId,
-      kind: productById(l.productId)?.kind ?? '',
+      kind: productOf(l.productId)?.kind ?? '',
       rate: l.rate, gst: l.gst,
     })))
     onSave({
@@ -307,8 +342,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 {lines.map(l => (
                   <tr key={l.key}>
                     <td>
-                      <SectionPicker options={PICK_OPTIONS} value={l.productId}
-                        onChange={id => pick(l.key, id)} />
+                      <SectionPicker options={options} value={l.productId}
+                        onChange={id => pick(l.key, id)}
+                        onCreate={typed => create(l.key, typed)} />
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>{l.code || '—'}</td>
                     <td className="num">

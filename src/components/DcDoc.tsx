@@ -74,7 +74,7 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
         <table className="w-full mt-3 border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              {['Sl', 'Code', 'Product Name', 'Qty (nos)', 'Kg / Piece', 'Weight (kgs)', 'Internal Name']
+              {['SL', 'CODE', 'PRODUCT NAME', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)']
                 .map((h, i) => (
                   <th key={h}
                     className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= 3 && i <= 5 ? 'text-right' : 'text-left'}`}>
@@ -94,11 +94,10 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
                   {l.kg ?? <span className="text-slate-400">weighed above</span>}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5">{l.internal || '—'}</td>
               </tr>
             ))}
             {lines.length === 0 && (
-              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={7}>
+              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={6}>
                 No lines on this sheet.
               </td></tr>
             )}
@@ -107,7 +106,6 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{totalNos}</td>
               <td className="border border-slate-300 px-2 py-1.5" />
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{totalKg.toFixed(3)}</td>
-              <td className="border border-slate-300 px-2 py-1.5" />
             </tr>
           </tbody>
         </table>

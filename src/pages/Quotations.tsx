@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { FileText, Trophy, Percent, IndianRupee, Plus, FileCheck2, History, Printer } from 'lucide-react'
 import {
   PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, Modal,
 } from '@/components/ui'
 import { QUOTATIONS, INVOICES, type Quotation, type Invoice } from '@/data/txns'
-import { inr, inr2, fmtDate, csvDownload, cn } from '@/lib/utils'
+import { inr, inr2, fmtDate, csvDownload } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
 import { useCrud } from '@/lib/store'
 import { RowActions, EditedDot } from '@/components/crud'
@@ -47,6 +48,14 @@ const SERIES = {
 } as const
 type Kind = keyof typeof SERIES
 
+/** Where each document lives, so carrying one forward moves the screen too. */
+export const ROUTE_OF: Record<Kind, string> = {
+  'Quotation': '/quotation',
+  'Estimate': '/estimate',
+  'Proforma Invoice': '/proforma-invoice',
+  'Tax Invoice': '/tax-invoice',
+}
+
 const idOf = (x: { no: string }) => x.no
 
 /* A tax invoice is a different record from an offer — it splits its tax three
@@ -73,8 +82,18 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => ({
   })),
 })
 
-export default function Quotations() {
-  const [kind, setKind] = useState<Kind>('Quotation')
+/* ── One screen, four doors ────────────────────────────────────────────────
+   They asked for quotation, proforma invoice and tax invoice "one below the
+   other", and for the estimate to come out of the row of tabs and sit
+   outside with them. So each has its own line in the menu and its own
+   address, and the tab strip is gone. It is still one screen underneath,
+   because the four are the same document under four headings — but nobody
+   has to know that to find the one they want.                            */
+export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
+  const [tabKind, setTabKind] = useState<Kind>('Quotation')
+  const kind = fixedKind ?? tabKind
+  const setKind = (k: Kind) => { if (!fixedKind) setTabKind(k); else nav(ROUTE_OF[k]) }
+  const nav = useNavigate()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All Status')
   const [sel, setSel] = useState<DocRow | null>(null)
@@ -187,23 +206,13 @@ export default function Quotations() {
 
   return (
     <div>
-      <PageHead title="Sales Documents"
-        sub={`Estimate, quotation, proforma, tax invoice — numbers issue themselves · ${FY}`}>
+      <PageHead title={`${kind}s`}
+        sub={`Numbers issue themselves, revisions keep their number · ${FY}`}>
         <ExportBtn onClick={exportCsv} />
         <button className="btn" onClick={startNew}>
           <Plus size={14} /> New {noun}
         </button>
       </PageHead>
-
-      <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-lg w-fit"
-        style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
-        {(Object.keys(SERIES) as Kind[]).map(k => (
-          <button key={k} onClick={() => { setKind(k); setQ(''); setStatus('All Status') }}
-            className={cn('px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors',
-              kind === k && 'bg-brand text-white')}
-            style={kind === k ? undefined : { color: 'var(--text-3)' }}>{k}</button>
-        ))}
-      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label={`${kind}s Issued`} value={String(current.length)} icon={FileText} tone="brand"

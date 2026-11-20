@@ -75,7 +75,10 @@ function AppRoutes() {
               <Route path="/products"      element={<Products     />} />
               <Route path="/inventory"     element={<Inventory    />} />
               <Route path="/movements"     element={<Movements    />} />
-              <Route path="/quotation"     element={<Quotations   />} />
+              <Route path="/quotation"     element={<Quotations kind="Quotation" />} />
+              <Route path="/estimate"      element={<Quotations kind="Estimate" />} />
+              <Route path="/proforma-invoice" element={<Quotations kind="Proforma Invoice" />} />
+              <Route path="/tax-invoice"   element={<Quotations kind="Tax Invoice" />} />
               <Route path="/billing"       element={<Billing      />} />
               <Route path="/sales-reports" element={<SalesReports />} />
               <Route path="/leads"         element={<Leads        />} />

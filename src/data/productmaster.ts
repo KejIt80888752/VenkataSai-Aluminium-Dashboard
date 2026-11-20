@@ -179,18 +179,115 @@ function build(): MasterProduct[] {
 
 export const MASTER: MasterProduct[] = build()
 
+/* ── A cross section, as against a length of one ───────────────────────────
+   The depot writes SP on a line and the length in its own column — SP at 10',
+   11', 12' and 15' on the February sheet alone. The master is keyed on code
+   AND length, because 20034 at 16' SG and at 15' SG are two stock lines, so
+   SP cannot point at any one row of it.
+
+   What SP names is the die: the cross section, cut to whatever the job wants.
+   So the cross sections are offered alongside the lengths, and a shorthand
+   that travels at several lengths points at one of these instead. The length
+   then comes off the line it is written on, which is where the depot puts it.
+
+   Weight is held per running foot here rather than per piece, worked out from
+   every weighed line of that section across their books. A piece's weight is
+   that times its own length — which is the same arithmetic the length check
+   on the purchase sheet does, and it is how a section behaves.            */
+
+export interface CrossSection {
+  /** `X:<code>:<groove>` — never a plain code, so it cannot be taken for one */
+  id: string
+  code: string
+  /** the name with the length taken out: "2.5×1.5 SG" */
+  name: string
+  groove: string
+  /** kg per running foot, averaged over every weighed length of it */
+  kgPerFoot: number | null
+  /** the lengths the master already holds for it */
+  lengths: number[]
+}
+
+export const crossSectionId = (code: string, groove: string) => `X:${code}:${groove}`
+
+/** "2.5×1.5 16' SG" → "2.5×1.5 SG". */
+export const withoutLength = (name: string) =>
+  name.replace(/\s*\d+(?:\.\d+)?\s*(?:'|FT\b|FEET\b)/i, '').replace(/\s+/g, ' ').trim()
+
+function buildCrossSections(): CrossSection[] {
+  const m = new Map<string, { code: string; groove: string; names: string[]; kgft: number[]; lens: number[] }>()
+  for (const p of MASTER) {
+    if (p.kind !== 'section' || !p.code || !p.lengthFt) continue
+    const id = crossSectionId(p.code, p.groove)
+    const a = m.get(id) ?? { code: p.code, groove: p.groove, names: [], kgft: [], lens: [] }
+    a.names.push(withoutLength(p.name))
+    a.lens.push(p.lengthFt)
+    if (p.kgPerPiece !== null) a.kgft.push(p.kgPerPiece / p.lengthFt)
+    m.set(id, a)
+  }
+  return [...m.entries()].map(([id, a]) => ({
+    id, code: a.code, groove: a.groove,
+    name: a.names.sort((x, y) => y.length - x.length)[0],
+    kgPerFoot: a.kgft.length ? +(a.kgft.reduce((s, k) => s + k, 0) / a.kgft.length).toFixed(4) : null,
+    lengths: [...new Set(a.lens)].sort((x, y) => y - x),
+  })).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export const CROSS_SECTIONS: CrossSection[] = buildCrossSections()
+
+const XS_BY_ID = new Map(CROSS_SECTIONS.map(x => [x.id, x]))
+
+export const crossSectionById = (id: string | null | undefined) =>
+  id ? XS_BY_ID.get(id) : undefined
+
+export const isCrossSection = (id: string | null | undefined) => !!id && id.startsWith('X:')
+
 const BY_ID = new Map(MASTER.map(p => [p.id, p]))
 
-export const productById = (id: string | null | undefined) =>
-  id ? BY_ID.get(id) : undefined
+/**
+ * The product a row is pointed at.
+ *
+ * A cross section comes back as a product with no length of its own and no
+ * weight per piece, because neither is known until somebody says how long the
+ * piece is. `pieceKgAt` does that part.
+ */
+export const productById = (id: string | null | undefined): MasterProduct | undefined => {
+  if (!id) return undefined
+  const exact = BY_ID.get(id)
+  if (exact) return exact
+  const x = XS_BY_ID.get(id)
+  if (!x) return undefined
+  return {
+    id: x.id, code: x.code, name: `${x.name} — any length`,
+    alt: x.name, lengthFt: 0, groove: x.groove,
+    kgPerPiece: null, colours: [], kind: 'section',
+  }
+}
 
-/** What the picker shows: the name, their code beside it, every spelling searched. */
-export const PICK_OPTIONS = MASTER.map(p => ({
-  id: p.id,
-  code: p.code || '—',
-  name: p.name,
-  alt: p.alt,
-}))
+/** What a piece of this weighs at a given length, where that can be known. */
+export function pieceKgAt(id: string | null | undefined, lengthFt: number): number | null {
+  const x = crossSectionById(id)
+  if (x) return x.kgPerFoot !== null && lengthFt > 0 ? +(x.kgPerFoot * lengthFt).toFixed(3) : null
+  return productById(id)?.kgPerPiece ?? null
+}
+
+/** What the picker shows: the name, their code beside it, every spelling
+    searched — and the cross sections, for a shorthand that travels at more
+    than one length. */
+export const PICK_OPTIONS = [
+  ...CROSS_SECTIONS.map(x => ({
+    id: x.id,
+    code: x.code,
+    name: `${x.name} — any length`,
+    alt: `${x.name} ${x.groove} cross section die ${x.lengths.join(' ')}`,
+  })),
+  ...MASTER.map(p => ({
+    id: p.id,
+    code: p.code || '—',
+    name: p.name,
+    alt: p.alt,
+  })),
+]
 
 /** The product a line of their own sheet is, matched on code and base name. */
 export function masterIdOf(line: CoatLine): string | null {

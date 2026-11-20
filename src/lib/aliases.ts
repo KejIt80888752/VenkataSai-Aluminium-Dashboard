@@ -14,8 +14,41 @@
    from then on.                                                           */
 
 import { P } from '@/data/catalogue'
+import { crossSectionId } from '@/data/productmaster'
 
 export type Source = 'depot' | 'coater' | 'coatbook'
+
+/* ── What the shop has told us, in so many words ───────────────────────────
+   Sent by voice on 20-11-2026, having been asked and not guessed at:
+
+     "SP in the purchase invoice is equal to SG in our invoice, DP is equal
+      to DG, DIV is written for our DV."
+
+   and, on why the two books read differently at all:
+
+     "Purchase invoice will have slightly different terms and ours will have
+      different terms, but it has to be correlated between the two."
+
+   Each points at a cross section rather than a length of one, because the
+   depot writes SP at ten, eleven, twelve and fifteen feet on one sheet and
+   puts the length in its own column. The length comes off the line.
+
+   CUPC is NOT here. The same message said "CUPC is nothing, I don't know
+   which you are talking about, it is clips" — which is either an answer or a
+   question, and the recording was not clear enough to tell. Their CUPC line
+   weighs 0.227 kg a piece against 0.276 for the clips in their coating book,
+   which is close but not close enough to act on. It stays untaught until
+   somebody says plainly, because a wrong mapping here would quietly spoil the
+   weight per piece of every job cut from that section afterwards.
+
+   Anything taught on a screen overrides what is here; these are only what to
+   start from, so the shop is not asked a question it has already answered. */
+const CONFIRMED: Record<string, string> = {
+  [`depot:sp`]:  crossSectionId('20034', 'SG'),
+  [`depot:dp`]:  crossSectionId('20033', 'DG'),
+  [`depot:div`]: crossSectionId('19543', ''),
+  [`depot:dv`]:  crossSectionId('19543', ''),
+}
 
 const KEY = 'vsa-aliases'
 
@@ -81,8 +114,13 @@ function readRaw(): AliasMap {
 }
 
 export function loadAliases(): AliasMap {
-  return readRaw()
+  /* What they have confirmed sits underneath; anything taught sits on top. */
+  return { ...CONFIRMED, ...readRaw() }
 }
+
+/** True where a mapping is one they confirmed rather than one typed here. */
+export const isConfirmed = (source: Source, foreign: string) =>
+  keyFor(source, foreign) in CONFIRMED
 
 export function saveAliases(map: AliasMap) {
   try { localStorage.setItem(KEY, JSON.stringify(map)) } catch { /* blocked */ }

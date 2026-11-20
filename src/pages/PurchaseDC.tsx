@@ -9,7 +9,7 @@ import { PICK_OPTIONS, productById, masterIdOf, LENGTHS } from '@/data/productma
 import { SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
 import { csvDownload, kg as kgFmt } from '@/lib/utils'
-import { SectionPicker } from '@/components/SectionPicker'
+import { SectionPicker, loose } from '@/components/SectionPicker'
 import { FY } from '@/data/company'
 
 /* ── The purchase DC, as the shop asked for it on 20-11-2026 ───────────────
@@ -235,14 +235,18 @@ export default function PurchaseDC() {
   /** Rows shown, after the length filter that replaced the length column. */
   const shown = useMemo(() => {
     const ft = lenFilter === 'All lengths' ? null : parseFloat(lenFilter)
-    const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    /* Matched the same loose way the product box is — the foot mark, spaces
+       and × make no difference — because a box that finds a product and a box
+       that finds the line carrying it cannot disagree about what 16SG means. */
+    const words = find.trim().split(/\s+/).map(loose).filter(Boolean)
     return rows.filter(r => {
       const p = productById(r.productId)
       if (ft !== null && (p?.lengthFt ?? 0) !== ft) return false
       if (!words.length) return true
-      /* Searched on the name, the code and what the supplier wrote, so a line
-         can be found by whichever of the three the man has in front of him. */
-      const hay = `${p?.name ?? ''} ${r.code} ${r.written} ${r.internal}`.toLowerCase()
+      /* The internal name is searched but never shown — theirs, on 20-11:
+         "internal we will type in search bar but only billing name will
+         display". */
+      const hay = loose(`${p?.name ?? ''} ${r.code} ${r.written} ${r.internal}`)
       return words.every(w => hay.includes(w))
     })
   }, [rows, lenFilter, find])
@@ -299,9 +303,9 @@ export default function PurchaseDC() {
     `vsa-purchase-dc-${sheet.id}`,
     `Purchase DC — ${sheet.label}`,
     headMeta(),
-    ['Sl', 'Code', 'Product Name', 'Qty (nos)', 'Kg / Piece', 'Weight (kgs)', 'Internal Name'],
-    printLines().map(l => [l.slNo, l.code, l.name, l.nos, l.kgPerPiece, l.kg, l.internal]),
-    ['', '', 'Total', totalNos, null, totalKg, overallTyped ? `Overall ${printKg}` : ''],
+    ['SL', 'CODE', 'PRODUCT NAME', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)'],
+    printLines().map(l => [l.slNo, l.code, l.name, l.nos, l.kgPerPiece, l.kg]),
+    ['', '', 'TOTAL', totalNos, null, totalKg],
   )
 
   const exportCsv = () => csvDownload(`vsa-purchase-dc-${sheet.id}.csv`, [
@@ -309,10 +313,10 @@ export default function PurchaseDC() {
     ['DC No', sheet.dcNo, 'Supplier', sheet.supplier, 'Date', sheet.date,
      'P.O. No', sheet.poNo, 'Vehicle', sheet.vehicleNo],
     ['Sent to', destLabel(sheet.sentTo)],
-    [], ['Code', 'Product Name', 'Qty (nos)', 'Kg / Piece', 'Weight (kgs)', 'Internal Name'],
+    [], ['Code', 'Product Name', 'Qty (nos)', 'Weight Range', 'Weight (kgs)'],
     ...rows.map(r => [
       r.code, productById(r.productId)?.name ?? r.written, r.nos,
-      r.kgPerPiece ?? '', r.kg ?? '', r.internal,
+      r.kgPerPiece ?? '', r.kg ?? '',
     ]),
     [], ['Total weight', totalKg], ['Total pieces', totalNos],
     ['Overall', overallTyped ? printKg : `${totalKg} (calculated)`],
@@ -403,13 +407,17 @@ export default function PurchaseDC() {
                 {/* The two ran into each other on the paper-like layout, so
                     the serial gets its own room — theirs: "give space between
                     Sl.No and Code". */}
-                <th className="num !pr-5">Sl</th>
-                <th className="!pl-1">Code</th>
-                <th>Product Name</th>
-                <th className="num">Qty (nos)</th>
-                <th className="num">Kg / Piece</th>
-                <th className="num">Weight (kgs)</th>
-                <th>Internal Name</th>
+                {/* Their headings, in their words and their case: "all
+                    headings CAPITAL LETTERS", and "kg/piece replace with
+                    weight range" — the same figure under the name they use
+                    for it, which is what they meant when they said the two
+                    were the same thing. */}
+                <th className="num !pr-6 uppercase">Sl</th>
+                <th className="!pl-0 uppercase">Code</th>
+                <th className="uppercase">Product Name</th>
+                <th className="num uppercase">Qty (nos)</th>
+                <th className="num uppercase">Weight Range</th>
+                <th className="num uppercase">Weight (kgs)</th>
                 <th />
               </tr>
             </thead>
@@ -419,8 +427,8 @@ export default function PurchaseDC() {
                 const bad = checkOf(r.slNo)?.suspect
                 return (
                   <tr key={r.slNo}>
-                    <td className="num tabular-nums text-xs !pr-5" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>
-                    <td className="font-mono text-xs whitespace-nowrap !pl-1"
+                    <td className="num tabular-nums text-xs !pr-6" style={{ color: 'var(--text-4)' }}>{r.slNo}</td>
+                    <td className="font-mono text-xs whitespace-nowrap !pl-0 text-left"
                       style={{ color: p ? 'var(--text-1)' : 'var(--text-4)' }}>{r.code || '—'}</td>
                     <td className="min-w-[15rem]">
                       {/* Selection only — the name is never typed over. */}
@@ -454,10 +462,6 @@ export default function PurchaseDC() {
                           { kg: e.target.value === '' ? null : Number(e.target.value) }, 'kg')} />
                     </td>
                     <td>
-                      <input className="input !w-28 !py-1 !text-xs" value={r.internal} placeholder="—"
-                        onChange={e => patch(r.slNo, { internal: e.target.value })} />
-                    </td>
-                    <td>
                       <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
                         onClick={() => setRows(rs => rs.filter(x => x.slNo !== r.slNo))}><Trash2 size={13} /></button>
                     </td>
@@ -465,7 +469,7 @@ export default function PurchaseDC() {
                 )
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={8}>
+                <tr><td colSpan={7}>
                   <Empty msg={rows.length
                     ? `Nothing on this sheet matches${find ? ` "${find}"` : ''}`
                       + `${lenFilter === 'All lengths' ? '' : ` at ${lenFilter}`}`

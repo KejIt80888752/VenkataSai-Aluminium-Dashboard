@@ -4,7 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { loose } from '@/components/SectionPicker'
 import {
   LayoutDashboard, Package, Warehouse, ArrowLeftRight, FileText, Receipt,
-  ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2, Search,
+  ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2, Search, FileCheck2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
   ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch,
@@ -23,8 +23,11 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/',                 icon: LayoutDashboard, label: 'Dashboard'         },
   { to: '/alerts',           icon: BellRing,        label: 'Alerts & Reminders'},
   { group: 'Sales' },
-  { to: '/quotation',        icon: FileText,        label: 'Sales Documents'   },
-  { to: '/billing',          icon: Receipt,         label: 'Billing / Invoice' },
+  { to: '/estimate',         icon: FileText,        label: 'Estimate'          },
+  { to: '/quotation',        icon: FileText,        label: 'Quotation'         },
+  { to: '/proforma-invoice', icon: FileCheck2,      label: 'Proforma Invoice'  },
+  { to: '/tax-invoice',      icon: Receipt,         label: 'Tax Invoice'       },
+  { to: '/billing',          icon: Receipt,         label: 'Billing Register'  },
   { to: '/proforma',         icon: Ruler,           label: 'Proforma & Windows'},
   { to: '/cut-list',         icon: Scissors,        label: 'Cut List'          },
   { to: '/books',            icon: BookOpen,        label: 'Books (Est / GST)' },

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Check, X, Search } from 'lucide-react'
+import { Check, X, Search, Plus } from 'lucide-react'
 
 /* ── Picking one of our sections by typing ─────────────────────────────────
    The shop asked for this: typing the name beats hunting a dropdown. With
@@ -46,11 +46,14 @@ export const loose = (s: string) =>
     .replace(/[''"″`]/g, '')
     .replace(/[\s\-_/]/g, '')
 
-export function SectionPicker({ options, value, onChange, placeholder = 'Type a section name…', className }: {
+export function SectionPicker({ options, value, onChange, onCreate, placeholder = 'Type a section name…', className }: {
   options: PickOption[]
   /** the chosen section's code, or '' for none */
   value: string
   onChange: (code: string) => void
+  /** offered when nothing matches, so a shop can sell what the master has
+      never heard of rather than wait on somebody to add it */
+  onCreate?: (typed: string) => void
   placeholder?: string
   className?: string
 }) {
@@ -128,10 +131,23 @@ export function SectionPicker({ options, value, onChange, placeholder = 'Type a 
             <div className="absolute z-30 mt-1 w-full max-h-60 overflow-auto rounded-lg shadow-lg"
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)' }}>
               {hits.length === 0 ? (
-                <p className="px-3 py-2.5 text-[11.5px]" style={{ color: 'var(--text-4)' }}>
-                  Nothing matches "{query}". Try one word of the name, or the code — spaces, the foot
-                  mark and × or * are ignored, so 16SG and 2.5*1.5 both work.
-                </p>
+                <div>
+                  {onCreate && query.trim() !== '' && (
+                    <button type="button"
+                      onClick={() => { onCreate(query.trim()); setQuery(''); setOpen(false) }}
+                      className="w-full text-left px-3 py-2 flex items-center gap-2"
+                      style={{ background: 'var(--bg-card2)' }}>
+                      <Plus size={13} style={{ color: 'var(--green)' }} />
+                      <span className="text-xs" style={{ color: 'var(--text-1)' }}>
+                        Add <b>{query.trim()}</b> as a new item
+                      </span>
+                    </button>
+                  )}
+                  <p className="px-3 py-2.5 text-[11.5px]" style={{ color: 'var(--text-4)' }}>
+                    Nothing in the list matches "{query}". Spaces, the foot mark and × or * are ignored,
+                    so 16SG and 2.5*1.5 both work.
+                  </p>
+                </div>
               ) : hits.map((o, i) => (
                 <button key={optValue(o)} type="button"
                   onMouseEnter={() => setActive(i)}
