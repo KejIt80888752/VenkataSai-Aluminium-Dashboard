@@ -5,6 +5,7 @@ import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import { nameFor } from '@/data/itemmaster'
 import type { Invoice } from '@/data/txns'
+import { DEFAULT_TERMS } from '@/data/terms'
 
 /** Number → Indian words, for the "Amount in words" line on the bill. */
 function words(n: number): string {
@@ -43,7 +44,10 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
     gstin: inv.gstin || client?.gstin || 'Unregistered',
   }
   const inter  = inv.igst > 0
-  const totalQty = inv.lines.reduce((s, l) => s + l.qty, 0)
+  /* The aluminium line already carries every kilo on the bill. */
+  const totalQty = inv.lines.some(l => l.group === 'aluminium')
+    ? inv.lines.find(l => l.group === 'aluminium')!.qty
+    : inv.lines.reduce((s, l) => s + l.qty, 0)
 
   return createPortal(
     <div className="print-modal-overlay fixed inset-0 z-[60] bg-black/50 overflow-y-auto p-4" onClick={onClose}>
@@ -108,20 +112,33 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
             </tr>
           </thead>
           <tbody>
-            {inv.lines.map((l, i) => (
-              <tr key={l.code}>
+            {inv.lines.map((l, i) => {
+              const metal = l.group === 'aluminium'
+              const coat = l.group === 'coating'
+              return (
+              <tr key={`${l.code}-${i}`} className={metal ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
-                  <span className="font-medium text-slate-900">{nameFor(l.code, 'printInvoice', l.name)}</span>
-                  <span className="text-slate-500 text-[10px]"> ({l.code})</span>
+                  <span className={metal ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
+                    {coat && <span className="text-slate-400 mr-1">↳</span>}
+                    {nameFor(l.code, 'printInvoice', l.name)}
+                  </span>
+                  {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
+                  {coat && l.qty ? <span className="text-slate-500 text-[10px]"> · {l.qty} kg, coating</span> : null}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.qty.toLocaleString('en-IN')}</td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                  {coat && l.nos ? l.nos.toLocaleString('en-IN') : l.qty.toLocaleString('en-IN')}
+                </td>
+                <td className="border border-slate-300 px-2 py-1.5 text-right">
+                  {coat && l.nos ? 'nos' : l.unit}
+                </td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(l.rate)}</td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums font-medium">{inr2(l.amount)}</td>
+                <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${metal ? 'font-bold' : 'font-medium'}`}>
+                  {l.amount ? inr2(l.amount) : <span className="text-slate-400">—</span>}
+                </td>
               </tr>
-            ))}
+            )})}
             <tr className="bg-slate-50 font-semibold">
               <td className="border border-slate-300 px-2 py-1.5" colSpan={3}>Total</td>
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{totalQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</td>
@@ -167,7 +184,10 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
           <div>
             <p className="font-bold uppercase tracking-wider text-slate-500 text-[10px] mb-1">Terms & Conditions</p>
             <ol className="list-decimal list-inside text-[10px] text-slate-600 space-y-0.5">
-              {COMPANY.terms.map(t => <li key={t}>{t}</li>)}
+              {/* The bill's own terms, settled when it was raised. */}
+              {(inv.terms?.length ? inv.terms : DEFAULT_TERMS['Tax Invoice']).map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
             </ol>
           </div>
           <div className="text-right flex flex-col justify-between">

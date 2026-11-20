@@ -2,12 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Print: only the invoice / quotation / challan document ──────────── */
+/* ── Print: only the invoice / quotation / challan document ──────────────
+   "Pdf quality is not good." It was being printed through whatever the page
+   happened to be wearing: a dark theme put light text on a dark card and the
+   browser dropped most of it, borders came out at fractions of a pixel, and
+   a table could break across a page in the middle of a row.
+
+   Printing is its own medium, so it is set up as one. Black on white
+   whatever the screen is doing, backgrounds honoured so the heading rows
+   survive, hairlines that survive being scaled down, rows that do not split,
+   and a size the browser is told rather than left to guess.              */
 @media print {
   #root { display: none !important; }
-  .print-modal-overlay { position: static !important; inset: auto !important; overflow: visible !important; height: auto !important; }
-  #doc-print-area { position: static !important; width: 100%; margin: 0; box-shadow: none; }
-  @page { margin: 12mm; }
+
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    /* Without this a browser drops every background on the way to paper,
+       which takes the heading rows and the aluminium line with it. */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print-modal-overlay {
+    position: static !important; inset: auto !important;
+    overflow: visible !important; height: auto !important;
+    background: #fff !important; padding: 0 !important;
+  }
+
+  #doc-print-area {
+    position: static !important;
+    width: 100% !important; max-width: none !important;
+    margin: 0 !important; padding: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important; color: #000 !important;
+    /* Paper is read at arm's length, not at a screen's distance. */
+    font-size: 11.5pt !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Hairlines rather than the 1px that scales down to nothing. */
+  #doc-print-area table { border-collapse: collapse !important; width: 100% !important; }
+  #doc-print-area th,
+  #doc-print-area td { border: 0.6pt solid #64748b !important; padding: 4pt 6pt !important; }
+  #doc-print-area th { background: #eef2f6 !important; color: #000 !important; }
+
+  /* A row split across two pages is a row nobody can read. */
+  #doc-print-area tr, #doc-print-area img, #doc-print-area ol { page-break-inside: avoid; }
+  #doc-print-area thead { display: table-header-group; }
+
+  .print\:hidden { display: none !important; }
+
+  @page { size: A4 portrait; margin: 12mm; }
 }
 
 /* ── Light / Dark tokens ────────────────────────────────────────────── */

@@ -62,6 +62,8 @@ export interface Invoice {
   received: number
   status: 'Paid' | 'Partial' | 'Unpaid' | 'Overdue'
   mode: 'NEFT' | 'UPI' | 'Cheque' | 'Cash' | 'Credit'
+  /** what prints at the foot of this one, which may differ from the standard */
+  terms?: string[]
 }
 
 const interState = (c: Client) => c.state !== 'Karnataka'
@@ -250,6 +252,8 @@ export interface Quotation {
   taxable: number; tax: number; total: number
   status: 'Sent' | 'Under Negotiation' | 'Won' | 'Lost' | 'Expired'
   owner: string
+  /** what prints at the foot of this one, which may differ from the standard */
+  terms?: string[]
 }
 
 const SUBJECTS = [

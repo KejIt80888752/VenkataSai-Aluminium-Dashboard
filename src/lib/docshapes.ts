@@ -18,7 +18,8 @@
 
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc } from '@/components/DocBuilder'
-import { amountOf, totalKgOf } from '@/components/DocBuilder'
+import { amountOf, totalKgOf, isAluminium } from '@/components/DocBuilder'
+import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
 
 export type SalesKind = 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoice'
@@ -34,35 +35,69 @@ const PREFIX: Record<SalesKind, string> = {
    charged once for the lot, because they are the specification of what is
    being supplied and a customer has to be able to read it.               */
 const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
-  const charged = !(d.aluminium?.on && d.coatingMode === 'cumulative')
+  const alu = isAluminium(l)
+  /* Only aluminium is coated. Hardware and rubber travel on the same
+     document and are sold outright — theirs, seeing a rubber listed under
+     the metal: "wrong, not a part of aluminium... hardware is different". */
+  const coated = d.aluminium?.on && alu
+  const charged = !(coated && d.coatingMode === 'cumulative')
   return {
     code: l.code, name: l.name, hsn: l.hsn,
-    unit: l.basis === 'kg' ? 'kg' : 'nos',
-    qty: l.basis === 'kg' ? l.kg : l.nos,
+    /* Sections are quoted by the piece — theirs: "all sections are nos". The
+       kilos are on the metal line above and do not belong twice on one
+       document, which is what they meant by "displaying double time". */
+    unit: alu ? 'nos' : (l.basis === 'kg' ? 'kg' : 'nos'),
+    qty: alu ? l.kg : (l.basis === 'kg' ? l.kg : l.nos),
     rate: charged ? l.rate : 0,
     gst: l.gst,
     amount: charged ? amountOf(l) : 0,
     cost: 0,
     productId: l.productId, nos: l.nos,
-    group: d.aluminium?.on ? ('coating' as const) : ('item' as const),
+    group: coated ? ('coating' as const) : ('item' as const),
   }
 })
 
 const linesOf = (d: BuiltDoc): Line[] => {
   if (!d.aluminium?.on) return sectionLines(d)
-  const kg = totalKgOf(d.lines)
-  const slab = d.lines[0]?.gst ?? 18
-  const out: Line[] = [{
-    code: '', name: 'ALUMINIUM EXTRUDED PROFILES', hsn: '7604',
-    unit: 'kg', qty: kg, rate: d.aluminium.rate,
-    gst: slab, amount: +(kg * d.aluminium.rate).toFixed(2), cost: 0,
-    group: 'aluminium',
-  }, ...sectionLines(d)]
+
+  /* ── One metal line per rate ──────────────────────────────────────────
+     A job that mixes series is priced at more than one rate a kilo, so the
+     metal goes out as one line for each rather than a single figure that
+     hides them — theirs: "in your case it clubs all, like 85 mm series it's
+     different... I need option to select sections and charge differently". */
+  const metal = d.lines.filter(isAluminium)
+  const byRate = new Map<number, number>()
+  for (const l of metal) {
+    const rate = l.metalRate && l.metalRate > 0 ? l.metalRate : d.aluminium.rate
+    byRate.set(rate, +((byRate.get(rate) ?? 0) + l.kg).toFixed(3))
+  }
+  const several = byRate.size > 1
+
+  const out: Line[] = [...byRate.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([rate, kg]) => ({
+      code: '', hsn: hsnFor('section'),
+      name: several
+        ? `ALUMINIUM EXTRUDED PROFILES @ ${rate.toLocaleString('en-IN')}/kg`
+        : 'ALUMINIUM EXTRUDED PROFILES',
+      unit: 'kg', qty: kg, rate,
+      gst: d.aluminium.gst, amount: +(kg * rate).toFixed(2), cost: 0,
+      group: 'aluminium' as const,
+    }))
+
+  out.push(...sectionLines(d))
 
   if (d.coatingMode === 'cumulative') {
     const rate = d.coatingRate ?? 0
+    const kg = totalKgOf(d.lines)
+    /* The slab most of the coated sections are at, since the charge covers
+       them all as one supply. */
+    const slab = metal.length
+      ? [...metal.reduce((m, l) => m.set(l.gst, (m.get(l.gst) ?? 0) + 1), new Map<number, number>())
+          .entries()].sort((a, b) => b[1] - a[1])[0][0]
+      : 18
     out.push({
-      code: '', name: 'POWDER COATING', hsn: '9988',
+      code: '', name: 'POWDER COATING', hsn: hsnFor('coating'),
       unit: 'kg', qty: kg, rate,
       gst: slab, amount: +(kg * rate).toFixed(2), cost: 0,
       group: 'coating',
@@ -79,7 +114,7 @@ export function asQuotation(d: BuiltDoc, kind: SalesKind): Quotation {
     clientId: '', clientName: d.clientName, subject: d.subject,
     lines: linesOf(d),
     taxable: d.taxable, tax: d.tax, total: d.total,
-    status: 'Sent', owner: d.owner,
+    status: 'Sent', owner: d.owner, terms: d.terms,
   }
 }
 
@@ -101,7 +136,7 @@ export function asInvoice(d: BuiltDoc): Invoice {
     igst: d.interState ? d.tax : 0,
     roundOff: +(total - (d.taxable + d.tax)).toFixed(2),
     total,
-    cogs: 0, received: 0, status: 'Unpaid', mode: 'Credit',
+    cogs: 0, received: 0, status: 'Unpaid', mode: 'Credit', terms: d.terms,
   }
 }
 
@@ -123,13 +158,14 @@ export interface DocRow {
   owner: string
   /** what is still to come in, on a bill that carries it */
   balance: number | null
+  terms?: string[]
 }
 
 export const rowOfQuotation = (q: Quotation): DocRow => ({
   id: q.id, no: q.no, date: q.date, until: q.validTill,
   clientName: q.clientName, subject: q.subject, lines: q.lines,
   taxable: q.taxable, tax: q.tax, total: q.total,
-  status: q.status, owner: q.owner, balance: null,
+  status: q.status, owner: q.owner, balance: null, terms: q.terms,
 })
 
 export const rowOfInvoice = (i: Invoice): DocRow => ({
@@ -141,7 +177,7 @@ export const rowOfInvoice = (i: Invoice): DocRow => ({
   tax: +(i.cgst + i.sgst + i.igst).toFixed(2),
   total: i.total,
   status: i.status, owner: '',
-  balance: +(i.total - i.received).toFixed(2),
+  balance: +(i.total - i.received).toFixed(2), terms: i.terms,
 })
 
 /** A stored row read back into the builder, for a revision or a carry-forward. */
@@ -149,6 +185,8 @@ export const builtFrom = (r: DocRow) => ({
   clientName: r.clientName,
   subject: r.subject,
   lines: r.lines,
+  owner: r.owner,
+  terms: r.terms,
 })
 
 export const STATUS_OPTIONS: Record<'offer' | 'invoice', string[]> = {

@@ -74,19 +74,27 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
      So it is drawn at the top of the page instead and placed over the
      input, which no box can clip. It follows the input while the page or
      the table scrolls, and flips above it when there is more room there. */
-  const [at, setAt] = useState<{ left: number; top: number; width: number; drop: 'down' | 'up' } | null>(null)
+  const [at, setAt] = useState<
+    { left: number; top: number; width: number; drop: 'down' | 'up'; room: number } | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const place = useCallback(() => {
     const el = boxRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
-    const below = window.innerHeight - r.bottom
-    const drop: 'down' | 'up' = below < 180 && r.top > below ? 'up' : 'down'
+    const below = window.innerHeight - r.bottom - 8
+    const above = r.top - 8
+    /* Dropping upward only when there is genuinely more room there, and the
+       list is given the smaller of what it wants and what is actually free —
+       otherwise it ran off the top of the window and the rows at the far end
+       could not be reached at all. */
+    const drop: 'down' | 'up' = below < 160 && above > below ? 'up' : 'down'
     setAt({
-      left: r.left,
+      left: Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 230) - 8)),
       top: drop === 'down' ? r.bottom + 4 : r.top - 4,
-      width: Math.max(r.width, 220),
+      width: Math.max(r.width, 230),
       drop,
+      room: Math.max(120, (drop === 'down' ? below : above) - 6),
     })
   }, [])
 
@@ -131,6 +139,23 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
 
   useEffect(() => { setActive(0) }, [query])
 
+  /* ── Following the arrow keys ─────────────────────────────────────────
+     "Unable to move arrow marks and select." The arrows were moving the
+     highlight the whole time — down past the bottom of a box only sixty
+     pixels tall, with nothing scrolling to follow it. Three presses and the
+     chosen row was out of sight, so it read as a dead key.
+
+     The list now scrolls to whatever is highlighted, which is what makes an
+     arrow key feel like it is doing something. */
+  /* The arrow keys were moving the highlight and nothing was moving with it,
+     so on a list longer than the box the highlight walked off the bottom and
+     looked like nothing was happening. It is kept in view now. */
+  useEffect(() => {
+    if (!open) return
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-row="${active}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [active, open, hits.length])
+
   const choose = (o: PickOption) => {
     onChange(optValue(o))
     setQuery('')
@@ -171,10 +196,10 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
             />
           </div>
           {open && at && createPortal(
-            <div data-section-picker-list
-              className="fixed z-[70] max-h-60 overflow-auto rounded-lg shadow-2xl"
+            <div data-section-picker-list ref={listRef}
+              className="fixed z-[70] overflow-auto rounded-lg shadow-2xl"
               style={{
-                left: at.left, width: at.width,
+                left: at.left, width: at.width, maxHeight: Math.min(240, at.room),
                 ...(at.drop === 'down'
                   ? { top: at.top }
                   : { bottom: window.innerHeight - at.top }),
@@ -199,13 +224,17 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
                   </p>
                 </div>
               ) : hits.map((o, i) => (
-                <button key={optValue(o)} type="button"
+                <button key={optValue(o)} type="button" data-row={i}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => choose(o)}
                   className="w-full text-left px-3 py-1.5 flex items-center justify-between gap-2"
-                  style={{ background: i === active ? 'var(--bg-card2)' : 'transparent' }}>
-                  <span className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{o.name}</span>
-                  <span className="text-[10px] font-mono shrink-0" style={{ color: 'var(--text-4)' }}>{o.code}</span>
+                  style={i === active
+                    ? { background: 'var(--brand)', color: '#fff' }
+                    : { background: 'transparent' }}>
+                  <span className="text-xs truncate"
+                    style={{ color: i === active ? '#fff' : 'var(--text-1)' }}>{o.name}</span>
+                  <span className="text-[10px] font-mono shrink-0"
+                    style={{ color: i === active ? 'rgba(255,255,255,.75)' : 'var(--text-4)' }}>{o.code}</span>
                   {optValue(o) === value && <Check size={12} style={{ color: 'var(--green)' }} />}
                 </button>
               ))}

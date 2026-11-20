@@ -4,6 +4,7 @@ import { COMPANY } from '@/data/company'
 import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
+import { DEFAULT_TERMS } from '@/data/terms'
 
 /* ── A quotation the customer can actually be handed ───────────────────────
    They asked us to look at what Tally and the rest already do — "we are
@@ -35,8 +36,13 @@ export default function QuoteDoc({ doc, kind, onClose }: {
   }
   /* The aluminium line already carries every kilo on the document, so adding
      the sections to it would count the same metal twice. */
-  const totalQty = doc.lines.some(l => l.group === 'aluminium')
-    ? doc.lines.find(l => l.group === 'aluminium')!.qty
+  /* Every kilo on the document, which is the metal lines added together —
+     a job priced at two rates carries two of them, and taking only the first
+     printed a total that was short by whatever the second one weighed. The
+     sections below are the same metal counted again, so they are left out. */
+  const metalLines = doc.lines.filter(l => l.group === 'aluminium')
+  const totalQty = metalLines.length
+    ? +metalLines.reduce((s, l) => s + l.qty, 0).toFixed(3)
     : doc.lines.reduce((s, l) => s + l.qty, 0)
 
   return createPortal(
@@ -62,11 +68,11 @@ export default function QuoteDoc({ doc, kind, onClose }: {
           </div>
           <div className="text-right">
             <p className="text-[15px] font-bold uppercase tracking-wider text-slate-900">{kind}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">
-              {kind === 'Tax Invoice' ? 'Original for Recipient'
-                : isOffer ? 'Not a tax invoice'
-                : 'Not a tax invoice — raised before despatch'}
-            </p>
+            {/* "Remove: Not a Tax invoice" — theirs, on 20-11. The heading
+                already says what the document is. */}
+            {kind === 'Tax Invoice' && (
+              <p className="text-[10px] text-slate-500 mt-0.5">Original for Recipient</p>
+            )}
           </div>
         </div>
 
@@ -116,13 +122,23 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                     {l.name}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
-                  {coat && l.nos ? <span className="text-slate-500 text-[10px]"> · {l.nos} nos, coating</span> : null}
+                  {/* Its own weight, which is what the coating is charged on
+                      — the quantity beside it is the piece count. */}
+                  {coat && l.nos ? (
+                    <span className="text-slate-500 text-[10px]"> · coating on {l.qty} kg</span>
+                  ) : null}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>
+                {/* The aluminium line already carries every kilo on the
+                    document. Repeating it against each section read as the
+                    same weight twice — theirs: "displaying double time" — so
+                    a section shows the count it was supplied in. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                  {l.qty.toLocaleString('en-IN')}
+                  {coat && l.nos ? l.nos.toLocaleString('en-IN') : l.qty.toLocaleString('en-IN')}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-right">
+                  {coat && l.nos ? 'nos' : l.unit}
+                </td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(l.rate)}</td>
                 <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${metal ? 'font-bold' : 'font-medium'}`}>
                   {l.amount ? inr2(l.amount) : <span className="text-slate-400">—</span>}
@@ -164,17 +180,12 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         <div className="mt-4 pt-3 border-t border-slate-300 grid grid-cols-2 gap-4">
           <div>
             <p className="font-bold uppercase tracking-wider text-slate-500 text-[10px] mb-1">Terms & Conditions</p>
+            {/* The document's own terms, settled when it was raised. */}
             <ol className="list-decimal list-inside text-[10px] text-slate-600 space-y-0.5">
+              {(doc.terms?.length ? doc.terms : DEFAULT_TERMS[kind]).map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
               <li>Rates quoted ex-godown, {COMPANY.address.line3}.</li>
-              <li>
-                {isOffer
-                  ? `Valid till ${fmtDate(doc.validTill)}. Aluminium rates are linked to LME and may be revised after validity.`
-                  : `Goods remain our property until paid for in full. Payment due ${fmtDate(doc.validTill)}.`}
-              </li>
-              {kind !== 'Tax Invoice' && (
-                <li>This document does not carry input tax credit. A tax invoice follows on despatch.</li>
-              )}
-              {COMPANY.terms.slice(0, 2).map(t => <li key={t}>{t}</li>)}
             </ol>
           </div>
           <div className="text-right flex flex-col justify-between">

@@ -17,7 +17,7 @@ import {
   STATUS_OPTIONS, type DocRow,
 } from '@/lib/docshapes'
 import { MASTER } from '@/data/productmaster'
-import { nextDocNo, revisionOf, revisionNumber, baseDocNo, today, validTill } from '@/lib/docnos'
+import { nextDocNo, revisionOf, revisionNumber, baseDocNo } from '@/lib/docnos'
 
 /* ── Quotations and proformas ──────────────────────────────────────────────
    Asked for on 20-11-2026. The old form took a quote number, a date, a
@@ -61,14 +61,24 @@ const idOf = (x: { no: string }) => x.no
 /* A tax invoice is a different record from an offer — it splits its tax three
    ways and carries what has been received — so the two are built in one place
    and read back into one display row. See src/lib/docshapes.ts. */
-const resolveProduct = (code: string, name: string) =>
-  MASTER.find(p => p.code === code && p.name === name)?.id
-  ?? MASTER.find(p => p.code === code)?.id
-  ?? ''
+/* An empty code must not match a product that also has none — TBC carries no
+   code, so a summary line with a blank one was coming back as TBC. */
+const resolveProduct = (code: string, name: string) => {
+  if (!code.trim()) return MASTER.find(p => p.name === name)?.id ?? ''
+  return MASTER.find(p => p.code === code && p.name === name)?.id
+    ?? MASTER.find(p => p.code === code)?.id
+    ?? ''
+}
 
 const toBuilt = (r: DocRow): Partial<BuiltDoc> => ({
   ...builtFrom(r),
-  lines: r.lines.map((l, i): BuiltLine => ({
+  /* The aluminium line and a cumulative coating line are summaries of the
+     sections, not material in their own right. Read back as products they
+     would be billed a second time, so only the sections come back. */
+  lines: r.lines
+    .filter(l => l.group !== 'aluminium')
+    .filter(l => !(l.group === 'coating' && !l.productId && !l.code))
+    .map((l, i): BuiltLine => ({
     key: `${l.code}-${i}`,
     /* Lines raised before the master existed carry no product, so they are
        matched back by code and name; failing that the row opens with its
@@ -79,7 +89,7 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => ({
     nos: l.nos ?? (l.unit === 'kg' ? 0 : l.qty),
     kg: l.unit === 'kg' ? l.qty : 0,
     rate: l.rate, gst: l.gst,
-  })),
+    })),
 })
 
 /* ── One screen, four doors ────────────────────────────────────────────────
@@ -99,6 +109,8 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   const [sel, setSel] = useState<DocRow | null>(null)
   const [building, setBuilding] = useState<{ no: string; from: Partial<BuiltDoc> | null } | null>(null)
   const [printing, setPrinting] = useState<DocRow | null>(null)
+  /** set while a document is being carried forward into a different register */
+  const [carryTo, setCarryTo] = useState<Kind | null>(null)
 
   /* The series are kept apart so their numbering cannot collide. Tax invoices
      share the billing screen's own store, so a bill raised here is the same
@@ -165,39 +177,67 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   const startNew = () =>
     setBuilding({ no: nextDocNo(SERIES[kind].prefix, list.map(x => x.no)), from: null })
 
-  /* Editing issues a revision rather than quietly changing what was sent. */
+  /* ── Editing ──────────────────────────────────────────────────────────
+     A quotation that has been sent is not changed, it is revised: the number
+     stays and R1, R2 follows it, so the customer can see which version they
+     are holding. A tax invoice is not revised at all — theirs, on 20-11:
+     "if invoice revised, need not add R1, that implies only to quotation."
+     A bill is a bill; it is corrected or it is cancelled. */
   const startRevision = (x: DocRow) =>
-    setBuilding({ no: revisionOf(x.no), from: toBuilt(x) })
+    setBuilding({ no: isInvoiceKind ? x.no : revisionOf(x.no), from: toBuilt(x) })
 
-  /* Carrying a document forward: estimate → quotation → proforma → invoice,
-     which is the order the trade works in. Nothing is retyped. */
+  /** Taking a document off the register it actually lives in. */
+  const removeDoc = (no: string) => (isInvoiceKind ? invs : crud).remove(no)
+
+  /* Carrying a document forward. An estimate goes straight to a tax invoice —
+     theirs: "in estimate, carry forward to tax invoice only to be given,
+     remaining not required." A quotation still steps through the proforma,
+     which is what a proforma is for. */
   const NEXT_STEP: Partial<Record<Kind, Kind>> = {
-    'Estimate': 'Quotation',
+    'Estimate': 'Tax Invoice',
     'Quotation': 'Proforma Invoice',
     'Proforma Invoice': 'Tax Invoice',
   }
+
+  /* ── Carrying a document forward ──────────────────────────────────────
+     It opens the form rather than filing the next document silently, because
+     the shop wants the unit rates in front of them before a bill goes out —
+     theirs: "we should have option to change unit rate in tax invoice".
+
+     Two rules on the way into a bill, both theirs. A line at nought per cent
+     does not belong on a tax invoice at all and is dropped. A line at nine —
+     the half of a split slab, written as if it were the whole — is put back to
+     the eighteen the bill has to charge.                                   */
+  const forTaxInvoice = (lines: BuiltLine[]) => lines
+    .filter(l => l.gst > 0)
+    .map(l => ({ ...l, gst: l.gst === 9 ? 18 : l.gst }))
 
   const carryForward = (x: DocRow) => {
     const to = NEXT_STEP[kind]
     if (!to) return
     const existing = to === 'Tax Invoice' ? invs.rows.map(r => r.no)
       : (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).rows.map(r => r.no)
-    const built: BuiltDoc = {
+    const lines = toBuilt(x).lines ?? []
+    setCarryTo(to)
+    setBuilding({
       no: nextDocNo(SERIES[to].prefix, existing),
-      date: today(), validTill: validTill(today()),
-      clientName: x.clientName, subject: x.subject, owner: x.owner,
-      lines: (toBuilt(x).lines ?? []),
-      taxable: x.taxable, tax: x.tax, total: x.total,
-      /* No place of supply travels with an offer, so it opens on the shop's
-         own state and is changed if the customer is outside it. */
-      interState: false,
-      /* Carried forward already priced, so the next document keeps the
-         figures rather than re-deriving them from a rate it does not have. */
-      aluminium: { on: false, rate: 0 }, coatingMode: 'section' as const, coatingRate: 0,
-    }
-    if (to === 'Tax Invoice') invs.add(asInvoice(built))
-    else (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).add(asQuotation(built, to))
-    setKind(to)
+      from: {
+        clientName: x.clientName,
+        subject: x.subject,
+        lines: to === 'Tax Invoice' ? forTaxInvoice(lines) : lines,
+      },
+    })
+  }
+
+  /** Where a document being built is going, when it is not this screen's own. */
+  const target = carryTo ?? kind
+
+  const fileDoc = (d: BuiltDoc) => {
+    if (target === 'Tax Invoice') invs.add(asInvoice(d))
+    else (target === 'Quotation' ? quotes : target === 'Estimate' ? ests : pis)
+      .add(asQuotation(d, target))
+    setBuilding(null)
+    if (carryTo) { setCarryTo(null); setKind(carryTo) }
   }
 
   const exportCsv = () => csvDownload(`vsa-${SERIES[kind].store}.csv`, [
@@ -266,8 +306,11 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
                         title={`Carry this forward into a ${NEXT_STEP[kind]!.toLowerCase()}`}
                         onClick={() => carryForward(x)}><FileCheck2 size={13} /></button>
                     )}
+                    {/* Deleting read from whichever offer register happened to
+                        be current, so a bill deleted here stayed on the screen.
+                        It goes from the register it lives in. */}
                     <RowActions label={x.no} onEdit={() => startRevision(x)}
-                      onDelete={() => crud.remove(x.no)} />
+                      onDelete={() => removeDoc(x.no)} />
                   </span>
                 </td>
               </tr>
@@ -306,10 +349,10 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
           kind={kind} onClose={() => setPrinting(null)} />
       )}
 
-      <DocBuilder open={!!building} onClose={() => setBuilding(null)} kind={kind}
+      <DocBuilder open={!!building} onClose={() => { setBuilding(null); setCarryTo(null) }}
+        kind={target}
         docNo={building?.no ?? ''} initial={building?.from} parties={parties}
-        owner="D. Nageswara Rao"
-        onSave={d => isInvoiceKind ? invs.add(asInvoice(d)) : crud.add(asQuotation(d, kind))} />
+        onSave={fileDoc} />
 
       <Modal open={!!sel} onClose={() => setSel(null)}
         title={sel ? `${sel.no} — ${sel.clientName}` : ''} wide>
