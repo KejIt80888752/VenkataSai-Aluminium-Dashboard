@@ -514,20 +514,22 @@ export default function DcFlow() {
           </div>
           <TableCard maxH="30rem">
             <thead>
-              <tr><th className="num">Sl</th><th>Particulars</th><th className="num">Weight Range</th>
-                <th className="num">Net Weight</th><th className="num">Length</th><th className="num">Pieces</th>
-                <th className="num">Kg / Piece</th></tr>
+              {/* Weight range came off here too. Theirs, on 20-11: "weight range
+                  and KG per piece is the same — remove weight range, replace it
+                  with KG per piece." It was still sitting on this sheet. */}
+              <tr><th className="num">Sl</th><th>Particulars</th>
+                <th className="num">Pieces</th><th className="num">Kg / Piece</th>
+                <th className="num">Weight (kgs)</th><th className="num">Length</th></tr>
             </thead>
             <tbody>
               {SAMPLE_DC.lines.map(l => (
                 <tr key={l.slNo}>
                   <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{l.slNo}</td>
                   <td className="font-mono text-xs" style={{ color: 'var(--text-1)' }}>{l.particulars}</td>
-                  <td className="num tabular-nums text-xs">{l.weightRange ?? '—'}</td>
-                  <td className="num tabular-nums">{l.netWeightKg}</td>
-                  <td className="num tabular-nums text-xs">{l.lengthFt}</td>
                   <td className="num tabular-nums">{l.pieces}</td>
                   <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>{perPiece(l)}</td>
+                  <td className="num tabular-nums">{l.netWeightKg}</td>
+                  <td className="num tabular-nums text-xs">{l.lengthFt}</td>
                 </tr>
               ))}
             </tbody>

@@ -241,12 +241,14 @@ function ParallelEntry({ onClose }: { onClose: () => void }) {
 
   const exportSheet = () => csvDownload('vsa-despatch-sheet.csv', [
     ['Despatch sheet', head.routeId, head.date, 'P.O. No', head.poNo, 'Vehicle', head.vehicleNo],
-    [], ['Sl No', 'Particulars', 'Weight Range', 'Net Weight', 'Length', 'No. of Pieces',
-         'Batch', 'Lot', 'Bundles', 'Qty/Bundle', 'Bundle Wt', 'Per Piece', 'Kg/Ft', 'Sqft', 'Remarks', ...customCols],
+    /* Weight range came out of the export with the column: theirs, on 20-11,
+       "weight range and KG per piece is the same — one is enough." */
+    [], ['Sl No', 'Particulars', 'No. of Pieces', 'Per Piece', 'Net Weight', 'Length',
+         'Batch', 'Lot', 'Bundles', 'Qty/Bundle', 'Bundle Wt', 'Kg/Ft', 'Sqft', 'Remarks', ...customCols],
     ...rows.map((r, i) => {
       const c = calc(r)
-      return [i + 1, r.code, r.wtRange, r.netWeightKg, r.cutLengthFt, c.totalNos,
-        r.batchNo, r.lotNo, r.bundles, r.qtyPerBundle, c.bundleWt, c.perPiece, c.perFt, c.sqft,
+      return [i + 1, r.code, c.totalNos, c.perPiece, r.netWeightKg, r.cutLengthFt,
+        r.batchNo, r.lotNo, r.bundles, r.qtyPerBundle, c.bundleWt, c.perFt, c.sqft,
         r.remarksTaxQty, ...customCols.map(cc => r.custom[cc] ?? '')]
     }),
     [], ['TOTAL', '', '', totals.kg, '', totals.nos],

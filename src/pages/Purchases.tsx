@@ -1,14 +1,15 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { Scale } from 'lucide-react'
+import { Scale, Plus } from 'lucide-react'
 import { PageHead, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, useChartTheme } from '@/components/ui'
 import { PURCHASES, TOTALS, monthlySales, type Purchase } from '@/data/txns'
 import { SUPPLIERS } from '@/data/parties'
 import { inr, inrShort, fmtDate, csvDownload } from '@/lib/utils'
-import { FY } from '@/data/company'
+import { FY, COMPANY } from '@/data/company'
 import { useCrud } from '@/lib/store'
 import { CrudBar, RowActions, RecordModal, EditedDot, type Field, type Rec } from '@/components/crud'
+import DocBuilder, { type BuiltDoc, amountOf } from '@/components/DocBuilder'
 
 const FIELDS: Field[] = [
   { key: 'no',       label: 'Bill no', required: true },
@@ -40,6 +41,7 @@ export default function Purchases() {
   const [carrier, setCarrier] = useState('All Carriers')
   const t = useChartTheme()
   const [edit, setEdit] = useState<Purchase | null>(null)
+  const [raising, setRaising] = useState(false)
   const crud = useCrud<Purchase>('purchases', PURCHASES, idOf)
   const list = crud.rows
 
@@ -80,7 +82,13 @@ export default function Purchases() {
         <CrudBar noun="Purchase Bill" fields={FIELDS} changes={crud.changes} onRestore={crud.restore}
           onAdd={rec => crud.add(asPurchase(rec))}
           onImport={recs => crud.addMany(recs.map((r, i) => asPurchase(r, i)))} />
+        <button className="btn" onClick={() => setRaising(true)}>
+          <Plus size={14} /> New bill with lines
+        </button>
       </PageHead>
+
+      <DocBuilder open={raising} onClose={() => setRaising(false)} kind="Purchase Bill"
+        docNo="" owner="D. Nageswara Rao" onSave={d => crud.add(billFrom(d))} />
 
       {/* The shop asked for the cards to come off the working screens —
           "everywhere, every time, it is becoming clumsy" — so the figures
@@ -195,6 +203,42 @@ export default function Purchases() {
       <Pager {...paged} />
     </div>
   )
+}
+
+/**
+ * A bill raised off the material rather than off a typed total.
+ *
+ * The number and the date are the supplier's, taken from the paper. The
+ * taxable value, the tax and the total are what the lines come to, and the
+ * weight is the weight on those lines — so the bill can be held against a
+ * despatch sheet instead of being taken on trust.
+ */
+function billFrom(d: BuiltDoc): Purchase {
+  const half = +(d.tax / 2).toFixed(2)
+  const kgOnBill = +d.lines.reduce((s, l) => s + (l.basis === 'kg' ? l.kg : 0), 0).toFixed(3)
+  return {
+    id: `P-${Date.now().toString(36)}`,
+    no: d.no, date: d.date, dueDate: d.validTill,
+    supplierId: '', supplier: d.clientName, gstin: '',
+    state: d.interState ? '' : COMPANY.state,
+    category: d.subject || 'Extruded Sections',
+    logistics: 'Own lorry', lrNo: '—', freight: 0,
+    taxable: d.taxable,
+    cgst: d.interState ? 0 : half,
+    sgst: d.interState ? 0 : half,
+    igst: d.interState ? d.tax : 0,
+    total: Math.round(d.taxable + d.tax),
+    paid: 0, status: 'Unpaid',
+    items: d.lines.length,
+    weightKg: kgOnBill,
+    lines: d.lines.map(l => ({
+      code: l.code, name: l.name, hsn: l.hsn,
+      unit: l.basis === 'kg' ? 'kg' : 'nos',
+      qty: l.basis === 'kg' ? l.kg : l.nos,
+      rate: l.rate, gst: l.gst, amount: amountOf(l), cost: amountOf(l),
+      productId: l.productId, nos: l.nos,
+    })),
+  }
 }
 
 function asPurchase(r: Rec, i = 0): Purchase {

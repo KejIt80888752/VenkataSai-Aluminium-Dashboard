@@ -3,7 +3,8 @@ import { Plus, Trash2, Info } from 'lucide-react'
 import { Modal, Select } from '@/components/ui'
 import { SectionPicker } from '@/components/SectionPicker'
 import { PICK_OPTIONS, productById } from '@/data/productmaster'
-import { CLIENTS } from '@/data/parties'
+import { CLIENTS, SUPPLIERS } from '@/data/parties'
+import { PARTY_CODES } from '@/data/partycodes'
 import { inr2 } from '@/lib/utils'
 import { today, validTill, DEFAULT_VALID_DAYS, revisionNumber } from '@/lib/docnos'
 
@@ -55,7 +56,7 @@ export interface BuiltDoc {
   interState: boolean
 }
 
-export type DocKind = 'Quotation' | 'Proforma Invoice' | 'Tax Invoice'
+export type DocKind = 'Quotation' | 'Proforma Invoice' | 'Tax Invoice' | 'Purchase Bill'
 
 export const amountOf = (l: BuiltLine) =>
   +((l.basis === 'kg' ? l.kg : l.nos) * l.rate).toFixed(2)
@@ -78,7 +79,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   onClose: () => void
   onSave: (doc: BuiltDoc) => void
   kind: DocKind
-  /** the number this document will carry — issued by the caller, never typed */
+  /** the number this document will carry — issued by the caller, never typed,
+      except on a purchase bill, where the number and date are the supplier's */
   docNo: string
   /** the document being revised or copied, where there is one */
   initial?: Partial<BuiltDoc> | null
@@ -92,14 +94,24 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [lines, setLines] = useState<BuiltLine[]>([blankLine()])
 
   /* An invoice is the same document with the dates read differently: validity
-     becomes credit, and the day it lapses becomes the day it falls due. */
-  const isInvoice = kind === 'Tax Invoice'
+     becomes credit, and the day it lapses becomes the day it falls due.
+
+     A purchase bill is the one document whose number is not ours to issue. It
+     is the supplier's, printed on the paper in front of whoever is entering
+     it, so there it is typed — which is what they meant by "to give the bill
+     number a date, that is fine". Everything else still comes off the lines. */
+  const isInvoice = kind === 'Tax Invoice' || kind === 'Purchase Bill'
+  const isPurchase = kind === 'Purchase Bill'
+  const [theirNo, setTheirNo] = useState('')
+  const [theirDate, setTheirDate] = useState(today())
 
   /* Opening the form resets it to today and to whatever is being revised. */
   useEffect(() => {
     if (!open) return
     setDate(today())
     setDays(DEFAULT_VALID_DAYS)
+    setTheirNo(initial?.no ?? '')
+    setTheirDate(initial?.date ?? today())
     setClientName(initial?.clientName ?? '')
     setSubject(initial?.subject ?? '')
     setInterState(initial?.interState ?? false)
@@ -134,12 +146,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     return { ...l, nos, kg: p?.kgPerPiece != null ? +(p.kgPerPiece * nos).toFixed(3) : l.kg }
   }))
 
-  const ready = clientName.trim() !== '' && lines.some(l => l.productId && amountOf(l) > 0)
+  const theDate = isPurchase ? theirDate : date
+  const theNo = isPurchase ? theirNo.trim() : docNo
+
+  const ready = clientName.trim() !== ''
+    && (!isPurchase || theNo !== '')
+    && lines.some(l => l.productId && amountOf(l) > 0)
 
   const save = () => {
     const keep = lines.filter(l => l.productId)
     onSave({
-      no: docNo, date, validTill: validTill(date, days),
+      no: theNo, date: theDate, validTill: validTill(theDate, days),
       clientName: clientName.trim(), subject: subject.trim(), owner,
       lines: keep, interState, ...totalsOf(keep),
     })
@@ -148,26 +165,40 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
 
   return (
     <Modal open={open} onClose={onClose}
-      title={rev ? `${kind} ${docNo} — revision ${rev}` : `New ${kind} — ${docNo}`} wide>
+      title={rev ? `${kind} ${docNo} — revision ${rev}`
+        : isPurchase ? 'New Purchase Bill' : `New ${kind} — ${docNo}`} wide>
       <div className="space-y-4">
         <div className="rounded-lg p-3 flex items-start gap-2 text-[11.5px]"
           style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)', color: 'var(--text-3)' }}>
           <Info size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--brand)' }} />
           <span>
-            The number and the date are issued here, not typed. The taxable value, the GST and the total are
-            what the lines below come to — nothing is entered against them.
+            {isPurchase
+              ? 'The bill number and date are the supplier\u2019s, so they are typed off the paper. '
+              : 'The number and the date are issued here, not typed. '}
+            The taxable value, the GST and the total are what the lines below come to — nothing is entered
+            against them.
             {rev > 0 && ' This is a revision: it keeps the number it revises and carries today’s date.'}
           </span>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div><label className="label">{kind} no</label>
-            <input className="input w-full font-mono !text-xs" value={docNo} readOnly
-              title="Issued by the system" style={{ color: 'var(--text-3)' }} /></div>
-          <div><label className="label">Date</label>
-            <input className="input w-full" value={date} readOnly
-              title="Today. A revision carries the day it was revised."
-              style={{ color: 'var(--text-3)' }} /></div>
+          <div><label className="label">{isPurchase ? "Supplier's bill no" : `${kind} no`}</label>
+            {isPurchase ? (
+              <input className="input w-full font-mono !text-xs" value={theirNo}
+                placeholder="as on their bill" onChange={e => setTheirNo(e.target.value)} />
+            ) : (
+              <input className="input w-full font-mono !text-xs" value={docNo} readOnly
+                title="Issued by the system" style={{ color: 'var(--text-3)' }} />
+            )}</div>
+          <div><label className="label">{isPurchase ? "Their bill date" : 'Date'}</label>
+            {isPurchase ? (
+              <input type="date" className="input w-full" value={theirDate}
+                onChange={e => setTheirDate(e.target.value)} />
+            ) : (
+              <input className="input w-full" value={date} readOnly
+                title="Today. A revision carries the day it was revised."
+                style={{ color: 'var(--text-3)' }} />
+            )}</div>
           <div><label className="label">{isInvoice ? 'Credit' : 'Valid for'}</label>
             <Select value={`${days} days`} onChange={v => setDays(parseInt(v, 10))}
               options={isInvoice
@@ -175,19 +206,23 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 : ['1 day', '2 days', '3 days', '7 days', '15 days', '30 days']}
               className="!w-full" /></div>
           <div><label className="label">{isInvoice ? 'Due on' : 'Valid till'}</label>
-            <input className="input w-full" value={validTill(date, days)} readOnly
+            <input className="input w-full" value={validTill(theDate, days)} readOnly
               style={{ color: 'var(--text-3)' }} /></div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div><label className="label">Customer</label>
-            <input className="input w-full" value={clientName} list="vsa-customers"
-              placeholder="Who it is for" onChange={e => setClientName(e.target.value)} />
-            <datalist id="vsa-customers">
-              {CLIENTS.map(c => <option key={c.id} value={c.name} />)}
+          <div><label className="label">{isPurchase ? 'Supplier' : 'Customer'}</label>
+            <input className="input w-full" value={clientName} list="vsa-doc-parties"
+              placeholder={isPurchase ? 'Who it is from' : 'Who it is for'}
+              onChange={e => setClientName(e.target.value)} />
+            <datalist id="vsa-doc-parties">
+              {(isPurchase
+                ? [...SUPPLIERS.map(x => x.name), ...PARTY_CODES.map(x => `${x.code} — ${x.name}`)]
+                : CLIENTS.map(c => c.name)
+              ).map(n => <option key={n} value={n} />)}
             </datalist>
           </div>
-          <div><label className="label">{isInvoice ? 'Site / reference' : 'Subject'}</label>
+          <div><label className="label">{isPurchase ? 'Category / reference' : isInvoice ? 'Site / reference' : 'Subject'}</label>
             <input className="input w-full" value={subject} placeholder="What it is for"
               onChange={e => setSubject(e.target.value)} /></div>
           <div><label className="label">Place of supply</label>
@@ -267,8 +302,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             </table>
           </div>
           <p className="text-[11px] mt-2" style={{ color: 'var(--text-4)' }}>
-            Rates are typed because selling prices have not been given to us yet. Send the product list with
-            cost and selling price against each code and the rate will fill itself in.
+            {isPurchase
+              ? 'Rates are typed off the supplier\u2019s bill. Once the product list reaches us with a cost '
+                + 'price against each code, a rate far from it will be flagged here rather than found later.'
+              : 'Rates are typed because selling prices have not been given to us yet. Send the product list '
+                + 'with cost and selling price against each code and the rate will fill itself in.'}
           </p>
         </div>
 

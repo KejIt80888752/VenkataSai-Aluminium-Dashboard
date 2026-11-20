@@ -190,6 +190,10 @@ export interface Purchase {
   status: 'Paid' | 'Partial' | 'Unpaid' | 'Overdue'
   items: number
   weightKg: number
+  /** what was actually on the bill. Theirs, on 20-11: "when you want to raise
+      a quotation, want to raise a purchase invoice" — a bill with no material
+      on it is a figure nobody can check against a despatch sheet. */
+  lines?: Line[]
 }
 
 let poSeq = 0
