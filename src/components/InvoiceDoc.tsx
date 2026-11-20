@@ -26,7 +26,22 @@ function words(n: number): string {
 }
 
 export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: () => void }) {
-  const client = CLIENTS.find(c => c.id === inv.clientId)!
+  /* ── Who the bill is to ───────────────────────────────────────────────
+     This used to read the customer master and assume it would be there. With
+     the invented customers gone, a bill raised today has no master record to
+     find, and dereferencing it took the whole screen down the moment anybody
+     opened a bill to print it.
+
+     The bill carries its own buyer — that is what a tax invoice is for — so
+     it is read off the bill, and the master record, where there is one, only
+     fills in the lines the bill does not hold. */
+  const client = CLIENTS.find(c => c.id === inv.clientId)
+  const buyer = {
+    name: inv.clientName || client?.name || '—',
+    place: [client?.area, inv.state || client?.state].filter(Boolean).join(', ') || '—',
+    contact: [client?.contact, client?.phone].filter(Boolean).join(' · '),
+    gstin: inv.gstin || client?.gstin || 'Unregistered',
+  }
   const inter  = inv.igst > 0
   const totalQty = inv.lines.reduce((s, l) => s + l.qty, 0)
 
@@ -67,10 +82,10 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
         <div className="grid grid-cols-2 gap-4 py-3 border-b border-slate-300">
           <div className="space-y-0.5">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Billed To</p>
-            <p className="font-semibold text-slate-900">{client.name}</p>
-            <p className="text-slate-600">{client.area}, {client.state}</p>
-            <p className="text-slate-600">Contact: {client.contact} · {client.phone}</p>
-            <p className="text-slate-800 font-medium">GSTIN: {client.gstin}</p>
+            <p className="font-semibold text-slate-900">{buyer.name}</p>
+            <p className="text-slate-600">{buyer.place}</p>
+            {buyer.contact && <p className="text-slate-600">Contact: {buyer.contact}</p>}
+            <p className="text-slate-800 font-medium">GSTIN: {buyer.gstin}</p>
           </div>
           <div className="text-right space-y-0.5">
             <Meta k="Invoice No." v={inv.no} bold />

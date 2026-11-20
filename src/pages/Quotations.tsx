@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { FileText, Trophy, Percent, IndianRupee, Plus, FileCheck2, History } from 'lucide-react'
+import { FileText, Trophy, Percent, IndianRupee, Plus, FileCheck2, History, Printer } from 'lucide-react'
 import {
   PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, Modal,
 } from '@/components/ui'
@@ -9,6 +9,7 @@ import { COMPANY, FY } from '@/data/company'
 import { useCrud } from '@/lib/store'
 import { RowActions, EditedDot } from '@/components/crud'
 import DocBuilder, { type BuiltDoc, type BuiltLine, amountOf } from '@/components/DocBuilder'
+import QuoteDoc from '@/components/QuoteDoc'
 import { MASTER } from '@/data/productmaster'
 import { nextDocNo, revisionOf, revisionNumber, baseDocNo, today, validTill } from '@/lib/docnos'
 
@@ -81,6 +82,7 @@ export default function Quotations() {
   const [status, setStatus] = useState('All Status')
   const [sel, setSel] = useState<Quotation | null>(null)
   const [building, setBuilding] = useState<{ no: string; from: Partial<BuiltDoc> | null } | null>(null)
+  const [printing, setPrinting] = useState<Quotation | null>(null)
 
   /* The two series are kept apart so their numbering cannot collide. */
   const quotes = useCrud<Quotation>('quotations', QUOTATIONS, idOf)
@@ -211,6 +213,8 @@ export default function Quotations() {
                 <td><Pill s={x.status} /></td>
                 <td onClick={e => e.stopPropagation()}>
                   <span className="flex items-center gap-1 justify-end">
+                    <button className="btn-ghost !px-1.5 !py-1" title={`Print or save this ${noun} as a PDF`}
+                      onClick={() => setPrinting(x)}><Printer size={13} /></button>
                     {kind === 'Quotation' && (
                       <button className="btn-ghost !px-1.5 !py-1" title="Make a proforma invoice from this"
                         onClick={() => makeProforma(x)}><FileCheck2 size={13} /></button>
@@ -237,6 +241,10 @@ export default function Quotations() {
         turns a quotation into a proforma invoice under its own series.
       </p>
 
+      {printing && (
+        <QuoteDoc doc={printing} kind={kind} onClose={() => setPrinting(null)} />
+      )}
+
       <DocBuilder open={!!building} onClose={() => setBuilding(null)} kind={kind}
         docNo={building?.no ?? ''} initial={building?.from} owner="D. Nageswara Rao"
         onSave={d => crud.add(asQuotation(d, kind))} />
@@ -250,6 +258,10 @@ export default function Quotations() {
               <span className="badge-gray">Owner: {sel.owner}</span>
               <span className="badge-gray">Issued {fmtDate(sel.date)}</span>
               <span className="badge-gray">Valid till {fmtDate(sel.validTill)}</span>
+              <button className="btn-outline !py-1 !text-xs ml-auto"
+                onClick={() => { setPrinting(sel); setSel(null) }}>
+                <Printer size={13} /> Print / Save PDF
+              </button>
             </div>
             <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{sel.subject}</p>
 

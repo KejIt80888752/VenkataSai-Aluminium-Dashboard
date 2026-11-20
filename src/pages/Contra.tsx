@@ -298,14 +298,17 @@ function AddModal({ open, kind, onClose, onContra, onDiverted }: {
               if (kind === 'Contra') {
                 onContra({ id: `CN${Date.now()}`, date: today, from, to, amount: amt, note: note || '—' })
               } else {
-                const c = CLIENTS.find(x => x.name === client)!
-                const s = SUPPLIERS.find(x => x.name === supplier)!
+                /* The customer and supplier masters may hold nothing yet, so
+                   the names typed here are what the entry is posted against
+                   and the master record only supplies an id when it has one. */
+                const c = CLIENTS.find(x => x.name === client)
+                const s = SUPPLIERS.find(x => x.name === supplier)
                 const inv = INVOICES.find(i => i.no === invoiceNo)
                 const pur = PURCHASES.find(p => p.no === billNo)
                 onDiverted({
                   id: `DV${Date.now()}`, date: today,
-                  clientId: c.id, client, invoiceNo, invoiceValue: inv?.total ?? 0,
-                  supplierId: s.id, supplier, billNo, billValue: pur?.total ?? 0,
+                  clientId: c?.id ?? '', client, invoiceNo, invoiceValue: inv?.total ?? 0,
+                  supplierId: s?.id ?? '', supplier, billNo, billValue: pur?.total ?? 0,
                   amount: amt, ref: note || '—', note: 'Entered from the sale bill',
                 })
               }
