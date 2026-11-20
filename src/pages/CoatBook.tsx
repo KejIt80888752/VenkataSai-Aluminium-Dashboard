@@ -1,38 +1,57 @@
 import { useState, useMemo } from 'react'
 import {
-  Palette, TruckIcon, PackageCheck, TriangleAlert, CircleCheck, Scale, Layers, HelpCircle, Link2,
+  Palette, PackageCheck, TriangleAlert, CircleCheck, Scale, Boxes, HelpCircle, Link2, Clock,
+  ArrowLeftRight, Warehouse,
 } from 'lucide-react'
-import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
+import { PageHead, Stat, ExportBtn, TableCard, Empty } from '@/components/ui'
 import {
   OPENING, LOADED, RECEIVED, WRITTEN, TBC_PARTS, TBC_MULTIPLIER,
   colourOf, sectionOf, isHardware, isRubber, isTbc, weighments,
   type CoatLine,
 } from '@/data/coatbook'
+import { reconcile, reconTotals } from '@/data/coatrecon'
+import { PICK_OPTIONS } from '@/data/productmaster'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 import { useAliases } from '@/lib/useAliases'
 import { SectionPicker } from '@/components/SectionPicker'
 import { joinedSections, namesFor } from '@/lib/aliases'
-import { P, sectionName } from '@/data/catalogue'
+import { sectionName } from '@/data/catalogue'
+
+/* ── The coating book, as the shop asked for it on 20-11-2026 ──────────────
+   "Where is the total? Total quantity, total received weight." — at the foot
+   of the table and in the cards above it.
+
+   "It should mention how much percentage excess you have received... and what
+   item of which quantity is pending." — sent against received, by product,
+   with the shortfall named.
+
+   "We should have a tab at the top to select godown. For every item it should
+   not be visible — if required we shall unhide it." — the godown is picked
+   once, above the table; the column it used to occupy is gone.
+
+   "Whenever I open it I should be able to see the lines rather than all these
+   data." — the sheet comes first. The workings sit underneath it.         */
 
 const SHEETS = ['Opening 01-09', 'Loaded out 16/17-09', 'Received back 21-09'] as const
 
 const COLOUR_DOT: Record<string, string> = {
   'Uncoated': '#9AA5B1', 'Ivory': '#E8DCC0', 'White': '#F2F2F0', 'Black': '#2B2B2B',
-  'Coffee Brown': '#5B4034', 'Pista Green': '#93AE82', 'Matt': '#6E6E6E', 'Not stated': '#C7D0DA',
+  'Coffee Brown': '#5B4034', 'Pista Green': '#93AE82', 'Pista Green Glossy': '#93AE82',
+  'Matt': '#6E6E6E', 'Not stated': '#C7D0DA',
 }
 
 const sum = (ls: CoatLine[], f: (l: CoatLine) => number) => +ls.reduce((s, l) => s + f(l), 0).toFixed(2)
 
+const pct = (n: number | null) => n === null ? '—' : `${n > 0 ? '+' : ''}${n}%`
+const pctTone = (n: number | null) =>
+  n === null ? 'var(--text-4)' : Math.abs(n) <= 8 ? 'var(--green)' : 'var(--amber, #f59e0b)'
+
 export default function CoatBook() {
   const [sheet, setSheet] = useState<typeof SHEETS[number]>('Received back 21-09')
-  const [route, setRoute] = useState('All')
+  const [where, setWhere] = useState('All')
 
-  /* The coating book's numeric codes are names for sections we already have,
-     the same as the depot's short forms. Taught into the shop-wide table,
-     they let a figure cross between the purchase sheet and this one. */
   const { map: aliasMap, ours: ourSectionFor, teach } = useAliases('coatbook')
 
-  /** Every numeric code across the three sheets, with the name beside it. */
   const codes = useMemo(() => {
     const m = new Map<string, string>()
     for (const l of [...OPENING, ...LOADED, ...RECEIVED]) {
@@ -46,13 +65,28 @@ export default function CoatBook() {
   const joined = useMemo(() => joinedSections(aliasMap), [aliasMap])
 
   const lines = sheet.startsWith('Opening') ? OPENING : sheet.startsWith('Loaded') ? LOADED : RECEIVED
-  const groups = useMemo(
-    () => ['All', ...new Set(lines.map(l => l.route ?? l.at ?? '—'))],
+  const isReceived = sheet.startsWith('Received')
+
+  /* The godown, or the route, picked once above the table. */
+  const places = useMemo(
+    () => ['All', ...new Set(lines.map(l => l.at ?? l.route ?? '—'))],
     [lines],
   )
-  const shown = lines.filter(l => route === 'All' || (l.route ?? l.at) === route)
+  const shown = lines.filter(l => where === 'All' || (l.at ?? l.route) === where)
 
-  /* ── One section, several colours — the thing the sheets are really about ── */
+  const totals = {
+    nos: sum(shown, l => l.nos),
+    kg: sum(shown, l => l.kg ?? 0),
+    shared: shown.filter(l => l.kg === null && !isHardware(l) && !isRubber(l)).length,
+  }
+
+  /* ── Sent against received ──────────────────────────────────────────── */
+  const recon = useMemo(() => reconcile(), [])
+  const rt = useMemo(() => reconTotals(recon), [recon])
+  const pending = recon.filter(r => r.pendingNos > 0)
+  const extra = recon.filter(r => r.extraNos > 0)
+
+  /* ── One section, several colours ───────────────────────────────────── */
   const bySection = useMemo(() => {
     const m = new Map<string, Map<string, { nos: number; kg: number }>>()
     for (const l of [...OPENING, ...LOADED, ...RECEIVED]) {
@@ -66,8 +100,7 @@ export default function CoatBook() {
     return [...m.entries()]
       .map(([section, cols]) => ({
         section,
-        colours: [...cols.entries()].map(([colour, v]) => ({ colour, ...v }))
-          .sort((a, b) => b.nos - a.nos),
+        colours: [...cols.entries()].map(([colour, v]) => ({ colour, ...v })).sort((a, b) => b.nos - a.nos),
         nos: [...cols.values()].reduce((s, v) => s + v.nos, 0),
       }))
       .filter(s => s.colours.length > 1)
@@ -78,9 +111,6 @@ export default function CoatBook() {
   const checks = useMemo(() => {
     const out: { kind: 'error' | 'ok' | 'note'; title: string; detail: string }[] = []
 
-    /* DV 7' was the last one open. The shop sent 65 kg for those 48 pieces
-       on 11-11, which puts it alongside the other two readings of the same
-       section. Their own sheet total has not caught up with it yet. */
     const openDv = OPENING.find(l => sectionOf(l) === "DV 7'" && l.kg)
     const loadDv = LOADED.find(l => sectionOf(l) === "DV 7'" && l.kg)
     const recvDv = RECEIVED.find(l => sectionOf(l) === "DV 7'" && l.kg)
@@ -96,8 +126,6 @@ export default function CoatBook() {
       })
     }
 
-    /* Their opening total covers the M1 block only, so only that block can
-       be held against it. */
     const m1 = OPENING.filter(l => l.route === 'M1 TO PC1')
     const m1Kg = +m1.reduce((t, l) => t + (l.kg ?? 0), 0).toFixed(2)
     const gap = +(m1Kg - WRITTEN.opening.kg).toFixed(2)
@@ -107,86 +135,352 @@ export default function CoatBook() {
       detail: `With DV 7' at the ${openDv?.kg} kg you sent, the M1 lines now add to ${m1Kg} kg — `
         + `${gap.toFixed(2)} more than the figure at the foot of the sheet, which is exactly the `
         + `${gap.toFixed(2)} the DV line went up by. The line is corrected here; the total on your own copy `
-        + `has not caught up with it. Worth changing before that sheet is used again.`,
+        + `has not caught up with it.`,
     })
 
-    /* 778 against 782, now explained by the shop. */
-    const tbcLines = RECEIVED.filter(isTbc)
-    const tbcShown = tbcLines.reduce((a, l) => a + l.nos, 0)
+    const tbcShown = RECEIVED.filter(isTbc).reduce((a, l) => a + l.nos, 0)
     const tbcReal = tbcShown * TBC_MULTIPLIER
     out.push({
       kind: 'ok',
       title: `778 and 782 settled — TBC is ${TBC_MULTIPLIER} sections, not one`,
       detail: `${TBC_PARTS.join(', ')} are loaded separately and clubbed when sold. The received sheet shows `
         + `${tbcShown} TBC lines, which is ${tbcReal} pieces on the floor — the ${tbcReal - tbcShown} between `
-        + `${WRITTEN.received.nos} and ${WRITTEN.received.splittedSeparately}. The system now counts a TBC line `
-        + `as ${TBC_MULTIPLIER}, so the two figures stop disagreeing.`,
+        + `${WRITTEN.received.nos} and ${WRITTEN.received.splittedSeparately}.`,
     })
 
-    /* Blank weights are shared weighments, not missing ones. */
     const ws = weighments(RECEIVED).filter(w => w.lines.length > 1)
     if (ws.length) out.push({
-      kind: 'ok',
+      kind: 'note',
       title: `${ws.length} weighments cover more than one line`,
       detail: ws.map(w => `${w.kg} kg over ${w.nos} nos (${w.lines.map(l => l.name).join(' + ')})`).join('; ')
-        + '. Read on their own those rows look unweighed; read as you weigh them, every piece has a weight.',
-    })
-
-    out.push({
-      kind: 'ok',
-      title: 'Every line checked against the figure at the foot of your sheet',
-      detail: `Loaded ${WRITTEN.loaded.nos} nos and ${WRITTEN.loaded.kg} kg, received ${WRITTEN.received.nos} `
-        + `and ${WRITTEN.received.kg} — both tie exactly. Opening tied too, until the DV correction above `
-        + `lifted it; piece counts are unaffected at ${WRITTEN.opening.nos}.`,
-    })
-
-    out.push({
-      kind: 'note',
-      title: 'Your corrections are all in',
-      detail: 'The S in the 3TB weight cell is now 70.35 kg; DV 7\u2019 on the loading sheet is now 40.7 kg; '
-        + 'CBB reads CB; PG reads PGG. Subtotals have appeared on the S2 and V1 blocks. Nothing else was '
-        + 'touched.',
+        + '. Read on their own those rows look unweighed. For the sent-against-received figures above they '
+        + 'are split across the rows they cover by piece count, which is the only split the paper supports '
+        + '— so those rows carry a mark and the percentage beside them is indicative.',
     })
 
     return out
   }, [])
 
-  const totals = {
-    nos: sum(shown, l => l.nos),
-    kg: sum(shown, l => l.kg ?? 0),
-    unweighed: shown.filter(l => l.kg === null && !isHardware(l) && !isRubber(l)).length,
-  }
-
   const exportCsv = () => csvDownload('vsa-coating-book.csv', [
-    [`Coating book — ${sheet}`],
-    [], ['Code', 'Product Name', 'Qty (nos)', 'Weight (kgs)', 'Section', 'Colour', 'Route / Received at'],
-    ...shown.map(l => [l.code ?? '', l.name, l.nos, l.kg ?? '', sectionOf(l), colourOf(l), l.route ?? l.at ?? '']),
+    [`Coating book — ${sheet}`, where === 'All' ? 'all places' : where],
+    [], ['Code', 'Product Name', 'Qty (nos)', 'Weight (kgs)', 'Kg / Piece', 'Colour'],
+    ...shown.map(l => [l.code ?? '', l.name, l.nos, l.kg ?? '',
+      l.kg && l.nos ? +(l.kg / l.nos).toFixed(3) : '', colourOf(l)]),
+    ['Total', '', totals.nos, totals.kg],
+    [], ['Sent against received'],
+    ['Code', 'Product', 'Sent nos', 'Sent kg', 'Back nos', 'Back kg', 'Pending nos', 'Weight %'],
+    ...recon.map(r => [r.code, r.name, r.sentNos, r.sentKg, r.recvNos, r.recvKg, r.pendingNos, r.kgPct ?? '']),
   ])
 
   return (
     <div>
       <PageHead title="Coating Book"
         sub="Your own three sheets — what was lying, what went to the coater, what came back">
-        <Select value={sheet} onChange={v => { setSheet(v as typeof sheet); setRoute('All') }}
-          options={[...SHEETS]} className="min-w-[14rem]" />
-        <Select value={route} onChange={setRoute} options={groups} className="min-w-[11rem]" />
         <ExportBtn onClick={exportCsv} />
       </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label="Opening 01-09" value={`${sum(OPENING, l => l.nos)} nos`} icon={Layers} tone="violet"
-          sub={kgFmt(sum(OPENING, l => l.kg ?? 0))} />
-        <Stat label="Sent to the Coater" value={`${sum(LOADED, l => l.nos)} nos`} icon={TruckIcon} tone="brand"
-          sub={`${kgFmt(sum(LOADED, l => l.kg ?? 0))} on 16 and 17-09`} />
-        <Stat label="Came Back Coated" value={`${sum(RECEIVED, l => l.nos)} nos`} icon={PackageCheck} tone="green"
-          sub={`${kgFmt(sum(RECEIVED, l => l.kg ?? 0))} on 21-09`} />
-        <Stat label="Still Open" value={String(checks.filter(c => c.kind === 'error').length)} icon={TriangleAlert}
-          tone={checks.some(c => c.kind === 'error') ? 'red' : 'green'}
-          sub={checks.some(c => c.kind === 'error') ? 'One still open' : 'All settled'} />
+        <Stat label="Total Quantity" value={`${totals.nos} nos`} icon={Boxes} tone="brand"
+          sub={`${shown.length} lines on ${sheet.toLowerCase()}`} />
+        <Stat label="Total Weight" value={kgFmt(totals.kg)} icon={Scale} tone="violet"
+          sub={totals.shared ? `${totals.shared} rows share a weighment above` : 'every row weighed on its own'} />
+        <Stat label="Received Against Sent" value={pct(rt.kgPct)} icon={ArrowLeftRight}
+          tone={rt.kgPct !== null && Math.abs(rt.kgPct) <= 8 ? 'green' : 'amber'}
+          sub={`${kgFmt(rt.recvKg)} back against ${kgFmt(rt.sentKg)} out`} />
+        <Stat label="Still at the Coater" value={`${rt.pendingNos} nos`} icon={Clock}
+          tone={rt.pendingNos ? 'red' : 'green'}
+          sub={rt.pendingNos ? `across ${rt.pendingLines} products` : 'everything has come back'} />
       </div>
 
-      {/* ── What the sheets do not agree on ───────────────────────────── */}
-      <div className="card mb-5" style={{ borderColor: 'var(--amber, #f59e0b)' }}>
+      {/* ── The sheet, first, as asked ────────────────────────────────── */}
+      <div className="card mb-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <p className="section-title text-base">{sheet}</p>
+            <p className="section-sub">Your columns, your order — code, product name, qty, weight</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {SHEETS.map(s => (
+              <button key={s} onClick={() => { setSheet(s); setWhere('All') }}
+                className={cn('px-2.5 py-1 rounded-lg text-[11.5px] font-medium transition-colors',
+                  s === sheet ? 'text-white' : 'btn-ghost')}
+                style={s === sheet ? { background: 'var(--brand)' } : undefined}>{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* The godown, picked once for every line below it. */}
+        <div className="flex flex-wrap items-center gap-2 pb-3 mb-1"
+          style={{ borderBottom: '1px solid var(--border-2)' }}>
+          <span className="text-[11px] flex items-center gap-1.5 mr-1" style={{ color: 'var(--text-4)' }}>
+            <Warehouse size={12} /> {isReceived ? 'Received at' : 'Route'}
+          </span>
+          {places.map(p => (
+            <button key={p} onClick={() => setWhere(p)}
+              className={cn('px-2.5 py-1 rounded-lg text-[11.5px] font-medium transition-colors',
+                p === where ? 'text-white' : 'btn-ghost')}
+              style={p === where ? { background: 'var(--brand)' } : undefined}>
+              {p === 'All' ? 'All' : p}
+            </button>
+          ))}
+          <span className="text-[10.5px] ml-auto" style={{ color: 'var(--text-4)' }}>
+            Picked once here, carried by every line below — not asked for again on each row
+          </span>
+        </div>
+
+        <div className="overflow-auto -mx-1 px-1" style={{ maxHeight: '30rem' }}>
+          <table className="w-full">
+            <thead>
+              <tr><th>Code</th><th>Product Name</th><th className="num">Qty (nos)</th>
+                <th className="num">Weight (kgs)</th><th className="num">Kg / Piece</th><th>Colour</th></tr>
+            </thead>
+            <tbody>
+              {shown.map((l, i) => {
+                const colour = colourOf(l)
+                const p = l.kg && l.nos ? +(l.kg / l.nos).toFixed(3) : null
+                return (
+                  <tr key={i}>
+                    <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{l.code ?? '—'}</td>
+                    <td className="text-xs max-w-[18rem] truncate" title={l.name}>{l.name}</td>
+                    <td className="num tabular-nums font-medium" style={{ color: 'var(--text-1)' }}>{l.nos}</td>
+                    <td className="num tabular-nums text-xs"
+                      style={{ color: l.kg === null && !isHardware(l) && !isRubber(l) ? 'var(--text-4)' : undefined }}
+                      title={l.kg === null && !isHardware(l) && !isRubber(l)
+                        ? 'Weighed together with the row above it' : undefined}>
+                      {l.kg !== null ? l.kg : isHardware(l) ? '—' : isRubber(l) ? l.unit : 'weighed above'}
+                    </td>
+                    <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{p ?? '—'}</td>
+                    <td>
+                      <span className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ background: COLOUR_DOT[colour] ?? '#C7D0DA', border: '1px solid var(--border-2)' }} />
+                        {colour}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+              {shown.length === 0 && <tr><td colSpan={6}><Empty msg="Nothing on this sheet" /></td></tr>}
+            </tbody>
+            {shown.length > 0 && (
+              <tfoot>
+                <tr style={{ borderTop: '2px solid var(--border-2)' }}>
+                  <td colSpan={2} className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>
+                    Total — {where === 'All' ? 'all places' : where}
+                  </td>
+                  <td className="num tabular-nums font-bold" style={{ color: 'var(--brand)' }}>{totals.nos}</td>
+                  <td className="num tabular-nums font-bold" style={{ color: 'var(--brand)' }}>{totals.kg}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+
+      {/* ── What has not come back ────────────────────────────────────── */}
+      <div className="card mb-5"
+        style={{ borderColor: pending.length ? 'var(--red)' : 'var(--green)' }}>
+        <p className="section-title text-base mb-1 flex items-center gap-2">
+          {pending.length
+            ? <Clock size={15} style={{ color: 'var(--red)' }} />
+            : <CircleCheck size={15} style={{ color: 'var(--green)' }} />}
+          {pending.length
+            ? `${rt.pendingNos} Pieces Still at the Coater`
+            : 'Everything Sent Has Come Back'}
+        </p>
+        <p className="section-sub mb-4 max-w-4xl">
+          What went out on 16 and 17-09 against what came back on 21-09, matched on the product rather than
+          the printed name — a section leaves as W/O and returns as Ivory, so the names never agree.
+        </p>
+
+        {pending.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {pending.map(r => (
+              <div key={r.key} className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-3"
+                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <div className="min-w-0">
+                  <p className="text-sm" style={{ color: 'var(--text-1)' }}>
+                    <span className="font-mono text-xs mr-2" style={{ color: 'var(--text-4)' }}>{r.code}</span>
+                    <b>{r.name}</b>
+                  </p>
+                  <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-4)' }}>
+                    {r.sentNos} nos sent, {r.recvNos} back
+                    {r.colours.length > 0 && ` · came back ${r.colours.join(', ')}`}
+                  </p>
+                </div>
+                <span className="badge-red shrink-0">{r.pendingNos} nos pending</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {extra.length > 0 && (
+          <p className="text-[11.5px] mb-4" style={{ color: 'var(--text-4)' }}>
+            {extra.map(r => `${r.extraNos} nos of ${r.name}`).join(', ')} came back without going out on this
+            load — older stock returning with it. {rt.tbcLines > 0 && `TBC is ${TBC_MULTIPLIER} sections clubbed, so its ${rt.tbcLines} lines are ${rt.tbcLines * TBC_MULTIPLIER} pieces on the floor.`}
+          </p>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3"
+          style={{ borderTop: '1px solid var(--border-2)' }}>
+          {[
+            { k: 'Sent out', v: `${rt.sentNos} nos`, s: kgFmt(rt.sentKg) },
+            { k: 'Came back', v: `${rt.recvNos} nos`, s: kgFmt(rt.recvKg) },
+            { k: 'Pieces', v: pct(rt.nosPct), s: `${rt.recvNos - rt.sentNos} nos difference`, tone: rt.nosPct },
+            { k: 'Weight', v: pct(rt.kgPct), s: `${(rt.recvKg - rt.sentKg).toFixed(2)} kg difference`, tone: rt.kgPct },
+          ].map(x => (
+            <div key={x.k}>
+              <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-4)' }}>{x.k}</p>
+              <p className="text-base font-bold tabular-nums"
+                style={{ color: x.tone !== undefined ? pctTone(x.tone) : 'var(--text-1)' }}>{x.v}</p>
+              <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>{x.s}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] mt-3" style={{ color: 'var(--text-4)' }}>
+          Weight comes back heavier than it went — {pct(rt.kgPct)} across the load — which is the powder
+          sitting on it. A section far outside that is worth a question.
+        </p>
+      </div>
+
+      {/* ── Product by product ────────────────────────────────────────── */}
+      <div className="card mb-5">
+        <p className="section-title text-base mb-1 flex items-center gap-2">
+          <PackageCheck size={15} className="text-brand" /> Sent and Received, Product by Product
+        </p>
+        <p className="section-sub mb-4 max-w-4xl">
+          A row marked <b>shared</b> has part of its weight apportioned out of a weighment covering more than
+          one line, split by piece count. That is the only split the paper supports, so read the percentage
+          beside it as indicative.
+        </p>
+        <TableCard maxH="26rem">
+          <thead>
+            <tr><th>Code</th><th>Product</th><th className="num">Sent nos</th><th className="num">Sent kg</th>
+              <th className="num">Back nos</th><th className="num">Back kg</th>
+              <th className="num">Pending</th><th className="num">Weight</th><th>Came back as</th></tr>
+          </thead>
+          <tbody>
+            {recon.map(r => (
+              <tr key={r.key}>
+                <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{r.code}</td>
+                <td className="text-xs max-w-[13rem] truncate" title={r.name}>
+                  {r.name}
+                  {r.sharedWeighment && (
+                    <span className="badge-gray ml-1.5 !text-[9px] !px-1 !py-0">shared</span>
+                  )}
+                </td>
+                <td className="num tabular-nums text-xs">{r.sentNos || '—'}</td>
+                <td className="num tabular-nums text-xs">{r.sentKg || '—'}</td>
+                <td className="num tabular-nums text-xs">{r.recvNos || '—'}</td>
+                <td className="num tabular-nums text-xs">{r.recvKg || '—'}</td>
+                <td className="num tabular-nums text-xs font-semibold"
+                  style={{ color: r.pendingNos ? 'var(--red)' : 'var(--text-4)' }}>
+                  {r.pendingNos || (r.extraNos ? `+${r.extraNos}` : '—')}
+                </td>
+                <td className="num tabular-nums text-xs font-semibold" style={{ color: pctTone(r.kgPct) }}>
+                  {pct(r.kgPct)}
+                </td>
+                <td className="text-[11px]" style={{ color: 'var(--text-4)' }}>{r.colours.join(', ') || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </TableCard>
+      </div>
+
+      {/* ── One section, several colours ──────────────────────────────── */}
+      <div className="card mb-5">
+        <p className="section-title text-base mb-1 flex items-center gap-2">
+          <Palette size={15} className="text-brand" /> One Section, Several Colours
+        </p>
+        <p className="section-sub mb-4 max-w-4xl">
+          Code 20033 leaves as <b>W/O</b> — without coating — and comes back as Ivory, Coffee Brown or Pista
+          Green. The number is the section; the colour is a state it passes into at the coater.
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {bySection.map(s => (
+            <div key={s.section} className="rounded-lg p-3.5"
+              style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+              <div className="flex items-baseline justify-between gap-2 mb-2.5">
+                <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{s.section}</p>
+                <p className="text-xs tabular-nums shrink-0" style={{ color: 'var(--text-4)' }}>
+                  {s.colours.length} colours · {s.nos} nos
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                {s.colours.map(c => (
+                  <div key={c.colour} className="flex items-center gap-2.5">
+                    <span className="w-3 h-3 rounded-full shrink-0"
+                      style={{ background: COLOUR_DOT[c.colour] ?? '#C7D0DA', border: '1px solid var(--border-2)' }} />
+                    <span className="text-xs flex-1 truncate"
+                      style={{ color: c.colour === 'Uncoated' ? 'var(--text-4)' : 'var(--text-2)' }}>{c.colour}</span>
+                    <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--text-2)' }}>
+                      {c.nos} nos{c.kg ? ` · ${c.kg} kg` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Teaching the coating codes ────────────────────────────────── */}
+      <div className="card mb-5" style={unmapped.length ? { borderColor: 'var(--amber, #f59e0b)' } : undefined}>
+        <p className="section-title text-base mb-1 flex items-center gap-2">
+          <Link2 size={15} className="text-brand" /> What the Coating Book Calls These
+        </p>
+        <p className="section-sub mb-4 max-w-4xl">
+          Point each number at a product once. Taught here, it is known on the purchase sheet and the
+          coater's bill too — and that is what lets a figure travel from the mill through to the colour.
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          {codes.map(c => (
+            <div key={c.code} className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-2.5"
+              style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+              <div className="min-w-0">
+                <span className="font-mono text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{c.code}</span>
+                <span className="text-xs ml-2 truncate" style={{ color: 'var(--text-4)' }}>{c.name}</span>
+              </div>
+              <SectionPicker className="w-56 shrink-0" options={PICK_OPTIONS}
+                value={ourSectionFor(c.code) ?? ''} onChange={v => teach(c.code, v)} />
+            </div>
+          ))}
+        </div>
+        <p className="text-[11.5px] mt-3 pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
+          {unmapped.length === 0
+            ? 'Every code here is pointed at a product.'
+            : `${unmapped.length} of ${codes.length} still to be pointed at a product.`}
+        </p>
+      </div>
+
+      {joined.length > 0 && (
+        <div className="card mb-5" style={{ borderColor: 'var(--green)' }}>
+          <p className="section-title text-base mb-1 flex items-center gap-2">
+            <CircleCheck size={15} style={{ color: 'var(--green)' }} /> These Sections Now Join Up
+          </p>
+          <div className="space-y-2 mt-3">
+            {joined.map(j => (
+              <div key={j.section} className="rounded-lg p-3"
+                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--text-1)' }}>{sectionName(j.section)}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {namesFor(aliasMap, j.section).map(n => (
+                    <span key={`${n.source}:${n.foreign}`} className="text-[11px] px-2 py-1 rounded font-mono"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)', color: 'var(--text-2)' }}>
+                      {n.source === 'depot' ? 'depot' : n.source === 'coater' ? "coater's bill" : 'coating book'}
+                      {' · '}{n.foreign.toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Workings, last ────────────────────────────────────────────── */}
+      <div className="card" style={{ borderColor: 'var(--amber, #f59e0b)' }}>
         <p className="section-title text-base mb-1">Checked Against Your Clarifications</p>
         <p className="section-sub mb-4 max-w-4xl">
           Every total at the foot of your three sheets is correct — I added each one and they tie exactly.
@@ -212,166 +506,6 @@ export default function CoatBook() {
           ))}
         </div>
       </div>
-
-      {/* ── Teaching the coating codes, so the books can meet ─────────── */}
-      <div className="card mb-5" style={unmapped.length ? { borderColor: 'var(--amber, #f59e0b)' } : undefined}>
-        <p className="section-title text-base mb-1 flex items-center gap-2">
-          <Link2 size={15} className="text-brand" /> What the Coating Book Calls These
-        </p>
-        <p className="section-sub mb-4 max-w-4xl">
-          These numbers are names for sections we already hold, the same as the depot's SP and DP. Point each
-          at our section once. Taught here, it is known on the purchase sheet and the coater's bill too —
-          and that is what lets a figure travel from the mill through to the colour.
-        </p>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-          {codes.map(c => {
-            const mapped = ourSectionFor(c.code)
-            return (
-              <div key={c.code} className="flex flex-wrap items-center justify-between gap-3 rounded-lg p-2.5"
-                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
-                <div className="min-w-0">
-                  <span className="font-mono text-xs font-semibold" style={{ color: 'var(--text-1)' }}>{c.code}</span>
-                  <span className="text-xs ml-2 truncate" style={{ color: 'var(--text-4)' }}>{c.name}</span>
-                </div>
-                <SectionPicker className="w-56 shrink-0" options={P}
-                  value={mapped ?? ''} onChange={v => teach(c.code, v)} />
-              </div>
-            )
-          })}
-        </div>
-        <p className="text-[11.5px] mt-3 pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
-          {unmapped.length === 0
-            ? 'Every code here is pointed at one of our sections.'
-            : `${unmapped.length} of ${codes.length} still to be pointed at a section. Until then those lines `
-              + 'cannot be matched to anything bought on a purchase sheet.'}
-        </p>
-      </div>
-
-      {/* ── Where the two books now meet ──────────────────────────────── */}
-      {joined.length > 0 && (
-        <div className="card mb-5" style={{ borderColor: 'var(--green)' }}>
-          <p className="section-title text-base mb-1 flex items-center gap-2">
-            <CircleCheck size={15} style={{ color: 'var(--green)' }} /> These Sections Now Join Up
-          </p>
-          <p className="section-sub mb-4 max-w-4xl">
-            More than one book has a name for each of these, so a piece can be followed from the depot's
-            sheet through the coating book without anybody matching it by hand.
-          </p>
-          <div className="space-y-2">
-            {joined.map(j => (
-              <div key={j.section} className="rounded-lg p-3"
-                style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
-                <p className="text-sm font-semibold mb-1.5" style={{ color: 'var(--text-1)' }}>{sectionName(j.section)}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {namesFor(aliasMap, j.section).map(n => (
-                    <span key={`${n.source}:${n.foreign}`} className="text-[11px] px-2 py-1 rounded font-mono"
-                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-2)', color: 'var(--text-2)' }}>
-                      {n.source === 'depot' ? 'depot' : n.source === 'coater' ? "coater's bill" : 'coating book'}
-                      {' · '}{n.foreign.toUpperCase()}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── One section, several colours ──────────────────────────────── */}
-      <div className="card mb-5">
-        <p className="section-title text-base mb-1 flex items-center gap-2">
-          <Palette size={15} className="text-brand" /> One Section, Several Colours
-        </p>
-        <p className="section-sub mb-4 max-w-4xl">
-          This is what the three sheets are really about. Code 20033 leaves as <b>W/O</b> — without coating —
-          and comes back as Ivory, Coffee Brown or Pista Green. The number is the section; the colour is a
-          state it passes into at the coater. A single stock line was never going to hold that.
-        </p>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {bySection.map(s => (
-            <div key={s.section} className="rounded-lg p-3.5"
-              style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
-              <div className="flex items-baseline justify-between gap-2 mb-2.5">
-                <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-1)' }}>{s.section}</p>
-                <p className="text-xs tabular-nums shrink-0" style={{ color: 'var(--text-4)' }}>
-                  {s.colours.length} colours · {s.nos} nos
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                {s.colours.map(c => (
-                  <div key={c.colour} className="flex items-center gap-2.5">
-                    <span className="w-3 h-3 rounded-full shrink-0"
-                      style={{ background: COLOUR_DOT[c.colour] ?? '#C7D0DA', border: '1px solid var(--border-2)' }} />
-                    <span className="text-xs flex-1 truncate"
-                      style={{ color: c.colour === 'Uncoated' ? 'var(--text-4)' : 'var(--text-2)' }}>
-                      {c.colour}
-                    </span>
-                    <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--text-2)' }}>
-                      {c.nos} nos{c.kg ? ` · ${c.kg} kg` : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── The sheet itself ──────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
-        <div>
-          <p className="section-title text-base mb-1">{sheet}</p>
-          <p className="section-sub">Your columns, your order — code, product name, qty, weight</p>
-        </div>
-        <span className="text-xs tabular-nums" style={{ color: 'var(--text-3)' }}>
-          {shown.length} lines · <b style={{ color: 'var(--text-1)' }}>{totals.nos} nos</b> · {kgFmt(totals.kg)}
-          {totals.unweighed > 0 && (
-            <span style={{ color: 'var(--red)' }}> · {totals.unweighed} not weighed</span>
-          )}
-        </span>
-      </div>
-
-      <TableCard maxH="32rem">
-        <thead>
-          <tr><th>Code</th><th>Product Name</th><th className="num">Qty (nos)</th><th className="num">Weight (kgs)</th>
-            <th className="num">Kg / Piece</th><th>Colour</th><th>{sheet.startsWith('Received') ? 'Received At' : 'Route'}</th></tr>
-        </thead>
-        <tbody>
-          {shown.map((l, i) => {
-            const colour = colourOf(l)
-            const per = l.kg && l.nos ? +(l.kg / l.nos).toFixed(3) : null
-            return (
-              <tr key={i}>
-                <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{l.code ?? '—'}</td>
-                <td className="text-xs max-w-[18rem] truncate" title={l.name}>{l.name}</td>
-                <td className="num tabular-nums font-medium" style={{ color: 'var(--text-1)' }}>{l.nos}</td>
-                <td className={cn('num tabular-nums text-xs')}
-                  style={{ color: l.kg === null && !isHardware(l) && !isRubber(l) ? 'var(--red)' : undefined }}>
-                  {l.kg !== null ? l.kg : isHardware(l) ? '—' : isRubber(l) ? l.unit : 'not weighed'}
-                </td>
-                <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{per ?? '—'}</td>
-                <td>
-                  <span className="flex items-center gap-1.5 text-xs whitespace-nowrap">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: COLOUR_DOT[colour] ?? '#C7D0DA', border: '1px solid var(--border-2)' }} />
-                    {colour}
-                  </span>
-                </td>
-                <td className="text-xs whitespace-nowrap" style={{ color: 'var(--text-3)' }}>{l.route ?? l.at ?? '—'}</td>
-              </tr>
-            )
-          })}
-          {shown.length === 0 && <tr><td colSpan={7}><Empty msg="Nothing on this sheet" /></td></tr>}
-        </tbody>
-      </TableCard>
-
-      <p className="text-[11px] mt-5 leading-relaxed max-w-4xl flex items-start gap-1.5"
-        style={{ color: 'var(--text-4)' }}>
-        <Scale size={12} className="mt-0.5 shrink-0" />
-        These are your own figures, read straight off the workbook you sent — nothing has been rounded,
-        corrected or filled in. Where a cell was blank it says so, and where it held something other than a
-        number it says that too.
-      </p>
     </div>
   )
 }

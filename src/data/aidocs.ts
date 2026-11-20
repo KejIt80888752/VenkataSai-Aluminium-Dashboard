@@ -211,7 +211,7 @@ export const CAPTURED: CapturedBill[] = SHOW_SAMPLE
       status,
       corrections,
       postedTo: status === 'Auto-Approved' || status === 'Corrected & Posted'
-        ? (b.docType.includes('Purchase') ? 'Purchase Register' : b.docType === 'Coating Job Card' ? 'Coating Job' : 'Sales Invoice')
+        ? (b.docType.includes('Purchase') ? 'Purchase Invoice' : b.docType === 'Coating Job Card' ? 'Coating Job' : 'Sales Invoice')
         : '—',
     }
   }),

@@ -14,7 +14,7 @@ export const TITLES: Record<string, string> = {
   '/sales-reports':  'Sales Reports',
   '/leads':          'Lead Generation',
   '/clients':        'Customers',
-  '/purchases':      'Purchase Register',
+  '/purchases':      'Purchase Invoice',
   '/suppliers':      'Suppliers',
   '/outstanding':    'Outstanding',
   '/profit-loss':    'Profit & Loss',
@@ -55,7 +55,8 @@ export const TITLES: Record<string, string> = {
   '/pack-goods':      'Pack & Loose Goods',
   '/shortage-order':  'Shortage Order',
   '/rate-cards':      'Rate Cards',
-  '/purchase-dc':     'Purchase Despatch Sheet',
+  '/purchase-dc':    'Purchase DC',
+  '/stats':          'Figures at a Glance',
   '/coat-book':       'Coating Book',
   '/dc-flow':         'Material Journey',
 }

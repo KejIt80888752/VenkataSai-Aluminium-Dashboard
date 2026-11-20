@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { ShoppingBag, IndianRupee, Truck, Scale } from 'lucide-react'
-import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, useChartTheme } from '@/components/ui'
+import { Scale } from 'lucide-react'
+import { PageHead, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, Pill, useChartTheme } from '@/components/ui'
 import { PURCHASES, TOTALS, monthlySales, type Purchase } from '@/data/txns'
 import { SUPPLIERS } from '@/data/parties'
 import { inr, inrShort, fmtDate, csvDownload } from '@/lib/utils'
@@ -71,7 +72,7 @@ export default function Purchases() {
 
   return (
     <div>
-      <PageHead title="Purchase Register" sub={`Inward bills from extrusion mills, stockists and hardware agencies · ${FY}`}>
+      <PageHead title="Purchase Invoice" sub={`Inward bills from extrusion mills, stockists and hardware agencies · ${FY}`}>
         <ExportBtn onClick={exportCsv} />
         <Select value={carrier} onChange={setCarrier}
           options={['All Carriers', ...[...new Set(PURCHASES.map(p => p.logistics))].sort()]}
@@ -81,12 +82,16 @@ export default function Purchases() {
           onImport={recs => crud.addMany(recs.map((r, i) => asPurchase(r, i)))} />
       </PageHead>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label="Purchase Bills"   value={String(PURCHASES.length)} icon={ShoppingBag} tone="brand" sub={FY} />
-        <Stat label="Purchase Value"   value={inr(TOTALS.purchases)}    icon={IndianRupee} tone="violet" sub="Taxable value" />
-        <Stat label="Payable to Suppliers" value={inr(TOTALS.payable)}  icon={Truck}       tone="red"    sub="Net of payments made" />
-        <Stat label="Material Received" value={`${totalKg.toLocaleString('en-IN')} kg`} icon={Scale} tone="sky" sub="Approx. by bill value" />
-      </div>
+      {/* The shop asked for the cards to come off the working screens —
+          "everywhere, every time, it is becoming clumsy" — so the figures
+          for this page now live on Figures at a Glance. */}
+      <p className="text-[11.5px] mb-4 flex items-center gap-1.5" style={{ color: 'var(--text-4)' }}>
+        <Scale size={12} />
+        {PURCHASES.length} bills · {inr(TOTALS.purchases)} taxable · {inr(TOTALS.payable)} still payable ·
+        {' '}{totalKg.toLocaleString('en-IN')} kg.
+        {' '}<Link to="/stats" className="underline" style={{ color: 'var(--brand)' }}>Figures at a Glance</Link>
+        {' '}carries the rest.
+      </p>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-5">
         <div className="card">

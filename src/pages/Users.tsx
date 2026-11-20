@@ -16,7 +16,7 @@ const MODULES = [
   'Location Stock', 'Stock & Inventory', 'Stock Audit', 'Stock Movement',
   'Product Catalogue', 'Item Master',
   'Quotations', 'Billing / Invoice', 'Sales Reports', 'Leads', 'Customers',
-  'Purchase Orders', 'Purchase Register', 'Suppliers',
+  'Purchase Orders', 'Purchase Invoice', 'Suppliers',
   'AI Capture',
   'Outstanding', 'Profit & Loss', 'GST Reports', 'GST Reconciliation',
   'User Management', 'Settings',
@@ -28,7 +28,7 @@ const MATRIX: Record<string, string[]> = {
   Manager: MODULES.filter(m => !['User Management'].includes(m)),
   'Sales Executive': ['Dashboard', 'Alerts & Reminders', 'Product Catalogue', 'Location Stock', 'Stock & Inventory', 'Quotations', 'Billing / Invoice', 'Sales Reports', 'Leads', 'Customers', 'Outstanding', 'AI Capture'],
   'Store Keeper': ['Dashboard', 'Alerts & Reminders', 'Material Flow', 'Delivery Challans', 'Coating Recon', 'Location Stock', 'Stock & Inventory', 'Stock Audit', 'Stock Movement', 'Product Catalogue', 'Item Master', 'Purchase Orders', 'Suppliers', 'AI Capture'],
-  Accountant: ['Dashboard', 'Billing / Invoice', 'Purchase Register', 'Coating Billing', 'Outstanding', 'Profit & Loss', 'GST Reports', 'GST Reconciliation', 'AI Capture'],
+  Accountant: ['Dashboard', 'Billing / Invoice', 'Purchase Invoice', 'Coating Billing', 'Outstanding', 'Profit & Loss', 'GST Reports', 'GST Reconciliation', 'AI Capture'],
 }
 
 const ROSTER = Object.entries(DEMO_USERS).map(([email, u], i) => ({

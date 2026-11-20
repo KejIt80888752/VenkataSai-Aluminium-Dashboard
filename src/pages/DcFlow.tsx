@@ -1,7 +1,7 @@
 import { useState, useMemo, Fragment } from 'react'
 import {
   Factory, Warehouse, SprayCan, PackageCheck, ArrowRight, Scale, TriangleAlert, Palette,
-  Boxes, Building2, Ruler,
+  Boxes, Building2, Ruler, Clock, HelpCircle,
 } from 'lucide-react'
 import { PageHead, Stat, Select, ExportBtn, TableCard, Empty } from '@/components/ui'
 import { SAMPLE_DC, dcTotals, perPiece } from '@/data/despatch'
@@ -10,6 +10,7 @@ import {
   type CoatLine,
 } from '@/data/coatbook'
 import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
+import { reconcile, reconTotals } from '@/data/coatrecon'
 import { CROSS_SECTIONS, CUT_LENGTHS, FINISHES, variantOf, variantCount } from '@/data/variants'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 
@@ -72,6 +73,27 @@ export default function DcFlow() {
   const gainKg = +(back.kg - sent.kg).toFixed(2)
   const gainPct = sent.kg ? +((gainKg / sent.kg) * 100).toFixed(2) : 0
   const shortPcs = sent.nos - back.nos
+
+  /* ── Where the load stands today ──────────────────────────────────────
+     Asked for on 20-11-2026: "whatever is pending at the coating, whatever
+     has received at the shop". Matched on the product, because a section
+     goes out as W/O and comes back as Ivory — the names never agree. */
+  const recon = useMemo(() => reconcile(), [])
+  const rt = useMemo(() => reconTotals(recon), [recon])
+  const stillOut = recon.filter(r => r.pendingNos > 0)
+  const extraPcs = recon.reduce((a, r) => a + r.extraNos, 0)
+
+  /** Where the coated material was put, as their own received sheet says. */
+  const landedAt = useMemo(() => {
+    const m = new Map<string, { nos: number; kg: number }>()
+    for (const l of RECEIVED) {
+      const k = l.at ?? '—'
+      const e = m.get(k) ?? { nos: 0, kg: 0 }
+      e.nos += l.nos; e.kg = +(e.kg + (l.kg ?? 0)).toFixed(2)
+      m.set(k, e)
+    }
+    return [...m.entries()].map(([place, v]) => ({ place, ...v })).sort((a, b) => b.nos - a.nos)
+  }, [])
 
   const stages = [
     {
@@ -146,15 +168,82 @@ export default function DcFlow() {
       </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label="Bought In" value={`${purchase.pieces} pcs`} icon={Factory} tone="violet"
-          sub={`${purchase.lineKg.toFixed(1)} kg on ${SAMPLE_DC.date}`} />
         <Stat label="Out to the Coater" value={`${sent.nos + sentHw.nos} pcs`} icon={SprayCan} tone="brand"
           sub={`${sent.nos} weighed · ${sentHw.nos} hardware`} />
+        <Stat label="Still at the Coater" value={`${rt.pendingNos} pcs`} icon={Clock}
+          tone={rt.pendingNos ? 'red' : 'green'}
+          sub={rt.pendingNos ? `across ${rt.pendingLines} products` : 'everything is back'} />
         <Stat label="Back in Colour" value={`${back.nos} pcs`} icon={PackageCheck} tone="green"
           sub={kgFmt(back.kg) + ' coated'} />
         <Stat label="Weight Coating Put On" value={`${gainPct > 0 ? '+' : ''}${gainPct}%`} icon={Scale}
           tone={gainPct >= 2 && gainPct <= 5 ? 'green' : 'amber'}
           sub={`${gainKg > 0 ? '+' : ''}${gainKg} kg · normal is 2 to 5%`} />
+      </div>
+
+      {/* ── Where this load stands today ──────────────────────────────── */}
+      <div className="card mb-5">
+        <p className="section-title text-base mb-1 flex items-center gap-2">
+          <Boxes size={15} className="text-brand" /> Where This Load Stands Today
+        </p>
+        <p className="section-sub mb-4 max-w-4xl">
+          Your own figures, nothing added. {sent.nos + sentHw.nos} pieces went to PC1 on 16 and 17-09 and
+          {' '}{back.nos} came back on 21-09 — so this is what is still out, and where the rest was put.
+        </p>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-wide mb-2 flex items-center gap-1.5"
+              style={{ color: 'var(--text-4)' }}>
+              <Clock size={11} /> Still at the coater
+            </p>
+            {stillOut.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--green)' }}>Everything sent has come back.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {stillOut.map(r => (
+                  <div key={r.key} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+                    style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                    <span className="text-xs truncate" style={{ color: 'var(--text-2)' }}>
+                      <span className="font-mono mr-2" style={{ color: 'var(--text-4)' }}>{r.code}</span>
+                      {r.name}
+                    </span>
+                    <span className="text-xs tabular-nums font-semibold shrink-0" style={{ color: 'var(--red)' }}>
+                      {r.pendingNos} nos
+                    </span>
+                  </div>
+                ))}
+                <p className="text-[11px] pt-1" style={{ color: 'var(--text-4)' }}>
+                  {rt.pendingNos} pieces in all, out of the {rt.sentNos} that went.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <p className="text-[10px] uppercase tracking-wide mb-2 flex items-center gap-1.5"
+              style={{ color: 'var(--text-4)' }}>
+              <Warehouse size={11} /> Received, and where it was put
+            </p>
+            <div className="space-y-1.5">
+              {landedAt.map(l => (
+                <div key={l.place} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+                  style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+                  <span className="text-xs truncate" style={{ color: 'var(--text-2)' }}>{l.place}</span>
+                  <span className="text-xs tabular-nums shrink-0" style={{ color: 'var(--text-1)' }}>
+                    {l.nos} nos{l.kg ? ` · ${l.kg} kg` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: 'var(--text-4)' }}>
+              <HelpCircle size={11} className="mt-0.5 shrink-0" />
+              You said on 20-11 that coated material comes back to your own godown. The received sheet writes
+              <b> PC1 COATS</b> against {landedAt.find(l => /PC1/i.test(l.place))?.nos ?? 0} of these pieces,
+              which reads as who coated them rather than where they are. Tell me which and it is one change —
+              it has not been assumed either way.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-1 mb-5 p-1 rounded-lg w-fit"
@@ -239,8 +328,12 @@ export default function DcFlow() {
                 {sent.nos} went out on the 16th and 17th, {back.nos} came back on the 21st.
               </p>
               <p className="text-[11.5px] mt-3 pt-3" style={{ color: 'var(--text-4)', borderTop: '1px solid var(--border-2)' }}>
-                These are two separate sheets rather than one job card, so some of this will be material
-                still at PC1 and some will be a later lorry. It is shown so the gap is at least visible.
+                This is the gap between the two totals. Gone through product by product it comes to
+                {' '}<b style={{ color: 'var(--text-2)' }}>{rt.pendingNos} pieces short</b> on the things that
+                went out, against <b style={{ color: 'var(--text-2)' }}>{extraPcs}</b> that came back without
+                going out on this load — older stock returning with it. {rt.pendingNos} less {extraPcs} is the
+                {' '}{shortPcs} above: the same gap, counted gross and counted line by line. Which lines, at
+                the top of this page.
               </p>
             </div>
           </div>

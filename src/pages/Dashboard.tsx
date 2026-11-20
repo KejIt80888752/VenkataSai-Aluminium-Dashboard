@@ -18,9 +18,20 @@ import { COATING_TOTALS, IN_TRANSIT } from '@/data/challans'
 import { PCU_OUTSTANDING, below15Days, PURCHASE_ORDERS } from '@/data/positions'
 import { AI_SUMMARY } from '@/data/aidocs'
 import { RECON_SUMMARY } from '@/data/gst2b'
+import { reconcile, reconTotals } from '@/data/coatrecon'
+import { MASTER } from '@/data/productmaster'
 
 export default function Dashboard() {
   const t = useChartTheme()
+
+  /* ── Their own figures, where there are any ───────────────────────────
+     The money side of this screen reads nought, and will until the product
+     list arrives with cost and selling price against each code. That is not
+     a fault to hide behind a blank card: the material side of the same four
+     sheets is full of real figures, so those are shown and the rest says
+     plainly what it is waiting for. */
+  const coat = reconTotals(reconcile())
+  const priced = 0
 
   const stockTotal   = P.reduce((s, p) => s + stockValue(p), 0)
   const stockKg      = P.filter(p => p.unit === 'kg').reduce((s, p) => s + stockQty(p), 0)
@@ -56,6 +67,19 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
 
+      {/* What this screen can and cannot yet show. */}
+      {TOTALS.revenue === 0 && (
+        <div className="rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3"
+          style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+          <p className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+            <b style={{ color: 'var(--text-1)' }}>The money figures are waiting on your product list.</b>
+            {' '}{priced} of {MASTER.length} products have a selling price. The material figures below are
+            your own — {coat.sentNos} pieces out to PC1, {coat.recvNos} back, {coat.pendingNos} still there.
+          </p>
+          <Link to="/stats" className="btn-outline !py-1 !text-xs shrink-0">See all the figures</Link>
+        </div>
+      )}
+
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Stat label="Revenue (Taxable)" value={inr(TOTALS.revenue)} sub={`${INVOICES.length} invoices · ${FY}`}
@@ -71,16 +95,24 @@ export default function Dashboard() {
       {/* Material flow strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <Link to="/material-flow" className="block">
-          <Stat label="At Powder Coaters" value={`${pcuPendingNos.toLocaleString('en-IN')} nos`}
-            sub={`${pcuPendingKg.toLocaleString('en-IN')} kg across PCU1 and PCU2`} icon={SprayCan} tone="amber" />
+          <Stat label="At Powder Coaters"
+            value={`${(pcuPendingNos || coat.pendingNos).toLocaleString('en-IN')} nos`}
+            sub={pcuPendingNos
+              ? `${pcuPendingKg.toLocaleString('en-IN')} kg across PCU1 and PCU2`
+              : `at PC1, out of ${coat.sentNos} sent on 16 and 17-09`}
+            icon={SprayCan} tone={(pcuPendingNos || coat.pendingNos) ? 'amber' : 'green'} />
         </Link>
         <Link to="/challans" className="block">
           <Stat label="In Transit" value={`${transitNos.toLocaleString('en-IN')} nos`}
             sub={`${IN_TRANSIT.length} challans on the road`} icon={Truck} tone="sky" />
         </Link>
         <Link to="/coating-recon" className="block">
-          <Stat label="Coating Weight Gain" value={`${COATING_TOTALS.gainKg.toLocaleString('en-IN')} kg`}
-            sub={`${COATING_TOTALS.outOfTolerance} jobs outside tolerance`} icon={Scale} tone="green" />
+          <Stat label="Coating Weight Gain"
+            value={`${(COATING_TOTALS.gainKg || +(coat.recvKg - coat.sentKg).toFixed(1)).toLocaleString('en-IN')} kg`}
+            sub={COATING_TOTALS.gainKg
+              ? `${COATING_TOTALS.outOfTolerance} jobs outside tolerance`
+              : `${coat.kgPct && coat.kgPct > 0 ? '+' : ''}${coat.kgPct}% — two to five is normal`}
+            icon={Scale} tone="green" />
         </Link>
         <Link to="/ai-capture" className="block">
           <Stat label="AI Capture" value={`${AI_SUMMARY.straightThroughPct}% auto`}

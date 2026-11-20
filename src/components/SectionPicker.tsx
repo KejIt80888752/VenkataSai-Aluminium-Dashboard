@@ -13,9 +13,17 @@ import { Check, X, Search } from 'lucide-react'
    the name.                                                               */
 
 export interface PickOption {
+  /** what the picker hands back; the code where a row has no separate id */
+  id?: string
   code: string
   name: string
+  /** every other spelling this row is known by, searched but not shown */
+  alt?: string
 }
+
+/** The value a row stands for. One code may carry two lengths, so a row that
+    brings its own id is identified by that and not by the code it shares. */
+export const optValue = (o: PickOption) => o.id ?? o.code
 
 export function SectionPicker({ options, value, onChange, placeholder = 'Type a section name…', className }: {
   options: PickOption[]
@@ -31,14 +39,14 @@ export function SectionPicker({ options, value, onChange, placeholder = 'Type a 
   const boxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const chosen = options.find(o => o.code === value)
+  const chosen = options.find(o => optValue(o) === value)
 
   const hits = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     if (!words.length) return options.slice(0, 50)
     return options
       .filter(o => {
-        const hay = `${o.name} ${o.code}`.toLowerCase()
+        const hay = `${o.name} ${o.code} ${o.alt ?? ''}`.toLowerCase()
         return words.every(w => hay.includes(w))
       })
       .slice(0, 50)
@@ -57,7 +65,7 @@ export function SectionPicker({ options, value, onChange, placeholder = 'Type a 
   useEffect(() => { setActive(0) }, [query])
 
   const choose = (o: PickOption) => {
-    onChange(o.code)
+    onChange(optValue(o))
     setQuery('')
     setOpen(false)
   }
@@ -103,14 +111,14 @@ export function SectionPicker({ options, value, onChange, placeholder = 'Type a 
                   Nothing matches "{query}". Try one word of the name, or the code.
                 </p>
               ) : hits.map((o, i) => (
-                <button key={o.code} type="button"
+                <button key={optValue(o)} type="button"
                   onMouseEnter={() => setActive(i)}
                   onClick={() => choose(o)}
                   className="w-full text-left px-3 py-1.5 flex items-center justify-between gap-2"
                   style={{ background: i === active ? 'var(--bg-card2)' : 'transparent' }}>
                   <span className="text-xs truncate" style={{ color: 'var(--text-1)' }}>{o.name}</span>
                   <span className="text-[10px] font-mono shrink-0" style={{ color: 'var(--text-4)' }}>{o.code}</span>
-                  {o.code === value && <Check size={12} style={{ color: 'var(--green)' }} />}
+                  {optValue(o) === value && <Check size={12} style={{ color: 'var(--green)' }} />}
                 </button>
               ))}
             </div>

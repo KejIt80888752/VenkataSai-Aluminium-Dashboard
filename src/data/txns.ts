@@ -40,6 +40,12 @@ const addDays = (isoDate: string, n: number) => {
 export interface Line {
   code: string; name: string; hsn: string; unit: string
   qty: number; rate: number; gst: number; amount: number; cost: number
+  /** the product master row this line is, where it was picked from the master.
+      Without it a revision reopens with an empty product box, because a code
+      alone does not say which length of that code was quoted. */
+  productId?: string
+  /** pieces, where the line is priced by weight — qty then holds the kilos */
+  nos?: number
 }
 export interface Invoice {
   id: string; no: string; date: string; dueDate: string

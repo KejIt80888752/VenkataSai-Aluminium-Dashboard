@@ -22,6 +22,16 @@
   --border:   #f1f5f9;
   --border-2: #e2e8f0;
   --shadow:   0 1px 3px rgba(15,23,42,0.07);
+
+  /* Signal colours. These were being used across every page — var(--red) on a
+     warning, var(--green) on a figure that ties — and were never declared, so
+     the browser dropped each declaration and the whole dashboard signalled in
+     plain grey. Nothing above or below changed; the tokens simply exist now. */
+  --brand:      #0f5b8f;
+  --brand-soft: #eef6fc;
+  --red:        #dc2626;
+  --green:      #16a34a;
+  --amber:      #d97706;
 }
 
 .dark {
@@ -35,6 +45,12 @@
   --border:   #16202f;
   --border-2: #2a3a50;
   --shadow:   0 1px 3px rgba(0,0,0,0.45);
+
+  --brand:      #2b8fd4;
+  --brand-soft: rgba(43,143,212,.14);
+  --red:        #f87171;
+  --green:      #4ade80;
+  --amber:      #fbbf24;
 }
 
 @layer base {
