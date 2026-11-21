@@ -64,6 +64,10 @@ export interface Invoice {
   mode: 'NEFT' | 'UPI' | 'Cheque' | 'Cash' | 'Credit'
   /** what prints at the foot of this one, which may differ from the standard */
   terms?: string[]
+  /** the proforma this bill was raised against, where there was one */
+  piNo?: string
+  /** "30 days", "Advance", whatever was agreed for this one */
+  paymentTerms?: string
 }
 
 const interState = (c: Client) => c.state !== 'Karnataka'

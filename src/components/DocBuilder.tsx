@@ -148,6 +148,18 @@ export interface BuiltDoc {
   coatingRate: number
   /** what goes at the foot of it, changeable on every document */
   terms: string[]
+  /* ── What a tax invoice has to carry ────────────────────────────────────
+     Theirs, on 20-11, listing what was missing: vehicle number, e-way bill
+     number, remarks, delivery address, PO number, PI number, payment terms.
+     None of them are optional on a bill that travels with goods — an e-way
+     bill without a vehicle on it is stopped at the checkpost. */
+  vehicle: string
+  ewayBill: string
+  remarks: string
+  shipTo: string
+  poNo: string
+  piNo: string
+  paymentTerms: string
 }
 
 /**
@@ -205,16 +217,30 @@ export function totalsOf(
         .reduce((s, l) => s + l.kg * (l.metalRate && l.metalRate > 0 ? l.metalRate : aluminium.rate), 0)
         .toFixed(2)
     : 0
+  /* ── Three things on a sales document, not one ────────────────────────
+     The metal, the coating done to it, and everything else the shop sells
+     outright — handles, hinges, rubber. They were being treated as one, and
+     in cumulative mode the "everything else" was being dropped from the
+     total altogether: a rubber line at ninety-seven pieces and two hundred
+     and fifty rupees simply left the bill. */
+  const coatedLines = picked.filter(isAluminium)
+  const otherLines = picked.filter(l => !isAluminium(l))
+
   const coating = aluminium.on
     ? (coatingMode === 'cumulative'
         /* One figure for the lot, at its own rate — which has to be asked for
            rather than taken off whichever section happens to be first, or
            changing the order of the lines would change the money. */
         ? +(kg * coatingRate).toFixed(2)
-        : +picked.reduce((s, l) => s + amountOf(l), 0).toFixed(2))
+        : +coatedLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2))
+    : 0
+
+  /** Sold outright at its own rate, whatever the metal is doing. */
+  const goods = aluminium.on
+    ? +otherLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
     : +picked.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
 
-  const taxable = +(metal + coating).toFixed(2)
+  const taxable = +(metal + coating + goods).toFixed(2)
 
   /* ── Tax, line by line ────────────────────────────────────────────────
      This took the slab off whichever line happened to be first and applied
@@ -229,14 +255,19 @@ export function totalsOf(
     ? (coatingMode === 'cumulative'
         /* Charged once, it is one supply — at the commonest slab on the
            sections it covers, which is the one the shop is working in. */
-        ? +(coating * (commonSlab(picked) / 100)).toFixed(2)
-        : +picked.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0).toFixed(2))
-    : +picked.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0).toFixed(2)
+        ? coating * (commonSlab(coatedLines) / 100)
+        : coatedLines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0))
+    : 0
 
-  const metalTax = aluminium.on ? +(metal * (aluminium.gst / 100)).toFixed(2) : 0
-  const tax = +(metalTax + coatingTax).toFixed(2)
+  /* Everything sold outright pays at its own slab — a hinge is not taxed at
+     whatever the aluminium happens to be at. */
+  const goodsTax = (aluminium.on ? otherLines : picked)
+    .reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0)
 
-  return { metal, coating, kg, taxable, tax, total: +(taxable + tax).toFixed(2) }
+  const metalTax = aluminium.on ? metal * (aluminium.gst / 100) : 0
+  const tax = +(metalTax + coatingTax + goodsTax).toFixed(2)
+
+  return { metal, coating, goods, kg, taxable, tax, total: +(taxable + tax).toFixed(2) }
 }
 
 /* 9 is here because they asked for it: a line carried at the half-slab,
@@ -285,6 +316,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [preparedBy, setPreparedBy] = useState(owner)
   const [terms, setTerms] = useState('')
   const [showTerms, setShowTerms] = useState(false)
+  const [vehicle, setVehicle] = useState('')
+  const [ewayBill, setEwayBill] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [shipTo, setShipTo] = useState('')
+  const [poNo, setPoNo] = useState('')
+  const [piNo, setPiNo] = useState('')
+  const [paymentTerms, setPaymentTerms] = useState('')
 
   /* Products the shop has added itself sit beside the master, so a door
      closer typed on one quotation is picked on the next. */
@@ -340,6 +378,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setPreparedBy(initial?.owner || owner)
     setTerms(termsToText(initial?.terms?.length ? initial.terms : DEFAULT_TERMS[kind]))
     setShowTerms(false)
+    setVehicle(initial?.vehicle ?? '')
+    setEwayBill(initial?.ewayBill ?? '')
+    setRemarks(initial?.remarks ?? '')
+    setShipTo(initial?.shipTo ?? '')
+    setPoNo(initial?.poNo ?? '')
+    setPiNo(initial?.piNo ?? '')
+    setPaymentTerms(initial?.paymentTerms ?? '')
     setLines(initial?.lines?.length
       ? initial.lines.map(l => ({ ...l, key: Math.random().toString(36).slice(2) }))
       : [blankLine()])
@@ -355,6 +400,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   ].filter(Boolean))].sort(), [parties, isPurchase])
 
   const alu: AluminiumBlock = { on: aluOn && !isPurchase, rate: aluRate, gst: aluGst }
+  /** True only where this line's charge is rolled into the one coating
+      figure — which is to say, only where it is a coated section. */
+  const inTheLot = (l: BuiltLine) =>
+    alu.on && coatingMode === 'cumulative' && isAluminium(l)
+
   /** Every distinct metal rate in play, so the form can say when it is more
       than one and the document can carry a line for each. */
   const metalRates = useMemo(() => [...new Set(
@@ -456,6 +506,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       clientName: clientName.trim(), subject: subject.trim(), owner: preparedBy.trim(),
       terms: termsFromText(terms),
       lines: keep, interState, aluminium: alu, coatingMode, coatingRate,
+      vehicle: vehicle.trim(), ewayBill: ewayBill.trim(), remarks: remarks.trim(),
+      shipTo: shipTo.trim(), poNo: poNo.trim(), piNo: piNo.trim(),
+      paymentTerms: paymentTerms.trim(),
       ...totalsOf(keep, alu, coatingMode, coatingRate),
     })
     onClose()
@@ -556,60 +609,64 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               options={['Karnataka — CGST + SGST', 'Outside Karnataka — IGST']} className="!w-full" /></div>
         </div>
 
+        {/* ── The metal is a line, not a panel ────────────────────────────
+            Theirs, on 20-11: "weight inventory should reflect as one of the
+            line items, not separately at top". It was a block of its own
+            above the table, which read as a setting rather than as part of
+            what is being supplied. It is the first row of the table now, and
+            the coating is the last one, both priced where everything else
+            is priced. Only the two switches that decide the shape of the
+            document stay outside it. */}
+        {isInvoice && !isPurchase && (
+          <div>
+            <p className="label mb-1.5">Despatch &amp; payment</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div><label className="label">Vehicle no</label>
+                <input className="input w-full" value={vehicle} placeholder="KA 01 AB 1234"
+                  onChange={e => setVehicle(e.target.value)} /></div>
+              <div><label className="label">E-way bill no</label>
+                <input className="input w-full" value={ewayBill} placeholder="12 digits"
+                  onChange={e => setEwayBill(e.target.value)} /></div>
+              <div><label className="label">PO number</label>
+                <input className="input w-full" value={poNo} placeholder="Buyer's order"
+                  onChange={e => setPoNo(e.target.value)} /></div>
+              <div><label className="label">PI number</label>
+                <input className="input w-full" value={piNo} placeholder="Proforma this bills against"
+                  onChange={e => setPiNo(e.target.value)} /></div>
+              <div className="lg:col-span-2"><label className="label">Delivery address</label>
+                <input className="input w-full" value={shipTo}
+                  placeholder="Where it is actually going, if not the billing address"
+                  onChange={e => setShipTo(e.target.value)} /></div>
+              <div><label className="label">Payment terms</label>
+                <input className="input w-full" value={paymentTerms} placeholder="30 days / Advance"
+                  onChange={e => setPaymentTerms(e.target.value)} /></div>
+              <div><label className="label">Remarks</label>
+                <input className="input w-full" value={remarks} placeholder="Anything to search on later"
+                  onChange={e => setRemarks(e.target.value)} /></div>
+            </div>
+          </div>
+        )}
+
         {alu.on && (
-          <div className="rounded-lg p-3"
-            style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: 'var(--text-4)' }}>
-                  Aluminium Extruded Profiles
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label">Coating charged</label>
+              {COATING_FIXED(kind) ? (
+                <p className="input !w-44 flex items-center" style={{ color: 'var(--text-3)' }}
+                  title="A tax invoice carries one coating figure for the lot — theirs, on 20-11">
+                  Once for the lot
                 </p>
-                <p className="text-lg font-bold tabular-nums" style={{ color: 'var(--text-1)' }}>
-                  {t.kg} kg
-                </p>
-                <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
-                  {metalRates.length > 1
-                    ? `${metalRates.length} rates on this document — set per line`
-                    : 'every section below, added up — not typed'}
-                </p>
-              </div>
-              <div>
-                <label className="label">Rate per kg</label>
-                <input className="input !w-28 text-right tabular-nums" value={aluRate || ''}
-                  placeholder="0" onChange={e => setAluRate(Number(e.target.value) || 0)} />
-              </div>
-              <div>
-                <label className="label">GST %</label>
-                <Select value={String(aluGst)} onChange={v => setAluGst(Number(v))}
-                  options={GST_RATES} className="!w-20 !min-w-0" />
-              </div>
-              <div className="text-right">
-                <p className="label">Aluminium</p>
-                <p className="text-lg font-bold tabular-nums" style={{ color: 'var(--brand)' }}>
-                  {inr2(t.metal)}
-                </p>
-              </div>
-              <div>
-                <label className="label">Coating charged</label>
-                {COATING_FIXED(kind) ? (
-                  <p className="input !w-44 flex items-center" style={{ color: 'var(--text-3)' }}
-                    title="A tax invoice carries one coating figure for the lot — theirs, on 20-11">
-                    Once for the lot
-                  </p>
-                ) : (
-                  <Select value={coatingMode === 'section' ? 'Section by section' : 'Once for the lot'}
-                    onChange={v => setCoatingMode(v.startsWith('Section') ? 'section' : 'cumulative')}
-                    options={['Section by section', 'Once for the lot']} className="min-w-[11rem]" />
-                )}
-              </div>
-              {coatingMode === 'cumulative' && (
-                <div>
-                  <label className="label">Coating per kg</label>
-                  <input className="input !w-24 text-right tabular-nums" value={coatingRate || ''}
-                    placeholder="0" onChange={e => setCoatingRate(Number(e.target.value) || 0)} />
-                </div>
+              ) : (
+                <Select value={coatingMode === 'section' ? 'Section by section' : 'Once for the lot'}
+                  onChange={v => setCoatingMode(v.startsWith('Section') ? 'section' : 'cumulative')}
+                  options={['Section by section', 'Once for the lot']} className="min-w-[11rem]" />
               )}
             </div>
+            {metalRates.length > 1 && (
+              <p className="text-[11px] pb-2" style={{ color: 'var(--text-4)' }}>
+                {metalRates.length} metal rates on this document — set per line
+              </p>
+            )}
           </div>
         )}
 
@@ -635,6 +692,34 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   <th className="num">Amount</th><th /></tr>
               </thead>
               <tbody>
+                {alu.on && (
+                  <tr style={{ background: 'var(--bg-card2)' }}>
+                    <td className="font-semibold uppercase tracking-wide text-[11px]"
+                      style={{ color: 'var(--text-1)' }}>
+                      Aluminium Extruded Profiles
+                      <span className="block text-[10px] normal-case font-normal tracking-normal"
+                        style={{ color: 'var(--text-4)' }}>every section below, added up — not typed</span>
+                    </td>
+                    <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>—</td>
+                    <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
+                      {t.kg} kg
+                    </td>
+                    <td className="num" />
+                    <td className="num">
+                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                        value={aluRate || ''} placeholder="per kg"
+                        onChange={e => setAluRate(Number(e.target.value) || 0)} />
+                    </td>
+                    <td className="num">
+                      <Select value={String(aluGst)} onChange={v => setAluGst(Number(v))}
+                        options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" />
+                    </td>
+                    <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
+                      {t.metal ? inr2(t.metal) : '—'}
+                    </td>
+                    <td />
+                  </tr>
+                )}
                 {lines.map((l, i) => (
                   <tr key={l.key}>
                     <td>
@@ -691,10 +776,18 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       </td>
                     )}
                     <td className="num">
+                      {/* Only a coated section's charge is rolled into the
+                          lot. Hardware and rubber are sold outright and keep
+                          a rate of their own — theirs: "every sales bill is
+                          taking all products as aluminium, we have hardware
+                          also, so logic is applied as coating charge, remove
+                          that". Greying their rate box was also why picking
+                          a hinge looked as though the search had failed. */}
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                        value={alu.on && coatingMode === 'cumulative' ? '' : (l.rate || '')}
-                        disabled={alu.on && coatingMode === 'cumulative'}
-                        placeholder={alu.on && coatingMode === 'cumulative' ? 'charged once'
+                        value={inTheLot(l) ? '' : (l.rate || '')}
+                        disabled={inTheLot(l)}
+                        placeholder={inTheLot(l) ? 'charged once'
+                          : alu.on && isAluminium(l) ? 'coating / kg'
                           : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
@@ -709,7 +802,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
                         options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" /></td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {alu.on && coatingMode === 'cumulative'
+                      {inTheLot(l)
                         ? <span style={{ color: 'var(--text-4)' }}>in the lot</span>
                         : amountOf(l) ? inr2(amountOf(l)) : '—'}</td>
                     <td>
@@ -718,45 +811,99 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         <Trash2 size={13} /></button></td>
                   </tr>
                 ))}
+                {alu.on && coatingMode === 'cumulative' && (
+                  <tr style={{ background: 'var(--bg-card2)' }}>
+                    <td className="font-semibold uppercase tracking-wide text-[11px]"
+                      style={{ color: 'var(--text-1)' }}>
+                      Powder Coating
+                      <span className="block text-[10px] normal-case font-normal tracking-normal"
+                        style={{ color: 'var(--text-4)' }}>one charge for the lot</span>
+                    </td>
+                    <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>—</td>
+                    <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
+                      {t.kg} kg
+                    </td>
+                    <td className="num" />
+                    <td className="num">
+                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                        value={coatingRate || ''} placeholder="per kg"
+                        onChange={e => setCoatingRate(Number(e.target.value) || 0)} />
+                    </td>
+                    <td className="num" />
+                    <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
+                      {t.coating ? inr2(t.coating) : '—'}
+                    </td>
+                    <td />
+                  </tr>
+                )}
               </tbody>
+
+              {/* ── The money in the same list ───────────────────────────
+                  Theirs, on 20-11: "tax if on selected or partial should
+                  reflect as one of the inventory, not at last highlighted."
+                  It was a little table of its own floating off to the right,
+                  which is why a slab changed on a line looked as though it
+                  had done nothing. It is the foot of the same table now, in
+                  the same columns, under the lines it is adding up. */}
+              <tfoot>
+                <tr style={{ borderTop: '2px solid var(--border-2)' }}>
+                  <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>
+                    Taxable
+                  </td>
+                  <td />
+                  <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
+                    {inr2(t.taxable)}
+                  </td>
+                  <td />
+                </tr>
+                {interState ? (
+                  <tr>
+                    <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>IGST</td>
+                    <td />
+                    <td className="num tabular-nums">{inr2(t.tax)}</td>
+                    <td />
+                  </tr>
+                ) : (
+                  <>
+                    <tr>
+                      <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>CGST</td>
+                      <td />
+                      <td className="num tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td>
+                      <td />
+                    </tr>
+                    <tr>
+                      <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>SGST</td>
+                      <td />
+                      <td className="num tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td>
+                      <td />
+                    </tr>
+                  </>
+                )}
+                <tr style={{ borderTop: '1px solid var(--border-2)' }}>
+                  <td colSpan={5} className="text-right text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                    Total
+                  </td>
+                  <td />
+                  <td className="num tabular-nums text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                    {inr2(t.total)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
             <button className="btn-outline" onClick={() => setLines(ls => [...ls, blankLine()])}>
               <Plus size={14} /> Add a line
             </button>
-            <table className="text-sm">
-              <tbody>
-                {alu.on && (
-                  <>
-                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>
-                      Aluminium · {t.kg} kg</td>
-                      <td className="text-right tabular-nums">{inr2(t.metal)}</td></tr>
-                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>
-                      Powder coating</td>
-                      <td className="text-right tabular-nums">{inr2(t.coating)}</td></tr>
-                  </>
-                )}
-                <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>Taxable</td>
-                  <td className="text-right tabular-nums">{inr2(t.taxable)}</td></tr>
-                {interState ? (
-                  <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>IGST</td>
-                    <td className="text-right tabular-nums">{inr2(t.tax)}</td></tr>
-                ) : (
-                  <>
-                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>CGST</td>
-                      <td className="text-right tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td></tr>
-                    <tr><td className="pr-8 py-0.5" style={{ color: 'var(--text-3)' }}>SGST</td>
-                      <td className="text-right tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td></tr>
-                  </>
-                )}
-                <tr className="font-bold" style={{ color: 'var(--text-1)' }}>
-                  <td className="pr-8 py-0.5 border-t" style={{ borderColor: 'var(--border-2)' }}>Total</td>
-                  <td className="text-right tabular-nums border-t" style={{ borderColor: 'var(--border-2)' }}>
-                    {inr2(t.total)}</td></tr>
-              </tbody>
-            </table>
+            {t.goods > 0 && alu.on && (
+              <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+                {inr2(t.goods)} of that is hardware and rubber, sold outright at its own rate — not coated,
+                not weighed into the metal.
+              </p>
+            )}
           </div>
+
           <p className="text-[11px] mt-2" style={{ color: 'var(--text-4)' }}>
             {isPurchase
               ? 'Rates are typed off the supplier\u2019s bill. Once the product list reaches us with a cost '

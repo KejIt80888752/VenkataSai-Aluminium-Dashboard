@@ -90,6 +90,11 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
             <p className="text-slate-600">{buyer.place}</p>
             {buyer.contact && <p className="text-slate-600">Contact: {buyer.contact}</p>}
             <p className="text-slate-800 font-medium">GSTIN: {buyer.gstin}</p>
+            {inv.shipTo && inv.shipTo !== '—' && (
+              <p className="text-slate-600 mt-1">
+                <span className="text-slate-500">Delivery: </span>{inv.shipTo}
+              </p>
+            )}
           </div>
           <div className="text-right space-y-0.5">
             <Meta k="Invoice No." v={inv.no} bold />
@@ -98,6 +103,8 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
             <Meta k="Buyer PO" v={inv.poNo} />
             <Meta k="Vehicle No." v={inv.vehicle} />
             <Meta k="E-Way Bill" v={inv.ewayBill} />
+            {inv.piNo && <Meta k="PI No." v={inv.piNo} />}
+            {inv.paymentTerms && <Meta k="Payment Terms" v={inv.paymentTerms} />}
             <Meta k="Remarks" v={inv.remarks} />
           </div>
         </div>

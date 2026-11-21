@@ -159,7 +159,40 @@ const fromMaster = (p: MasterProduct): Product => ({
   active: true,
 })
 
-export const P: Product[] = SHOW_SAMPLE ? SAMPLE_P : MASTER.map(fromMaster)
+/* ── Products the shop added itself ───────────────────────────────────────
+   Theirs, on 20-11: "if any new product is added in quotation or tax invoice,
+   it's not reflecting in stock."
+
+   They were right. A door closer typed on a quotation went into its own
+   store so the next quotation could pick it, and stopped there — the
+   catalogue, the stock screens and the item master never heard of it. They
+   are part of the catalogue now, marked as having no stock and no price,
+   because nobody has counted or priced them yet.                          */
+function addedProducts(): Product[] {
+  try {
+    const xs = JSON.parse(localStorage.getItem('vsa-extra-products') ?? '[]') as {
+      id: string; code: string; name: string; kgPerPiece: number | null
+    }[]
+    return xs.map(x => ({
+      id: x.id,
+      code: x.code || x.name.toUpperCase().replace(/\s+/g, '-'),
+      name: x.name,
+      category: 'Hardware & Accessories',
+      series: '—', brand: '—', finish: 'N/A',
+      lengthFt: 0,
+      kgPerLength: x.kgPerPiece ?? 1,
+      unit: x.kgPerPiece !== null ? 'kg' : 'nos',
+      ratePerKg: 0, costPerKg: 0,
+      hsn: '83024190', gst: 18,
+      stockPcs: 0, reorderPcs: 0,
+      rack: '—', godown: 'Main Godown', active: true,
+    }))
+  } catch { return [] }
+}
+
+export const P: Product[] = SHOW_SAMPLE
+  ? SAMPLE_P
+  : [...MASTER.map(fromMaster), ...addedProducts()]
 
 /** True while the catalogue carries no prices — the screens say so instead of
     showing a rupee figure nobody can stand behind. */
