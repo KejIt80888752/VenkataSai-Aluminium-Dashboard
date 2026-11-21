@@ -597,7 +597,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      weight and the metal rate where the document carries them. The foot was
      spanning five whatever the table held, so on a tax invoice the totals
      came out one column to the left of the figures they were adding up. */
-  const cols = 8 + (showWeight ? 1 : 0) + (alu.on ? 1 : 0)
+  /* The label runs to the GST column, which is then skipped so the figure
+     lands under Amount: cols - 3, a blank, the figure, and the bin's column.
+     It was spanning five whatever the table held, so on a tax invoice the
+     totals sat a column away from the lines they were adding up. */
+  const cols = 7 + (showWeight ? 1 : 0) + (alu.on ? 1 : 0)
 
   const theDate = isPurchase ? theirDate : date
   const theNo = isPurchase ? theirNo.trim() : docNo
@@ -810,13 +814,23 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
           <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--border-2)' }}>
             <table className="tbl">
               <thead>
-                <tr><th className="min-w-[13rem]">Product</th><th>Code</th>
-                  {/* "Add colour to every item" — theirs, on 21-11. */}
-                  <th>Colour</th>
+                {/* ── Colour reads with the description, not beside it ───
+                    Theirs, on 21-11, looking at the row: the colour is to go
+                    in like a description rather than as a column of its own.
+                    They are right about the shape of it — the finish is part
+                    of what the line is, the way the length and the groove
+                    are, and a column for it pushed the money off the side of
+                    an already wide table. It sits under the product name
+                    with the narration now. */}
+                <tr><th className="min-w-[18rem]">Product</th><th>Code</th>
                   <th className="num">Qty (nos)</th>
                   {showWeight && <th className="num">Weight (kg)</th>}
                   {alu.on && <th className="num">Metal ₹/kg</th>}
-                  <th className="num">Rate</th>
+                  {/* Where the metal is priced at the top, a section's own
+                      rate is the coating charge and nothing else, so the
+                      column says so rather than leaving it to be worked out
+                      from the box underneath. */}
+                  <th className="num">{alu.on ? 'Coating rate' : 'Rate'}</th>
                   <th className="num">GST %</th>
                   <th className="num">Amount</th><th /></tr>
               </thead>
@@ -830,7 +844,6 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         style={{ color: 'var(--text-4)' }}>every section below, added up — not typed</span>
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>—</td>
-                    <td className="text-[11px]" style={{ color: 'var(--text-4)' }}>per line</td>
                     {/* The weight belongs under the weight column wherever
                         there is one. It was sitting under the piece count and
                         pushing every cell after it one column to the left, so
@@ -891,7 +904,6 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         options={['per kg', 'per piece']}
                         className="!w-[6.5rem] !py-1 !text-[11px] !min-w-0" />
                     </td>
-                    <td className="text-[11px]" style={{ color: 'var(--text-4)' }}>per line</td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
                       {coatingUnit === 'nos' ? `${t.coatBase} nos` : showWeight ? '—' : `${t.kg} kg`}
                     </td>
@@ -935,10 +947,20 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           product: the same section in another finish is
                           still the same section. */}
                       {l.productId && (
-                        <input className="input w-full !py-0.5 !text-[11px] mt-1"
-                          value={l.narration ?? ''}
-                          placeholder="Narration — finish, thickness, anything not in stock"
-                          onChange={e => patch(l.key, { narration: e.target.value })} />
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {/* Set on the first line and carried to the next —
+                              theirs, on 21-11. A purchase bill can be
+                              uncoated because that is what comes off the
+                              lorry; a sales document cannot go out in no
+                              finish at all. */}
+                          <ColourPicker value={l.colour ?? UNCOATED} allowRaw={isPurchase}
+                            onChange={c => patch(l.key, { colour: c })}
+                            className="!w-[6.75rem] !py-0.5 !text-[11px] !min-w-0" />
+                          <input className="input flex-1 min-w-0 !py-0.5 !text-[11px]"
+                            value={l.narration ?? ''}
+                            placeholder="Narration — thickness, finish, anything not in stock"
+                            onChange={e => patch(l.key, { narration: e.target.value })} />
+                        </div>
                       )}
                       {wantsPhotos && l.productId && (
                         <div className="flex items-center gap-2 mt-1">
@@ -967,14 +989,6 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       )}
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>{l.code || '—'}</td>
-                    <td>
-                      {/* Set on the first line and carried to the next —
-                          theirs, on 21-11. A purchase bill can be uncoated
-                          because that is what comes off the lorry; a sales
-                          document cannot go out in no finish at all. */}
-                      <ColourPicker value={l.colour ?? UNCOATED} allowRaw={isPurchase}
-                        onChange={c => patch(l.key, { colour: c })} />
-                    </td>
                     <td className="num">
                       {/* Empty rather than nought: a box reading 0 has to be
                           cleared before anything can be typed into it, and
@@ -1079,7 +1093,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   the same columns, under the lines it is adding up. */}
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border-2)' }}>
-                  <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>
+                  <td colSpan={cols - 3} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>
                     Taxable
                   </td>
                   <td />
@@ -1090,7 +1104,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 </tr>
                 {interState ? (
                   <tr>
-                    <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>IGST</td>
+                    <td colSpan={cols - 3} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>IGST</td>
                     <td />
                     <td className="num tabular-nums">{inr2(t.tax)}</td>
                     <td />
@@ -1098,13 +1112,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 ) : (
                   <>
                     <tr>
-                      <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>CGST</td>
+                      <td colSpan={cols - 3} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>CGST</td>
                       <td />
                       <td className="num tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td>
                       <td />
                     </tr>
                     <tr>
-                      <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>SGST</td>
+                      <td colSpan={cols - 3} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>SGST</td>
                       <td />
                       <td className="num tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td>
                       <td />
@@ -1112,7 +1126,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   </>
                 )}
                 <tr style={{ borderTop: '1px solid var(--border-2)' }}>
-                  <td colSpan={cols - 2} className="text-right text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                  <td colSpan={cols - 3} className="text-right text-sm font-bold" style={{ color: 'var(--text-1)' }}>
                     Total
                   </td>
                   <td />
