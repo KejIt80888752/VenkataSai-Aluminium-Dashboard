@@ -18,7 +18,7 @@
 
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc } from '@/components/DocBuilder'
-import { amountOf, totalKgOf, isAluminium } from '@/components/DocBuilder'
+import { amountOf, totalKgOf, totalNosOf, isAluminium } from '@/components/DocBuilder'
 import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
 
@@ -47,15 +47,25 @@ const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
        kilos are on the metal line above and do not belong twice on one
        document, which is what they meant by "displaying double time". */
     unit: alu ? 'nos' : (l.basis === 'kg' ? 'kg' : 'nos'),
-    qty: alu ? l.kg : (l.basis === 'kg' ? l.kg : l.nos),
+    /* The quantity is the count the line was supplied in. It used to be the
+       kilos with "nos" written beside them, which read as a count and was
+       not one, and reopened as a count on the next revision. */
+    qty: alu ? l.nos : (l.basis === 'kg' ? l.kg : l.nos),
     rate: charged ? l.rate : 0,
     gst: l.gst,
     amount: charged ? amountOf(l) : 0,
     cost: 0,
     productId: l.productId, nos: l.nos,
+    /* Carried so a revision reopens on what it was actually priced on. */
+    kg: l.kg, basis: l.basis, metalRate: l.metalRate,
+    narration: l.narration,
     group: coated ? ('coating' as const) : ('item' as const),
   }
 })
+
+/** What the one coating charge is worked out on — kilos, or pieces. */
+export const coatingBaseOf = (d: BuiltDoc) =>
+  d.coatingUnit === 'nos' ? totalNosOf(d.lines) : totalKgOf(d.lines)
 
 const linesOf = (d: BuiltDoc): Line[] => {
   if (!d.aluminium?.on) return sectionLines(d)
@@ -74,6 +84,7 @@ const linesOf = (d: BuiltDoc): Line[] => {
   const several = byRate.size > 1
 
   const out: Line[] = [...byRate.entries()]
+    .filter(([, kg]) => kg > 0)
     .sort((a, b) => b[1] - a[1])
     .map(([rate, kg]) => ({
       code: '', hsn: hsnFor('section'),
@@ -82,39 +93,51 @@ const linesOf = (d: BuiltDoc): Line[] => {
         : 'ALUMINIUM EXTRUDED PROFILES',
       unit: 'kg', qty: kg, rate,
       gst: d.aluminium.gst, amount: +(kg * rate).toFixed(2), cost: 0,
+      kg, basis: 'kg' as const,
       group: 'aluminium' as const,
     }))
 
-  out.push(...sectionLines(d))
+  /* ── The coating charge goes above the sections ───────────────────────
+     Theirs, on 21-11: it is to come up the page, not sit at the bottom
+     under the list. It belongs with the metal — the two of them are what
+     is being charged for, and the sections underneath are the
+     specification of what that charge covers.
 
+     A charge of nothing on nothing is not printed at all. A quotation went
+     out carrying "POWDER COATING · 0 kg · ₹0.00 · —", which is a line that
+     says nothing and invites the question of what it is doing there. */
   if (d.coatingMode === 'cumulative') {
     const rate = d.coatingRate ?? 0
-    const kg = totalKgOf(d.lines)
+    const unit = d.coatingUnit === 'nos' ? 'nos' : 'kg'
+    const qty = coatingBaseOf(d)
     /* The slab most of the coated sections are at, since the charge covers
        them all as one supply. */
     const slab = metal.length
       ? [...metal.reduce((m, l) => m.set(l.gst, (m.get(l.gst) ?? 0) + 1), new Map<number, number>())
           .entries()].sort((a, b) => b[1] - a[1])[0][0]
       : 18
-    out.push({
+    if (qty > 0 || rate > 0) out.push({
       code: '', name: 'POWDER COATING', hsn: hsnFor('coating'),
-      unit: 'kg', qty: kg, rate,
-      gst: slab, amount: +(kg * rate).toFixed(2), cost: 0,
+      unit, qty, rate,
+      gst: slab, amount: +(qty * rate).toFixed(2), cost: 0,
+      kg: totalKgOf(d.lines), basis: unit === 'kg' ? 'kg' : 'nos',
       group: 'coating',
     })
   }
+
+  out.push(...sectionLines(d))
   return out
 }
 
 /** An offer or a proforma: quotation, estimate, proforma invoice. */
-export function asQuotation(d: BuiltDoc, kind: SalesKind): Quotation {
+export function asQuotation(d: BuiltDoc, kind: SalesKind, status: Quotation['status'] = 'Sent'): Quotation {
   return {
     id: `${PREFIX[kind]}-${Date.now().toString(36)}`,
     no: d.no, date: d.date, validTill: d.validTill,
     clientId: '', clientName: d.clientName, subject: d.subject,
     lines: linesOf(d),
     taxable: d.taxable, tax: d.tax, total: d.total,
-    status: 'Sent', owner: d.owner, terms: d.terms,
+    status, owner: d.owner, terms: d.terms,
   }
 }
 
@@ -195,6 +218,8 @@ export const builtFrom = (r: DocRow) => ({
 })
 
 export const STATUS_OPTIONS: Record<'offer' | 'invoice', string[]> = {
-  offer: ['Sent', 'Under Negotiation', 'Won', 'Lost', 'Expired'],
+  /* Draft first, because that is where a document that is still being worked
+     on sits — theirs, on 21-11: "add a Save as Draft option". */
+  offer: ['Draft', 'Sent', 'Under Negotiation', 'Won', 'Lost', 'Expired'],
   invoice: ['Paid', 'Partial', 'Unpaid', 'Overdue'],
 }

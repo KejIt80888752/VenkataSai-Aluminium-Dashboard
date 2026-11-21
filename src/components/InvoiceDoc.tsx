@@ -63,7 +63,11 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
 
         {/* Header */}
         <div className="flex justify-between items-start border-b-2 border-slate-800 pb-3">
-          <div>
+          <div className="flex items-start gap-3">
+            {/* "Can we add some logo in this?" — theirs, on 21-11. */}
+            <img src={`${import.meta.env.BASE_URL}vsa-logo.svg`} alt=""
+              className="w-11 h-11 shrink-0 rounded-lg" />
+            <div>
             <h1 className="text-[19px] font-bold tracking-wide text-slate-900">{COMPANY.name}</h1>
             <p className="mt-1 text-[11px] text-slate-600 max-w-sm leading-relaxed">
               {COMPANY.address.line1}, {COMPANY.address.line2}<br />
@@ -75,6 +79,7 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
             <p className="mt-1 text-[11px] font-semibold text-slate-800">
               GSTIN: {COMPANY.gstin} &nbsp;|&nbsp; State: {COMPANY.state} ({COMPANY.stateCode})
             </p>
+            </div>
           </div>
           <div className="text-right shrink-0">
             <p className="text-[14px] font-bold uppercase tracking-wider text-slate-900">Tax Invoice</p>
@@ -121,28 +126,38 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
           <tbody>
             {inv.lines.map((l, i) => {
               const metal = l.group === 'aluminium'
-              const coat = l.group === 'coating'
+              /* Only the summary lines are headings. A section charged for
+                 its own coating is ordinary material. */
+              const summary = metal || (l.group === 'coating' && !l.productId)
               return (
-              <tr key={`${l.code}-${i}`} className={metal ? 'bg-slate-50' : undefined}>
+              <tr key={`${l.code}-${i}`} className={summary ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
-                  <span className={metal ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
-                    {coat && <span className="text-slate-400 mr-1">↳</span>}
+                  <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
                     {nameFor(l.code, 'printInvoice', l.name)}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
-                  {coat && l.qty ? <span className="text-slate-500 text-[10px]"> · {l.qty} kg, coating</span> : null}
+                  {!summary && l.kg ? (
+                    <span className="text-slate-500 text-[10px]"> · {l.kg} kg</span>
+                  ) : null}
+                  {/* Its own words — theirs, on 21-11: "a Description /
+                      Narration box for each item, like in Tally." */}
+                  {l.narration ? (
+                    <span className="block text-[10px] text-slate-500 italic">{l.narration}</span>
+                  ) : null}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                  {coat && l.nos ? l.nos.toLocaleString('en-IN') : l.qty.toLocaleString('en-IN')}
+                  {l.qty.toLocaleString('en-IN')}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right">
-                  {coat && l.nos ? 'nos' : l.unit}
-                </td>
+                <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(l.rate)}</td>
-                <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${metal ? 'font-bold' : 'font-medium'}`}>
-                  {l.amount ? inr2(l.amount) : <span className="text-slate-400">—</span>}
+                {/* "Show the tax rate as a small symbol (18%, 9%) instead of
+                    full details" — theirs, on 21-11. */}
+                <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${summary ? 'font-bold' : 'font-medium'}`}>
+                  {l.amount
+                    ? <>{inr2(l.amount)}<sup className="text-[8px] text-slate-500 ml-0.5">{l.gst}%</sup></>
+                    : <span className="text-slate-400">—</span>}
                 </td>
               </tr>
             )})}

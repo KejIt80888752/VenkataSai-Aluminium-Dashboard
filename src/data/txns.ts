@@ -49,6 +49,24 @@ export interface Line {
   /** what part of the document this line is: the metal priced by total
       weight, a coating charge, or an ordinary priced item */
   group?: 'aluminium' | 'coating' | 'item'
+  /* ── What the line was priced on, kept so it can be read back ──────────
+     A revision reopened a coated section as a per-piece line, because the
+     document only stored a unit of "nos" and the kilos it was actually
+     priced on lived nowhere. The metal line then weighed nothing, the
+     coating came out at nought, and a quotation that had gone out at one
+     figure reopened at another. Both are carried now. */
+  /** this line's own weight, where it has one */
+  kg?: number
+  /** 'kg' where the line is priced by weight, 'nos' where it is by count */
+  basis?: 'kg' | 'nos'
+  /** its own rate a kilo for the metal, where this line is priced apart */
+  metalRate?: number
+  /* ── A line of its own words ───────────────────────────────────────────
+     Theirs, on 21-11: "add a Description / Narration box for each item, like
+     in Tally. Use it for items that aren't in stock — a special finish or
+     thickness, for example." It prints under the description and is on the
+     document, not on the product, because it describes this supply. */
+  narration?: string
 }
 export interface Invoice {
   id: string; no: string; date: string; dueDate: string
@@ -254,7 +272,10 @@ export interface Quotation {
   subject: string
   lines: Line[]
   taxable: number; tax: number; total: number
-  status: 'Sent' | 'Under Negotiation' | 'Won' | 'Lost' | 'Expired'
+  /* Draft is theirs, on 21-11: "add a Save as Draft option". A draft is a
+     document that has been worked on and not sent, so it is kept out of the
+     figures above the list until it goes out. */
+  status: 'Draft' | 'Sent' | 'Under Negotiation' | 'Won' | 'Lost' | 'Expired'
   owner: string
   /** what prints at the foot of this one, which may differ from the standard */
   terms?: string[]

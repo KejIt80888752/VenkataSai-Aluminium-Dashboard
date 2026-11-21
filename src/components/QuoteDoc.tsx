@@ -5,6 +5,7 @@ import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
+import { imageOf } from '@/lib/productimages'
 
 /* ── A quotation the customer can actually be handed ───────────────────────
    They asked us to look at what Tally and the rest already do — "we are
@@ -25,6 +26,29 @@ export default function QuoteDoc({ doc, kind, onClose }: {
   /* An estimate and a quotation are offers; a proforma and a tax invoice are
      raised against goods, so they close on a due date and ask for payment. */
   const isOffer = kind === 'Quotation' || kind === 'Estimate'
+  /* ── A quotation is one figure ────────────────────────────────────────
+     Theirs, on 21-11: "quotation — don't show the weight or rate for each
+     piece. Show only one total lump-sum value (5 x 144, 3 x 63, 3 x 120
+     shown as one total)."
+
+     Which is how an offer is made in this trade. A customer is being asked
+     to accept a price for a job; breaking it into thirty rates invites a
+     negotiation on each one of them. The specification is still printed in
+     full — what is being supplied, and how much of it — and the money is
+     one line at the foot.
+
+     The estimate is the opposite document and keeps everything: it is the
+     working paper, so each piece carries its weight and the coating is
+     priced on its own line.                                              */
+  const lumpSum = kind === 'Quotation'
+  const showsKg = kind === 'Estimate'
+  /* "When printing, show the tax rate as a small symbol (18%, 9%) instead of
+     full details" — theirs, on 21-11. It rides beside the amount. */
+  const showsSlab = !lumpSum
+  /* "Show product images only in the Proforma invoice" — theirs, on 21-11.
+     A proforma goes out before the goods do, to somebody who often has not
+     seen the section and is being asked to pay against it. */
+  const showsPhoto = kind === 'Proforma Invoice'
   /* The master may hold nothing yet, so the document's own buyer is what
      prints and the master only fills in what the document does not carry. */
   const client = CLIENTS.find(c => c.id === doc.clientId)
@@ -56,7 +80,11 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         className="max-w-[820px] mx-auto bg-white text-slate-800 p-8 shadow-2xl text-[12px] leading-snug">
 
         <div className="flex justify-between items-start border-b-2 border-slate-800 pb-3">
-          <div>
+          <div className="flex items-start gap-3">
+            {/* "Can we add some logo in this?" — theirs, on 21-11. */}
+            <img src={`${import.meta.env.BASE_URL}vsa-logo.svg`} alt=""
+              className="w-11 h-11 shrink-0 rounded-lg" />
+            <div>
             <h1 className="text-[19px] font-bold tracking-wide text-slate-900">{COMPANY.name}</h1>
             <p className="mt-1 text-[11px] text-slate-600 max-w-sm leading-relaxed">
               {COMPANY.address.line1}, {COMPANY.address.line2}<br />
@@ -65,6 +93,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             <p className="mt-1 text-[11px] text-slate-600">
               Phone: {COMPANY.phone} · Email: {COMPANY.email}
             </p>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-[15px] font-bold uppercase tracking-wider text-slate-900">{kind}</p>
@@ -112,20 +141,36 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 quotes, and the way a customer can argue with it line by line. */}
             {doc.lines.map((l, i) => {
               const metal = l.group === 'aluminium'
-              const coat = l.group === 'coating'
+              /* The one coating charge is a summary line and carries no
+                 product; a section charged for its own coating is an
+                 ordinary line of material and must not be set in the
+                 heading's bold capitals, nor lose the weight it was
+                 priced on. */
+              const summary = metal || (l.group === 'coating' && !l.productId)
               return (
-              <tr key={`${l.code}-${i}`} className={metal ? 'bg-slate-50' : undefined}>
+              <tr key={`${l.code}-${i}`} className={summary ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
-                  <span className={metal ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
-                    {coat && <span className="text-slate-400 mr-1">↳</span>}
+                  <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
                     {l.name}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
-                  {/* Its own weight, which is what the coating is charged on
-                      — the quantity beside it is the piece count. */}
-                  {coat && l.nos ? (
-                    <span className="text-slate-500 text-[10px]"> · coating on {l.qty} kg</span>
+                  {/* The estimate is the working paper, so each piece carries
+                      the weight it was priced on — theirs, on 21-11:
+                      "estimate — show the weight of each piece, with the
+                      powder coating charge as its own line." */}
+                  {showsKg && !summary && l.kg ? (
+                    <span className="text-slate-500 text-[10px]"> · {l.kg} kg</span>
+                  ) : null}
+                  {/* Its own words, where somebody wrote any — theirs:
+                      "a Description / Narration box for each item, like in
+                      Tally... for items that aren't in stock." */}
+                  {l.narration ? (
+                    <span className="block text-[10px] text-slate-500 italic">{l.narration}</span>
+                  ) : null}
+                  {showsPhoto && imageOf(l.productId) ? (
+                    <img src={imageOf(l.productId)} alt=""
+                      className="mt-1 w-14 h-14 object-cover rounded border border-slate-200" />
                   ) : null}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>
@@ -134,14 +179,25 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                     same weight twice — theirs: "displaying double time" — so
                     a section shows the count it was supplied in. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                  {coat && l.nos ? l.nos.toLocaleString('en-IN') : l.qty.toLocaleString('en-IN')}
+                  {l.qty.toLocaleString('en-IN')}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right">
-                  {coat && l.nos ? 'nos' : l.unit}
+                <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
+                {/* On a quotation neither of these is printed: the money is
+                    one figure at the foot. */}
+                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                  {lumpSum ? <span className="text-slate-400">—</span> : inr2(l.rate)}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(l.rate)}</td>
-                <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${metal ? 'font-bold' : 'font-medium'}`}>
-                  {l.amount ? inr2(l.amount) : <span className="text-slate-400">—</span>}
+                <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${summary ? 'font-bold' : 'font-medium'}`}>
+                  {lumpSum
+                    ? <span className="text-slate-400">—</span>
+                    : l.amount
+                    ? <>
+                        {inr2(l.amount)}
+                        {showsSlab && (
+                          <sup className="text-[8px] text-slate-500 ml-0.5">{l.gst}%</sup>
+                        )}
+                      </>
+                    : <span className="text-slate-400">—</span>}
                 </td>
               </tr>
             )})}
@@ -151,15 +207,28 @@ export default function QuoteDoc({ doc, kind, onClose }: {
               </td></tr>
             )}
             <tr className="bg-slate-50 font-semibold">
-              <td className="border border-slate-300 px-2 py-1.5" colSpan={3}>Total</td>
+              <td className="border border-slate-300 px-2 py-1.5" colSpan={3}>
+                {lumpSum ? 'Lump Sum Value' : 'Total'}
+              </td>
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                {totalQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
+                {lumpSum ? '' : totalQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
               </td>
               <td className="border border-slate-300 px-2 py-1.5" colSpan={2} />
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(doc.taxable)}</td>
             </tr>
           </tbody>
         </table>
+
+        {lumpSum && (
+          <p className="text-[10px] text-slate-500 mt-1.5">
+            Quoted as a single lump sum for the whole supply. Section-wise rates are available on request.
+          </p>
+        )}
+        {showsSlab && (
+          <p className="text-[10px] text-slate-500 mt-1.5">
+            The small figure beside an amount is the GST rate that line carries.
+          </p>
+        )}
 
         <div className="grid grid-cols-2 gap-4 mt-3">
           <div className="text-[11px]">
@@ -170,7 +239,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
           </div>
           <table className="w-full border-collapse text-[11px] self-start">
             <tbody>
-              <Total k="Taxable Value" v={inr2(doc.taxable)} />
+              <Total k={lumpSum ? 'Lump Sum Value' : 'Taxable Value'} v={inr2(doc.taxable)} />
               <Total k="GST" v={inr2(doc.tax)} />
               <Total k="Grand Total" v={inr2(doc.total)} bold />
             </tbody>

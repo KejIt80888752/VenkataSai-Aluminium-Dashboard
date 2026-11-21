@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, X, Search, Plus } from 'lucide-react'
+import { Check, ChevronDown, Search, Plus } from 'lucide-react'
 
 /* ── Picking one of our sections by typing ─────────────────────────────────
    The shop asked for this: typing the name beats hunting a dropdown. With
@@ -40,11 +40,16 @@ export const optValue = (o: PickOption) => o.id ?? o.code
    Each word is still matched on its own, so "2 shutter" finds a two track
    sliding shutter and "16 sg" finds the sixteen foot single groove — and a
    word typed with no spaces at all, like 16SG, is simply one word.        */
+/* The word for the foot and inch marks goes the same way the marks do, so a
+   man who types "american handle 6 inch" finds AMERICAN HANDLE 6" — theirs,
+   on 21-11: "typing part of a keyword doesn't find the item... 6, 8, 10
+   don't show. Make the dropdown work with partial text." */
 export const loose = (s: string) =>
   (s || '')
     .toLowerCase()
     .replace(/[×✕✖*]/g, 'x')
     .replace(/[''"″`]/g, '')
+    .replace(/\b(inches|inch|feet|foot|ft)\b/g, '')
     .replace(/[\s\-_/]/g, '')
 
 export function SectionPicker({ options, value, onChange, onCreate, placeholder = 'Type a section name…', className }: {
@@ -162,10 +167,17 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
     setOpen(false)
   }
 
+  /* ── Getting through the form on the keyboard ─────────────────────────
+     Theirs, on 21-11: "make the Tab key move between fields properly, not
+     only the mouse." Tab did move on — and left the typing behind, because
+     the box only took a choice from Enter or a click, so the next field was
+     reached with nothing picked. Tab now takes whatever is highlighted and
+     then does what Tab does, which is how every accounting package behaves. */
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, hits.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)) }
     else if (e.key === 'Enter') { e.preventDefault(); if (hits[active]) choose(hits[active]) }
+    else if (e.key === 'Tab') { if (open && query.trim() && hits[active]) choose(hits[active]) }
     else if (e.key === 'Escape') { setOpen(false); setQuery('') }
   }
 
@@ -173,12 +185,21 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
     <div ref={boxRef} className={`relative ${className ?? ''}`}>
       {chosen && !open ? (
         /* Settled: show what was picked, with a way to change or clear it. */
-        <button type="button"
+        /* ── Not a cross ──────────────────────────────────────────────
+           Theirs, on 21-11: "the tick icon looks like a delete icon. Change
+           it." A chosen line showed a tick and a cross side by side, and in
+           a row that already has a red bin at the end of it the cross read
+           as a second way to delete the line rather than as a way to clear
+           the box. A tick and a chevron say what they do: it is settled,
+           and it can be changed. */
+        <button type="button" title="Change this item"
           onClick={() => { setOpen(true); setTimeout(() => inputRef.current?.focus(), 0) }}
           className="input !py-1 !text-xs w-full flex items-center justify-between gap-2 text-left">
-          <span className="truncate" style={{ color: 'var(--text-1)' }}>{chosen.name}</span>
-          <X size={13} className="shrink-0 opacity-50 hover:opacity-100"
-            onClick={e => { e.stopPropagation(); onChange('') }} />
+          <span className="flex items-center gap-1.5 min-w-0">
+            <Check size={12} className="shrink-0" style={{ color: 'var(--green)' }} />
+            <span className="truncate" style={{ color: 'var(--text-1)' }}>{chosen.name}</span>
+          </span>
+          <ChevronDown size={13} className="shrink-0 opacity-50" />
         </button>
       ) : (
         <>

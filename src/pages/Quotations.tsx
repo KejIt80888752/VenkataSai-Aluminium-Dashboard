@@ -70,8 +70,26 @@ const resolveProduct = (code: string, name: string) => {
     ?? ''
 }
 
-const toBuilt = (r: DocRow): Partial<BuiltDoc> => ({
+/* ── Reading a document back into the form ────────────────────────────────
+   A revision has to reopen on exactly what went out, and it did not. The
+   metal line and the one coating charge are summaries, so they were dropped
+   on the way back in — correctly — but with them went the only record of how
+   the document was priced: the rate a kilo, whether the coating was charged
+   once or section by section, and what each section actually weighed.
+
+   So VSA/Q/26-27/0011 reopened as R2 with every section priced by the piece,
+   no metal, and a powder coating line reading nought kilos at nought rupees.
+   The shape of the document is read back off those summary lines now, and
+   each section carries the weight and the basis it was priced on.         */
+const toBuilt = (r: DocRow): Partial<BuiltDoc> => {
+  const metalL = r.lines.find(l => l.group === 'aluminium')
+  const coatL = r.lines.find(l => l.group === 'coating' && !l.productId && !l.code)
+  return {
   ...builtFrom(r),
+  aluminium: { on: !!metalL, rate: metalL?.rate ?? 0, gst: metalL?.gst ?? 18 },
+  coatingMode: coatL ? 'cumulative' : 'section',
+  coatingRate: coatL?.rate ?? 0,
+  coatingUnit: coatL?.unit === 'nos' ? 'nos' : 'kg',
   /* The aluminium line and a cumulative coating line are summaries of the
      sections, not material in their own right. Read back as products they
      would be billed a second time, so only the sections come back. */
@@ -85,12 +103,17 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => ({
        figures and an empty product box rather than being dropped. */
     productId: l.productId ?? resolveProduct(l.code, l.name),
     code: l.code, name: l.name, hsn: l.hsn,
-    basis: l.unit === 'kg' ? 'kg' : 'nos',
+    /* What it was priced on, as the document recorded it. Older documents
+       carry neither, so the unit is read the way it used to be written. */
+    basis: l.basis ?? (l.unit === 'kg' ? 'kg' : 'nos'),
     nos: l.nos ?? (l.unit === 'kg' ? 0 : l.qty),
-    kg: l.unit === 'kg' ? l.qty : 0,
+    kg: l.kg ?? (l.unit === 'kg' ? l.qty : 0),
+    metalRate: l.metalRate,
+    narration: l.narration,
     rate: l.rate, gst: l.gst,
     })),
-})
+  }
+}
 
 /* ── One screen, four doors ────────────────────────────────────────────────
    They asked for quotation, proforma invoice and tax invoice "one below the
@@ -161,11 +184,16 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   }, [list])
 
   /* A bill is won when it is paid; an offer when it is accepted. */
+  /* A draft has not gone anywhere, so it is not counted as quoted — theirs,
+     on 21-11, asking for the draft in the first place. It stays in the list
+     below with everything else. */
+  const sentOut = current.filter(x => x.status !== 'Draft')
+  const drafts = current.filter(x => x.status === 'Draft')
   const won = current.filter(x => isInvoiceKind ? x.status === 'Paid' : x.status === 'Won')
   const open = current.filter(x => isInvoiceKind
     ? x.status !== 'Paid'
     : x.status === 'Sent' || x.status === 'Under Negotiation')
-  const winRate = current.length ? Math.round((won.length / current.length) * 100) : 0
+  const winRate = sentOut.length ? Math.round((won.length / sentOut.length) * 100) : 0
   const superseded = list.length - current.length
   const noun = kind.toLowerCase()
 
@@ -217,13 +245,25 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
     if (!to) return
     const existing = to === 'Tax Invoice' ? invs.rows.map(r => r.no)
       : (to === 'Quotation' ? quotes : to === 'Estimate' ? ests : pis).rows.map(r => r.no)
-    const lines = toBuilt(x).lines ?? []
+    /* Everything comes across, not just the lines — theirs, on 21-11: "when
+       converting an estimate into a tax invoice, allow the details to be
+       edited". A bill opened with no metal rate and no coating charge is not
+       something anybody can edit; it is something they have to retype. */
+    const base = toBuilt(x)
+    const lines = base.lines ?? []
     setCarryTo(to)
     setBuilding({
       no: nextDocNo(SERIES[to].prefix, existing),
       from: {
+        ...base,
         clientName: x.clientName,
         subject: x.subject,
+        /* The terms do not travel. An offer promises a rate valid for the
+           day and payment in advance; a bill that has already gone out on
+           credit cannot carry either, and a tax invoice printed with
+           "100% payment in advance" at the foot of it says the opposite of
+           what the document is. Each kind opens with its own. */
+        terms: undefined,
         lines: to === 'Tax Invoice' ? forTaxInvoice(lines) : lines,
       },
     })
@@ -235,7 +275,7 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   const fileDoc = (d: BuiltDoc) => {
     if (target === 'Tax Invoice') invs.add(asInvoice(d))
     else (target === 'Quotation' ? quotes : target === 'Estimate' ? ests : pis)
-      .add(asQuotation(d, target))
+      .add(asQuotation(d, target, d.status === 'Draft' ? 'Draft' : 'Sent'))
     setBuilding(null)
     if (carryTo) { setCarryTo(null); setKind(carryTo) }
   }
@@ -258,13 +298,14 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
       </PageHead>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
-        <Stat label={`${kind}s Issued`} value={String(current.length)} icon={FileText} tone="brand"
+        <Stat label={`${kind}s Issued`} value={String(sentOut.length)} icon={FileText} tone="brand"
           sub={list.length
             ? `next is ${nextDocNo(SERIES[kind].prefix, list.map(x => x.no)).split('/').pop()}`
               + (superseded ? ` · ${superseded} superseded` : '')
+              + (drafts.length ? ` · ${drafts.length} in draft` : '')
             : FY} />
-        <Stat label="Value Quoted" value={inr(current.reduce((s, x) => s + x.total, 0))} icon={IndianRupee}
-          tone="violet" sub="Latest version of each, inclusive of GST" />
+        <Stat label="Value Quoted" value={inr(sentOut.reduce((s, x) => s + x.total, 0))} icon={IndianRupee}
+          tone="violet" sub="Latest version of each, inclusive of GST — drafts excluded" />
         <Stat label="Converted" value={String(won.length)} icon={Trophy} tone="green"
           sub={inr(won.reduce((s, x) => s + x.total, 0)) + ' won'} />
         <Stat label="Win Rate" value={`${winRate}%`} icon={Percent} tone="sky"
@@ -345,6 +386,10 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
             subject: printing.subject, lines: printing.lines,
             taxable: printing.taxable, tax: printing.tax, total: printing.total,
             status: printing.status as Quotation['status'], owner: printing.owner,
+            /* Its own terms, settled when it was raised — they were being
+               dropped on the way to the printer, so every document printed
+               the standard set whatever had been agreed on it. */
+            terms: printing.terms,
           }}
           kind={kind} onClose={() => setPrinting(null)} />
       )}
