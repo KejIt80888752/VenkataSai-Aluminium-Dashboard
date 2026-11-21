@@ -121,8 +121,18 @@ export type CoatingMode = 'section' | 'cumulative'
    So the estimate is the working document where each section's coating is
    priced on its own, and everything that goes to a customer carries one
    figure for the lot. A tax invoice has no choice about it.              */
+/* ── One entry, on every document ─────────────────────────────────────────
+   Theirs, on 21-11 at 23:35, looking at an estimate that printed a powder
+   coating line under each section: "we said we require summing up and
+   single entry. Showing multiple entries."
+
+   So the estimate is no different. The charge is typed on the section it
+   belongs to — that part they were clear about — and what goes on the paper
+   is one POWDER COATING entry for the lot, with the sections listed under
+   it as the specification. Section-by-section is still here for anybody who
+   wants it, but nothing opens on it.                                     */
 export const DEFAULT_COATING: Record<string, CoatingMode> = {
-  'Estimate':         'section',
+  'Estimate':         'cumulative',
   'Quotation':        'cumulative',
   'Proforma Invoice': 'cumulative',
   'Tax Invoice':      'cumulative',
@@ -312,6 +322,42 @@ const CHOOSE = '— choose —'
    forward to the next items. Allow it to be changed." A job is nearly always
    one finish throughout, so typing it on every line is work for nothing —
    and the one line somebody forgets to set is the one that goes out wrong. */
+/* ── A box you can actually type a number into ─────────────────────────────
+   Theirs, on 21-11 at 23:34: "unable to enter weight in ESTIMATE", and a
+   minute later, "rate also unable to enter."
+
+   Both boxes read their value back out of the form on every keystroke and
+   put a number there. Type "3" and you get 3; type the decimal point after
+   it and Number("3.") is 3, so the point is swallowed before it reaches the
+   screen and 3.999 cannot be typed at all. On the metal line it was worse:
+   a rate on that row changes how the sections are grouped, the row was
+   keyed by its own rate, and React threw the box away and built a new one —
+   so the cursor left the field after the first digit.
+
+   This keeps what was typed, character by character, while the field has
+   the cursor, and only reads the number back when it is left alone. */
+function NumBox({ value, onChange, ...rest }: {
+  value: number
+  onChange: (n: number) => void
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const shown = (n: number) => (n ? String(n) : '')
+  const [text, setText] = useState(shown(value))
+  const [typing, setTyping] = useState(false)
+  useEffect(() => { if (!typing) setText(shown(value)) }, [value, typing])
+  return (
+    <input {...rest} inputMode="decimal" value={text}
+      onFocus={e => { setTyping(true); e.currentTarget.select() }}
+      onBlur={() => { setTyping(false); setText(shown(value)) }}
+      onChange={e => {
+        const raw = e.target.value
+        /* Digits and one point. Anything else is simply not typed. */
+        if (!/^\d*\.?\d*$/.test(raw)) return
+        setText(raw)
+        onChange(raw === '' || raw === '.' ? 0 : Number(raw))
+      }} />
+  )
+}
+
 const blankLine = (colour = UNCOATED): BuiltLine => ({
   key: Math.random().toString(36).slice(2),
   productId: '', code: '', name: '', hsn: hsnFor('section'),
@@ -566,6 +612,21 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     return live.length ? live : all
   }, [lines, aluRate])
 
+  /* ── The standing rate reaches the lines already on the form ──────────
+     Theirs, on 22-11: the coating charge "should be taken from pre-fed
+     values". It was only pre-filling lines picked afterwards, so typing it
+     on the Powder Coating row with three sections already entered appeared
+     to do nothing at all.
+
+     It fills in any coated section that has no charge against it yet, and
+     never touches one that has: a rate somebody typed is a decision, and
+     the standing figure does not get to overrule it. */
+  const setStandingCoating = (rate: number) => {
+    setCoatingRate(rate)
+    setLines(ls => ls.map(l =>
+      l.rate > 0 || !isAluminium(l) ? l : { ...l, rate, recalled: false }))
+  }
+
   /** Changing a group's rate moves every section inside it. */
   const setGroupRate = (g: MetalGroup, rate: number) => {
     if (!g.own) { setAluRate(rate); return }
@@ -584,10 +645,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const setGroupKg = (g: MetalGroup, total: number) => setLines(ls => {
     const inGroup = ls.filter(l => g.keys.includes(l.key))
     if (!inGroup.length) return ls
+    /* Spread by the weights already there; failing that by the piece
+       counts, because ten pieces of a section weigh twice what five do and
+       an equal split put 1.333 kg against 5, 10 and 5 alike. */
     const had = inGroup.reduce((s, l) => s + l.kg, 0)
+    const pieces = inGroup.reduce((s, l) => s + l.nos, 0)
     return ls.map(l => {
       if (!g.keys.includes(l.key)) return l
-      const share = had > 0 ? l.kg / had : 1 / inGroup.length
+      const share = had > 0 ? l.kg / had
+        : pieces > 0 ? l.nos / pieces
+        : 1 / inGroup.length
       return { ...l, kg: +(total * share).toFixed(3), basis: 'kg' as const }
     })
   })
@@ -982,8 +1049,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     weight on each is the sections under it added up, and it
                     can be typed over: "we should have option to edit summed
                     up weight also." */}
+                {/* Keyed by position, not by rate: keying it by the rate
+                    threw the row away the moment a digit changed it, and
+                    the cursor went with it. */}
                 {alu.on && metalGroups.map((g, gi) => (
-                  <tr key={`metal-${g.rate}-${gi}`} style={{ background: 'var(--bg-card2)' }}>
+                  <tr key={`metal-${gi}`} style={{ background: 'var(--bg-card2)' }}>
                     <td className="font-semibold uppercase tracking-wide text-[11px]"
                       style={{ color: 'var(--text-1)' }}>
                       Aluminium Extruded Profiles
@@ -1001,10 +1071,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     {/* The summed weight, and a box to type one over it. */}
                     {showWeight ? (
                       <td className="num">
-                        <input className="input !w-24 !py-1 text-right tabular-nums !text-xs font-semibold"
-                          value={g.kg || ''} placeholder="total kg"
+                        <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs font-semibold"
+                          value={g.kg} placeholder="total kg"
                           title="The sections under this, added up. Type a figure and it is spread back over them."
-                          onChange={e => setGroupKg(g, Number(e.target.value) || 0)} />
+                          onChange={v => setGroupKg(g, v)} />
                       </td>
                     ) : (
                       <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
@@ -1012,9 +1082,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       </td>
                     )}
                     <td className="num">
-                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                        value={g.rate || ''} placeholder="per kg"
-                        onChange={e => setGroupRate(g, Number(e.target.value) || 0)} />
+                      <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                        value={g.rate} placeholder="per kg"
+                        onChange={v => setGroupRate(g, v)} />
                     </td>
                     <td className="num" />
                     <td className="num">
@@ -1080,11 +1150,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     )}
                     <td className="num" />
                     <td className="num">
-                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                        value={coatingRate || ''}
+                      <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                        value={coatingRate}
                         placeholder={coatingUnit === 'kg' ? 'per kg' : 'per piece'}
-                        title="What a new section starts at. Each line can then be changed on its own."
-                        onChange={e => setCoatingRate(Number(e.target.value) || 0)} />
+                        title="What a section starts at. Every line with nothing against it follows this; one you have typed stays as it is."
+                        onChange={setStandingCoating} />
                       <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--text-4)' }}>
                         pre-fed
                       </p>
@@ -1171,10 +1241,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       {/* Empty rather than nought: a box reading 0 has to be
                           cleared before anything can be typed into it, and
                           typing in front of it gives 0415. */}
-                      <input className="input !w-20 !py-1 text-right tabular-nums !text-xs"
+                      <NumBox className="input !w-20 !py-1 text-right tabular-nums !text-xs"
                         data-qty={l.key}
-                        value={l.nos || ''} placeholder="0"
-                        onChange={e => setNos(l.key, Number(e.target.value) || 0)} />
+                        value={l.nos} placeholder="0"
+                        onChange={v => setNos(l.key, v)} />
                       {!showWeight && l.basis === 'kg' && l.kg > 0 && (
                         <p className="text-[10px] text-right mt-0.5 tabular-nums"
                           style={{ color: 'var(--text-4)' }}>{l.kg} kg</p>
@@ -1188,8 +1258,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                             is every line on a tax invoice now that a bill
                             works nothing out for itself. Left empty, the line
                             is priced by the count, which is how clips go. */}
-                        <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                          value={l.mergedUp ? '' : (l.kg || '')}
+                        <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                          value={l.mergedUp ? 0 : l.kg}
                           placeholder={l.mergedUp ? 'with above' : autoWeighs ? '0' : 'by nos'}
                           disabled={!!l.mergedUp || (autoWeighs && l.basis === 'nos')}
                           title={l.mergedUp
@@ -1199,7 +1269,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                             : autoWeighs
                             ? 'Worked out from your coating books. Type over it and that is what it goes out at.'
                             : 'Leave it empty and this line is priced by the count'}
-                          onChange={e => setKg(l.key, Number(e.target.value) || 0)} />
+                          onChange={v => setKg(l.key, v)} />
                         {i > 0 && isAluminium(l) && (
                           <label className="text-[10px] flex items-center gap-1 justify-end mt-0.5"
                             style={{ color: l.mergedUp ? 'var(--brand)' : 'var(--text-4)' }}
@@ -1214,12 +1284,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     {alu.on && (
                       <td className="num">
                         {isAluminium(l) ? (
-                          <input className="input !w-20 !py-1 text-right tabular-nums !text-xs"
-                            value={l.metalRate || ''} placeholder={String(aluRate || 0)}
+                          <NumBox className="input !w-20 !py-1 text-right tabular-nums !text-xs"
+                            value={l.metalRate ?? 0} placeholder={String(aluRate || 0)}
                             title="Leave it empty to use the rate at the top. Fill it in for a series that is priced differently."
-                            onChange={e => patch(l.key, {
-                              metalRate: e.target.value === '' ? undefined : Number(e.target.value),
-                            })} />
+                            onChange={v => patch(l.key, { metalRate: v || undefined })} />
                         ) : (
                           <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>not metal</span>
                         )}
@@ -1241,15 +1309,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           the clips could not be priced at all. It is open
                           on every document now; the single entry above is
                           what these add up to. */}
-                      <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                        value={l.rate || ''}
+                      <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
+                        value={l.rate}
                         placeholder={alu.on && isAluminium(l) ? 'coating / kg'
                           : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
                           ? 'What this product last went out at. Type over it to change it.'
                           : l.basis === 'kg' ? 'Rate per kilogram' : 'Rate per piece'}
-                        onChange={e => patch(l.key, { rate: Number(e.target.value) || 0, recalled: false })} />
+                        onChange={v => patch(l.key, { rate: v, recalled: false })} />
                       {l.recalled && (
                         <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--green)' }}>last rate</p>
                       )}

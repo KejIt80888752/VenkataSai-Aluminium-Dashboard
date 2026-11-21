@@ -6,7 +6,6 @@ import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
-import { hsnFor } from '@/data/hsn'
 import { productById } from '@/data/productmaster'
 import { imageOf } from '@/lib/productimages'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
@@ -111,18 +110,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
 
      Everywhere else the coating is one figure for the lot and already has
      a line to itself.                                                   */
-  const splitsCoating = kind === 'Estimate'
-  const printed = doc.lines.flatMap(l =>
-    splitsCoating && l.group === 'coating' && l.productId && (l.kg ?? 0) > 0 && l.amount > 0
-      ? [
-          { l: { ...l, rate: 0, amount: 0 }, asCoat: false },
-          { l: {
-              ...l, name: 'POWDER COATING', code: '', hsn: hsnFor('coating'),
-              unit: 'kg', qty: l.kg as number, kg: undefined,
-              narration: undefined, colour: undefined, productId: undefined,
-            }, asCoat: true },
-        ]
-      : [{ l, asCoat: false }])
+  const printed = doc.lines.map(l => ({ l, asCoat: false }))
 
   const metalLines = doc.lines.filter(l => l.group === 'aluminium')
   const totalQty = metalLines.length
@@ -207,7 +195,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             {/* The metal sits at the head in its own right, and the sections
                 under it carry what it costs to coat them — the way the shop
                 quotes, and the way a customer can argue with it line by line. */}
-            {printed.map(({ l, asCoat }, i) => {
+            {printed.map(({ l }, i) => {
               const metal = l.group === 'aluminium'
               /* "Remove colours to hardware" — theirs, on 21-11 at 23:18.
                  Only a coated section carries one. */
@@ -218,13 +206,12 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                  ordinary line of material and must not be set in the
                  heading's bold capitals, nor lose the weight it was
                  priced on. */
-              const summary = metal || (!asCoat && l.group === 'coating' && !l.productId)
+              const summary = metal || (l.group === 'coating' && !l.productId)
               return (
               <tr key={`${l.code}-${i}`} className={summary ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
-                    {asCoat && <span className="text-slate-400 mr-1">↳</span>}
                     {/* "Colour should be in the name" — theirs, on 22-11. */}
                     {withColour(l.name, shade)}
                   </span>
