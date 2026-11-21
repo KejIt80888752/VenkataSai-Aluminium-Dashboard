@@ -6,6 +6,7 @@ import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
+import { hsnFor } from '@/data/hsn'
 import { imageOf } from '@/lib/productimages'
 import { colourName, swatchOf, UNCOATED } from '@/data/colours'
 
@@ -95,6 +96,33 @@ export default function QuoteDoc({ doc, kind, onClose }: {
      a job priced at two rates carries two of them, and taking only the first
      printed a total that was short by whatever the second one weighed. The
      sections below are the same metal counted again, so they are left out. */
+  /* ── The coating as a line of its own ────────────────────────────────
+     Theirs, on 21-11: "estimate — show the weight of each piece, with the
+     powder coating charge as its own line", and on 20-11: "separate entries
+     are shown in ESTIMATE only."
+
+     The estimate is the working paper. A section priced at seventy rupees a
+     kilo reads as a section costing seventy rupees a kilo, when seventy is
+     what it costs to coat it and nothing else; so on this one document the
+     charge is lifted off the section and printed under it, against the
+     weight it is actually charged on. Nothing is counted twice — the
+     section keeps the specification and the coating keeps the money.
+
+     Everywhere else the coating is one figure for the lot and already has
+     a line to itself.                                                   */
+  const splitsCoating = kind === 'Estimate'
+  const printed = doc.lines.flatMap(l =>
+    splitsCoating && l.group === 'coating' && l.productId && (l.kg ?? 0) > 0 && l.amount > 0
+      ? [
+          { l: { ...l, rate: 0, amount: 0 }, asCoat: false },
+          { l: {
+              ...l, name: 'POWDER COATING', code: '', hsn: hsnFor('coating'),
+              unit: 'kg', qty: l.kg as number, kg: undefined,
+              narration: undefined, colour: undefined, productId: undefined,
+            }, asCoat: true },
+        ]
+      : [{ l, asCoat: false }])
+
   const metalLines = doc.lines.filter(l => l.group === 'aluminium')
   const totalQty = metalLines.length
     ? +metalLines.reduce((s, l) => s + l.qty, 0).toFixed(3)
@@ -178,19 +206,20 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             {/* The metal sits at the head in its own right, and the sections
                 under it carry what it costs to coat them — the way the shop
                 quotes, and the way a customer can argue with it line by line. */}
-            {doc.lines.map((l, i) => {
+            {printed.map(({ l, asCoat }, i) => {
               const metal = l.group === 'aluminium'
               /* The one coating charge is a summary line and carries no
                  product; a section charged for its own coating is an
                  ordinary line of material and must not be set in the
                  heading's bold capitals, nor lose the weight it was
                  priced on. */
-              const summary = metal || (l.group === 'coating' && !l.productId)
+              const summary = metal || (!asCoat && l.group === 'coating' && !l.productId)
               return (
               <tr key={`${l.code}-${i}`} className={summary ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
+                    {asCoat && <span className="text-slate-400 mr-1">↳</span>}
                     {l.name}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
@@ -234,7 +263,10 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 {/* On a quotation neither of these is printed: the money is
                     one figure at the foot. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                  {lumpSum ? <span className="text-slate-400">—</span> : inr2(l.rate)}
+                  {/* A section whose coating has been lifted onto its own
+                      line below is specification, not money. Nought rupees
+                      printed against it reads as a free supply. */}
+                  {lumpSum || !l.rate ? <span className="text-slate-400">—</span> : inr2(l.rate)}
                 </td>
                 <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${summary ? 'font-bold' : 'font-medium'}`}>
                   {lumpSum
@@ -250,7 +282,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 </td>
               </tr>
             )})}
-            {doc.lines.length === 0 && (
+            {printed.length === 0 && (
               <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={7}>
                 No material on this {kind.toLowerCase()} yet.
               </td></tr>
