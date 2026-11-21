@@ -18,6 +18,7 @@ import { PICK_OPTIONS, productById } from '@/data/productmaster'
 import { kg as kgFmt, csvDownload, cn } from '@/lib/utils'
 import { useAliases } from '@/lib/useAliases'
 import { SectionPicker } from '@/components/SectionPicker'
+import { useColours } from '@/data/colours'
 import { joinedSections, namesFor } from '@/lib/aliases'
 import { sectionName } from '@/data/catalogue'
 
@@ -58,6 +59,16 @@ export default function CoatBook() {
   const [entering, setEntering] = useState(false)
 
   const book = useCoatBook()
+  /* One colour list across the whole dashboard — see src/data/colours.ts.
+     The short forms are the same ones their coating sheets use, so nothing
+     here changes; what it adds is that a colour added anywhere is on this
+     screen too. */
+  const colours = useColours()
+  const colourKeys = useMemo(() => {
+    const keys = colours.map(c => c.code)
+    for (const c of COLOUR_OPTIONS) if (!keys.includes(c.key)) keys.push(c.key)
+    return keys
+  }, [colours])
   const meta = SHEET_META.find(m => m.id === sheetId)!
   const sheet = meta.label
   const OPENING = book.opening, LOADED = book.loaded, RECEIVED = book.received
@@ -330,8 +341,12 @@ export default function CoatBook() {
 
                     {entering && (
                       <td>
+                        {/* The colours come off the shared list, so one
+                            added on a quotation — Rose Gold, say — is on
+                            this screen too rather than in a second list
+                            that quietly disagrees with the first. */}
                         <Select value={l.colour || 'W/O'} onChange={v => setColour(l, v)}
-                          options={COLOUR_OPTIONS.map(c => c.key)} className="!w-24 !py-1 !text-xs !min-w-0" />
+                          options={colourKeys} className="!w-24 !py-1 !text-xs !min-w-0" />
                       </td>
                     )}
 

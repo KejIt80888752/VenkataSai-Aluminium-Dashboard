@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { UNCOATED, colourName } from '@/data/colours'
 import { Printer, X } from 'lucide-react'
 import { COMPANY } from '@/data/company'
 import { fmtDate } from '@/lib/utils'
@@ -21,6 +22,8 @@ export interface DcPrintLine {
   /** what a piece of this ought to weigh, as against what it did */
   weightRange: number | null
   kg: number | null
+  /** the finish it arrived in — "without load" until it is coated */
+  colour?: string
 }
 
 export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose }: {
@@ -74,10 +77,10 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
         <table className="w-full mt-3 border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              {['SL', 'CODE', 'PRODUCT NAME', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)']
+              {['SL', 'CODE', 'PRODUCT NAME', 'COLOUR', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)']
                 .map((h, i) => (
                   <th key={h}
-                    className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= 3 && i <= 5 ? 'text-right' : 'text-left'}`}>
+                    className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= 4 ? 'text-right' : 'text-left'}`}>
                     {h}
                   </th>
                 ))}
@@ -89,6 +92,11 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
                 <td className="border border-slate-300 px-2 py-1.5 pr-4">{l.slNo}</td>
                 <td className="border border-slate-300 px-2 py-1.5 font-mono text-[11px]">{l.code || '—'}</td>
                 <td className="border border-slate-300 px-2 py-1.5 font-medium text-slate-900">{l.name || '—'}</td>
+                {/* "The material comes in without load. After conversion it
+                    becomes a colour" — theirs, on 21-11. */}
+                <td className="border border-slate-300 px-2 py-1.5 text-slate-700">
+                  {l.colour === UNCOATED ? 'Without load' : colourName(l.colour) || '—'}
+                </td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.nos}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.weightRange ?? '—'}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
@@ -97,12 +105,12 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
               </tr>
             ))}
             {lines.length === 0 && (
-              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={6}>
+              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={7}>
                 No lines on this sheet.
               </td></tr>
             )}
             <tr className="bg-slate-50 font-semibold">
-              <td className="border border-slate-300 px-2 py-1.5" colSpan={3}>Total</td>
+              <td className="border border-slate-300 px-2 py-1.5" colSpan={4}>Total</td>
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{totalNos}</td>
               <td className="border border-slate-300 px-2 py-1.5" />
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{totalKg.toFixed(3)}</td>

@@ -110,6 +110,7 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => {
     kg: l.kg ?? (l.unit === 'kg' ? l.qty : 0),
     metalRate: l.metalRate,
     narration: l.narration,
+    colour: l.colour,
     rate: l.rate, gst: l.gst,
     })),
   }

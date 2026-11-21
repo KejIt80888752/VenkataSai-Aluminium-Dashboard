@@ -13,6 +13,8 @@ import { recallRate, recallSlab, rememberAll } from '@/lib/ratememory'
 import { DEFAULT_TERMS, termsFromText, termsToText } from '@/data/terms'
 import { useProductImages, setProductImage, removeProductImage } from '@/lib/productimages'
 import { hsnFor } from '@/data/hsn'
+import { ColourPicker } from '@/components/ColourPicker'
+import { UNCOATED, firstCoated } from '@/data/colours'
 
 /* ── Raising a quotation or a proforma ─────────────────────────────────────
    The shop opened the old form and asked the question that mattered: "where
@@ -73,6 +75,8 @@ export interface BuiltLine {
      It belongs to the document and not to the product, because it describes
      this supply: the same section in a different finish is the same section. */
   narration?: string
+  /** the finish this line is supplied in — see src/data/colours.ts */
+  colour?: string
 }
 
 /* ── How a fabricator quotes ───────────────────────────────────────────────
@@ -305,10 +309,15 @@ const ADD_NEW = '+ Someone new'
 /** Who raises the shop's documents. On the form, so it can be changed. */
 const DEFAULT_OWNER = 'ROHITH'
 const CHOOSE = '— choose —'
-const blankLine = (): BuiltLine => ({
+/* ── A new line opens in the colour of the one above it ───────────────────
+   Theirs, on 21-11: "once a colour is selected for the first item, carry it
+   forward to the next items. Allow it to be changed." A job is nearly always
+   one finish throughout, so typing it on every line is work for nothing —
+   and the one line somebody forgets to set is the one that goes out wrong. */
+const blankLine = (colour = UNCOATED): BuiltLine => ({
   key: Math.random().toString(36).slice(2),
   productId: '', code: '', name: '', hsn: hsnFor('section'),
-  basis: 'nos', nos: 0, kg: 0, rate: 0, gst: 18,
+  basis: 'nos', nos: 0, kg: 0, rate: 0, gst: 18, colour,
 })
 
 export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial, parties = [], owner = DEFAULT_OWNER }: {
@@ -368,6 +377,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       return x ? { code: x.code, name: x.name, kgPerPiece: x.kgPerPiece, kind: 'section' as const } : undefined
     })()
   const [lines, setLines] = useState<BuiltLine[]>([blankLine()])
+  /** what the last line on the form is in, which the next one opens in */
+  const lastColour = lines.length ? lines[lines.length - 1].colour : undefined
 
   /* An invoice is the same document with the dates read differently: validity
      becomes credit, and the day it lapses becomes the day it falls due.
@@ -466,9 +477,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setPoNo(initial?.poNo ?? '')
     setPiNo(initial?.piNo ?? '')
     setPaymentTerms(initial?.paymentTerms ?? '')
+    /* A purchase bill is what came off the lorry and opens uncoated; a
+       sales document opens on a colour, because nothing goes out in the
+       mill finish without somebody saying so. */
+    const opens = kind === 'Purchase Bill' ? UNCOATED : firstCoated()
     setLines(initial?.lines?.length
-      ? initial.lines.map(l => ({ ...l, key: Math.random().toString(36).slice(2) }))
-      : [blankLine()])
+      ? initial.lines.map(l => ({
+          ...l, key: Math.random().toString(36).slice(2),
+          colour: l.colour ?? opens,
+        }))
+      : [blankLine(opens)])
   }, [open, initial, kind, owner])
 
   /* Everyone already dealt with: the master, the party codes on their own
@@ -574,6 +592,12 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       kg: on ? 0 : (p?.kgPerPiece != null ? +(p.kgPerPiece * l.nos).toFixed(3) : l.kg),
     }
   }))
+
+  /* Product, code, colour, qty, rate, GST, amount and the bin, plus the
+     weight and the metal rate where the document carries them. The foot was
+     spanning five whatever the table held, so on a tax invoice the totals
+     came out one column to the left of the figures they were adding up. */
+  const cols = 8 + (showWeight ? 1 : 0) + (alu.on ? 1 : 0)
 
   const theDate = isPurchase ? theirDate : date
   const theNo = isPurchase ? theirNo.trim() : docNo
@@ -787,6 +811,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             <table className="tbl">
               <thead>
                 <tr><th className="min-w-[13rem]">Product</th><th>Code</th>
+                  {/* "Add colour to every item" — theirs, on 21-11. */}
+                  <th>Colour</th>
                   <th className="num">Qty (nos)</th>
                   {showWeight && <th className="num">Weight (kg)</th>}
                   {alu.on && <th className="num">Metal ₹/kg</th>}
@@ -804,6 +830,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         style={{ color: 'var(--text-4)' }}>every section below, added up — not typed</span>
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>—</td>
+                    <td className="text-[11px]" style={{ color: 'var(--text-4)' }}>per line</td>
                     {/* The weight belongs under the weight column wherever
                         there is one. It was sitting under the piece count and
                         pushing every cell after it one column to the left, so
@@ -864,6 +891,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         options={['per kg', 'per piece']}
                         className="!w-[6.5rem] !py-1 !text-[11px] !min-w-0" />
                     </td>
+                    <td className="text-[11px]" style={{ color: 'var(--text-4)' }}>per line</td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
                       {coatingUnit === 'nos' ? `${t.coatBase} nos` : showWeight ? '—' : `${t.kg} kg`}
                     </td>
@@ -939,6 +967,14 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       )}
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>{l.code || '—'}</td>
+                    <td>
+                      {/* Set on the first line and carried to the next —
+                          theirs, on 21-11. A purchase bill can be uncoated
+                          because that is what comes off the lorry; a sales
+                          document cannot go out in no finish at all. */}
+                      <ColourPicker value={l.colour ?? UNCOATED} allowRaw={isPurchase}
+                        onChange={c => patch(l.key, { colour: c })} />
+                    </td>
                     <td className="num">
                       {/* Empty rather than nought: a box reading 0 has to be
                           cleared before anything can be typed into it, and
@@ -1043,7 +1079,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   the same columns, under the lines it is adding up. */}
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border-2)' }}>
-                  <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>
+                  <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>
                     Taxable
                   </td>
                   <td />
@@ -1054,7 +1090,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 </tr>
                 {interState ? (
                   <tr>
-                    <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>IGST</td>
+                    <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>IGST</td>
                     <td />
                     <td className="num tabular-nums">{inr2(t.tax)}</td>
                     <td />
@@ -1062,13 +1098,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 ) : (
                   <>
                     <tr>
-                      <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>CGST</td>
+                      <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>CGST</td>
                       <td />
                       <td className="num tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td>
                       <td />
                     </tr>
                     <tr>
-                      <td colSpan={5} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>SGST</td>
+                      <td colSpan={cols - 2} className="text-right text-xs" style={{ color: 'var(--text-3)' }}>SGST</td>
                       <td />
                       <td className="num tabular-nums">{inr2(+(t.tax / 2).toFixed(2))}</td>
                       <td />
@@ -1076,7 +1112,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   </>
                 )}
                 <tr style={{ borderTop: '1px solid var(--border-2)' }}>
-                  <td colSpan={5} className="text-right text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                  <td colSpan={cols - 2} className="text-right text-sm font-bold" style={{ color: 'var(--text-1)' }}>
                     Total
                   </td>
                   <td />
@@ -1089,7 +1125,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             </table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
-            <button className="btn-outline" onClick={() => setLines(ls => [...ls, blankLine()])}>
+            <button className="btn-outline"
+              onClick={() => setLines(ls => [...ls,
+                blankLine(lastColour ?? (isPurchase ? UNCOATED : firstCoated()))])}>
               <Plus size={14} /> Add a line
             </button>
             {t.goods > 0 && alu.on && (

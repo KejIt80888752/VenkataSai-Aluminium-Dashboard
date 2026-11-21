@@ -67,6 +67,15 @@ export interface Line {
      thickness, for example." It prints under the description and is on the
      document, not on the product, because it describes this supply. */
   narration?: string
+  /* ── The colour it is in ───────────────────────────────────────────────
+     Theirs, on 21-11: "colour must be part of the item/section... inventory
+     is managed by colour", and "the Excel sheet given earlier had no colour.
+     Add colour to every item."
+
+     It is on the line and not on the product, because the same section is
+     stocked in five finishes and they are five different things to count.
+     W/O on a purchase line is the mill finish it arrived in. */
+  colour?: string
 }
 export interface Invoice {
   id: string; no: string; date: string; dueDate: string

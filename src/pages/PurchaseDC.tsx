@@ -7,7 +7,7 @@ import { PageHead, Stat, Select, SearchBox, ExportBtn, TableCard, Empty } from '
 import DcDoc, { type DcPrintLine } from '@/components/DcDoc'
 import { xlsDownload } from '@/lib/sheetexport'
 import { SAMPLE_DC, lengthCheck, suspectLines, type DcLine } from '@/data/despatch'
-import { LOADED } from '@/data/coatbook'
+import { LOADED, colourOf } from '@/data/coatbook'
 import { PICK_OPTIONS, productById, masterIdOf, pieceKgAt, LENGTHS } from '@/data/productmaster'
 import { SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES, LOCATION_CODES } from '@/data/partycodes'
@@ -16,6 +16,8 @@ import { SectionPicker, loose } from '@/components/SectionPicker'
 import { useAliases } from '@/lib/useAliases'
 import { FY } from '@/data/company'
 import { today } from '@/lib/docnos'
+import { ColourPicker } from '@/components/ColourPicker'
+import { UNCOATED, colourByName, colourName } from '@/data/colours'
 
 /* ── The purchase DC, as the shop asked for it on 20-11-2026 ───────────────
    Their words, and what each one changed:
@@ -81,6 +83,16 @@ interface Row {
   lengthFt: number
   /** what the paper said, where the shop has since corrected the length */
   writtenLengthFt?: string
+  /* ── The finish it arrived in ───────────────────────────────────────────
+     Theirs, on 21-11: "purchase DC — the material comes in without load,
+     only the section. After conversion it becomes a colour, Ivory for
+     example."
+
+     So a purchase line opens uncoated, because that is what comes off the
+     mill's lorry, and the colour is set on it when it comes back from the
+     coater. Stock is counted per section, per length and per colour, so a
+     line with no colour on it cannot be counted at all.                 */
+  colour: string
   internal: string
 }
 
@@ -159,6 +171,14 @@ const loadedSheets = (): Sheet[] => BLOCKS.map((b, i) => {
         weightRange: nominalOf(productId, lengthFt) ?? per(l.kg, l.nos),
         kg: l.kg,
         lengthFt,
+        /* ── Off their own sheet ──────────────────────────────────────
+           The colour was given all along: their coating book writes it in
+           front of the section — IVORY DV 7', BLACK 2.5×1.5 15' SG — and
+           on the hardware as a suffix on the code, VAH-1-CB. So it is read
+           from there rather than asked for again. A line whose name says
+           nothing is uncoated, which is what a load on its way to a coater
+           is. */
+        colour: colourByName(colourOf(l))?.code ?? UNCOATED,
         internal: l.internal ?? '',
       }
     }),
@@ -183,6 +203,8 @@ const febSheet = (): Sheet => ({
   rows: SAMPLE_DC.lines.map(l => ({
     slNo: l.slNo,
     productId: '',
+    /* A depot sheet is raw extrusion — it has not been near a coater. */
+    colour: UNCOATED,
     code: l.particulars,
     written: `${l.particulars} ${l.lengthFt}`,
     nos: l.pieces,
@@ -309,7 +331,11 @@ export default function PurchaseDC() {
   const addRow = () => setRows(rs => [...rs, {
     slNo: rs.length ? Math.max(...rs.map(r => r.slNo)) + 1 : 1,
     productId: '', code: '', written: '', nos: 0,
-    weightRange: null, kg: null, lengthFt: 0, internal: '',
+    weightRange: null, kg: null, lengthFt: 0,
+    /* Carried from the line above — theirs, on 21-11. A lorry is one
+       finish far more often than it is six. */
+    colour: rs.length ? rs[rs.length - 1].colour : UNCOATED,
+    internal: '',
   }])
 
   /* A section's range is derived from their coating book, where some of the
@@ -404,14 +430,17 @@ export default function PurchaseDC() {
     nos: r.nos,
     weightRange: rangeOf(r),
     kg: r.kg,
+    colour: r.colour ?? UNCOATED,
   }))
 
   const exportXls = () => xlsDownload(
     `vsa-purchase-dc-${sheet.id}`,
     `Purchase DC — ${sheet.label}`,
     headMeta(),
-    ['SL', 'CODE', 'PRODUCT NAME', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)'],
-    printLines().map(l => [l.slNo, l.code, l.name, l.nos, l.weightRange, l.kg]),
+    ['SL', 'CODE', 'PRODUCT NAME', 'COLOUR', 'QTY (NOS)', 'WEIGHT RANGE', 'WEIGHT (KGS)'],
+    printLines().map(l => [l.slNo, l.code, l.name,
+      l.colour === UNCOATED ? 'Without load' : colourName(l.colour),
+      l.nos, l.weightRange, l.kg]),
     ['', '', 'TOTAL', totalNos, null, totalKg],
   )
 
@@ -420,10 +449,11 @@ export default function PurchaseDC() {
     ['DC No', sheet.dcNo, 'Supplier', sheet.supplier, 'Date', sheet.date,
      'P.O. No', sheet.poNo, 'Vehicle', sheet.vehicleNo],
     ['Sent to', destLabel(sheet.sentTo)],
-    [], ['Code', 'Product Name', 'Qty (nos)', 'Weight Range', 'Weight (kgs)'],
+    [], ['Code', 'Product Name', 'Colour', 'Qty (nos)', 'Weight Range', 'Weight (kgs)'],
     ...rows.map(r => [
-      r.code, productById(resolved(r))?.name ?? r.written, r.nos,
-      rangeOf(r) ?? '', r.kg ?? '',
+      r.code, productById(resolved(r))?.name ?? r.written,
+      (r.colour ?? UNCOATED) === UNCOATED ? 'Without load' : colourName(r.colour),
+      r.nos, rangeOf(r) ?? '', r.kg ?? '',
     ]),
     [], ['Total weight', totalKg], ['Total pieces', totalNos],
     ['Overall', overallTyped ? printKg : `${totalKg} (calculated)`],
@@ -586,6 +616,10 @@ export default function PurchaseDC() {
                 <th className="num !pr-6 uppercase">Sl</th>
                 <th className="!pl-0 uppercase">Code</th>
                 <th className="uppercase">Product Name</th>
+                {/* "Add colour to every item" — theirs, on 21-11. A load
+                    arrives without one and is given one on its way back
+                    from the coater. */}
+                <th className="uppercase">Colour</th>
                 <th className="num uppercase">Qty (nos)</th>
                 <th className="num uppercase">Weight Range</th>
                 <th className="num uppercase">Weight (kgs)</th>
@@ -619,6 +653,11 @@ export default function PurchaseDC() {
                           paper says {r.writtenLengthFt}, read as {r.lengthFt}′
                         </p>
                       )}
+                    </td>
+                    <td>
+                      <ColourPicker value={r.colour ?? UNCOATED}
+                        onChange={c => setRows(rs => rs.map(x =>
+                          x.slNo === r.slNo ? { ...x, colour: c } : x))} />
                     </td>
                     <td className="num">
                       <input className="input !w-20 !py-1 text-right tabular-nums !text-xs" value={r.nos}
@@ -658,7 +697,7 @@ export default function PurchaseDC() {
                 )
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={7}>
+                <tr><td colSpan={8}>
                   <Empty msg={rows.length
                     ? `Nothing on this sheet matches${find ? ` "${find}"` : ''}`
                       + `${lenFilter === 'All lengths' ? '' : ` at ${lenFilter}`}`

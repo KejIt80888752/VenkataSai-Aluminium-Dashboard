@@ -59,6 +59,9 @@ const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
     /* Carried so a revision reopens on what it was actually priced on. */
     kg: l.kg, basis: l.basis, metalRate: l.metalRate,
     narration: l.narration,
+    /* The finish it is supplied in, which is half of what a stock line is —
+       theirs, on 21-11: "inventory is managed by colour". */
+    colour: l.colour,
     group: coated ? ('coating' as const) : ('item' as const),
   }
 })
