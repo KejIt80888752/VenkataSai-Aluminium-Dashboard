@@ -91,7 +91,9 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
               <tr key={l.slNo}>
                 <td className="border border-slate-300 px-2 py-1.5 pr-4">{l.slNo}</td>
                 <td className="border border-slate-300 px-2 py-1.5 font-mono text-[11px]">{l.code || '—'}</td>
-                <td className="border border-slate-300 px-2 py-1.5 font-medium text-slate-900">{l.name || '—'}</td>
+                <td className="border border-slate-300 px-2 py-1.5 font-medium text-slate-900">
+                  {l.name || '—'}
+                </td>
                 {/* "The material comes in without load. After conversion it
                     becomes a colour" — theirs, on 21-11. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-slate-700">

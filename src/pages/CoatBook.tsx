@@ -220,12 +220,80 @@ export default function CoatBook() {
     ...recon.map(r => [r.code, r.name, r.sentNos, r.sentKg, r.recvNos, r.recvKg, r.pendingNos, r.kgPct ?? '']),
   ])
 
+  /* ── M1 → PC1 → SHOP ──────────────────────────────────────────────────
+     Theirs, on 22-11: "coating book — M1-PC1-SHOP, show material flow. Show
+     stats."
+
+     The three sheets already are the journey and nothing on the page said
+     so. The mill loads it, the coater takes it, the shop gets it back; what
+     matters at each stop is how many pieces and how many kilos, and what is
+     still out. It is read off the book itself, so it moves when a line is
+     typed or corrected.                                                  */
+  const flow = useMemo(() => {
+    const at = (id: SheetId) => {
+      const rows = book.rows.filter(l => l.sheet === id)
+      return {
+        nos: +rows.reduce((s, l) => s + (l.nos ?? 0), 0).toFixed(0),
+        kg: +rows.reduce((s, l) => s + (l.kg ?? 0), 0).toFixed(2),
+        lines: rows.length,
+      }
+    }
+    const opening = at('opening'), loaded = at('loaded'), received = at('received')
+    return [
+      { key: 'M1',   title: 'M1 — the mill',   caption: 'Lying on 01-09, before anything moved', ...opening },
+      { key: 'PC1',  title: 'PC1 — the coater', caption: 'Loaded out 16/17-09', ...loaded },
+      { key: 'SHOP', title: 'SHOP', caption: 'Came back coated 21-09', ...received },
+    ]
+  }, [book.rows])
+
   return (
     <div>
       <PageHead title="Coating Book"
         sub="Your own three sheets — what was lying, what went to the coater, what came back">
         <ExportBtn onClick={exportCsv} />
       </PageHead>
+
+      {/* "M1-PC1-SHOP, show material flow" — theirs, on 22-11. */}
+      <div className="card mb-5">
+        <p className="section-title text-base mb-1">Material flow — M1 → PC1 → Shop</p>
+        <p className="section-sub mb-3">
+          Read off the three sheets below. Click a stop to open its sheet.
+        </p>
+        <div className="flex flex-wrap items-stretch gap-2">
+          {flow.map((f, i) => (
+            <div key={f.key} className="flex items-stretch gap-2 flex-1 min-w-[12rem]">
+              <button type="button"
+                onClick={() => setSheetId(SHEET_META[i].id)}
+                className="flex-1 text-left rounded-lg p-3 transition-colors"
+                style={{
+                  background: SHEET_META[i].id === sheetId ? 'var(--brand-soft)' : 'var(--bg-card2)',
+                  border: `1px solid ${SHEET_META[i].id === sheetId ? 'var(--brand)' : 'var(--border-2)'}`,
+                }}>
+                <p className="text-[11px] uppercase tracking-wide font-semibold"
+                  style={{ color: 'var(--text-1)' }}>{f.title}</p>
+                <p className="text-[10.5px] mb-1.5" style={{ color: 'var(--text-4)' }}>{f.caption}</p>
+                <p className="text-lg font-bold tabular-nums" style={{ color: 'var(--text-1)' }}>
+                  {f.nos.toLocaleString('en-IN')} <span className="text-xs font-normal">nos</span>
+                </p>
+                <p className="text-[11px] tabular-nums" style={{ color: 'var(--text-3)' }}>
+                  {kgFmt(f.kg)} · {f.lines} {f.lines === 1 ? 'line' : 'lines'}
+                </p>
+              </button>
+              {i < flow.length - 1 && (
+                <div className="flex items-center" style={{ color: 'var(--text-4)' }}>
+                  <ArrowLeftRight size={14} />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] mt-3" style={{ color: 'var(--text-4)' }}>
+          {rt.pendingNos
+            ? `${rt.pendingNos} nos across ${rt.pendingLines} products have not come back from PC1 yet.`
+            : 'Everything sent to PC1 has come back.'}
+          {' '}Weight back against weight out: {pct(rt.kgPct)}.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
         <Stat label="Total Quantity" value={`${totals.nos} nos`} icon={Boxes} tone="brand"

@@ -134,3 +134,22 @@ export const carryColour = (previous?: string) => previous || UNCOATED
    a bill. So an offer opens on the first coated colour, and whoever raises
    it changes it on the first line and the rest follow.                   */
 export const firstCoated = () => (snapshot.find(c => !c.raw)?.code ?? UNCOATED)
+
+/* ── The colour belongs in the name ───────────────────────────────────────
+   Theirs, on 22-11: "colour should be in the name. (Tab you have provided,
+   additional ok). Stock and billing will be checked accordingly."
+
+   It is how their own coating book writes it — IVORY DV 7', BLACK 2.5×1.5
+   15' SG — and it is how a stock line has to read, because the ivory and
+   the black of the same section are two different things to count. The
+   record keeps the two apart, so neither can be lost or doubled up; it is
+   put together here, at the moment anything is shown or printed.         */
+export const withColour = (name: string, colour?: string) => {
+  if (!colour || colour === UNCOATED) return name
+  const c = snapshot.find(x => x.code === colour)
+  if (!c) return name
+  const up = (name || '').toUpperCase()
+  /* Lines read off their own sheets already carry it. */
+  if (up.startsWith(c.name.toUpperCase() + ' ')) return name
+  return `${c.name.toUpperCase()} ${name}`
+}

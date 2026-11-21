@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
 import { COMPANY } from '@/data/company'
-import { colourName, swatchOf, UNCOATED } from '@/data/colours'
+import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
 import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import { nameFor } from '@/data/itemmaster'
@@ -135,16 +135,13 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
-                    {nameFor(l.code, 'printInvoice', l.name)}
+                    {withColour(nameFor(l.code, 'printInvoice', l.name), l.colour)}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
                   {l.colour && l.colour !== UNCOATED ? (
-                    <span className="text-slate-600 text-[10px] whitespace-nowrap">
-                      {' · '}
-                      <span className="inline-block w-[7px] h-[7px] rounded-full align-middle mr-1"
-                        style={{ background: swatchOf(l.colour), border: '1px solid #cbd5e1' }} />
-                      {colourName(l.colour)}
-                    </span>
+                    <span className="inline-block w-[7px] h-[7px] rounded-full align-middle ml-1"
+                      title={colourName(l.colour)}
+                      style={{ background: swatchOf(l.colour), border: '1px solid #cbd5e1' }} />
                   ) : null}
                   {!summary && l.kg ? (
                     <span className="text-slate-500 text-[10px]"> · {l.kg} kg</span>

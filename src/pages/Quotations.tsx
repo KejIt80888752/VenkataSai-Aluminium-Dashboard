@@ -17,6 +17,7 @@ import {
   STATUS_OPTIONS, type DocRow,
 } from '@/lib/docshapes'
 import { MASTER } from '@/data/productmaster'
+import { withColour } from '@/data/colours'
 import { nextDocNo, revisionOf, revisionNumber, baseDocNo } from '@/lib/docnos'
 
 /* ── Quotations and proformas ──────────────────────────────────────────────
@@ -473,7 +474,7 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
                   <tbody>
                     {sel.lines.map((l, i) => (
                       <tr key={`${l.code}-${i}`}>
-                        <td>{l.name} <span className="text-xs font-mono" style={{ color: 'var(--text-4)' }}>({l.code})</span></td>
+                        <td>{withColour(l.name, l.colour)} <span className="text-xs font-mono" style={{ color: 'var(--text-4)' }}>({l.code})</span></td>
                         <td className="text-xs">{l.hsn}</td>
                         <td className="num tabular-nums">{l.qty.toLocaleString('en-IN')} {l.unit}</td>
                         <td className="num tabular-nums">{inr2(l.rate)}</td>

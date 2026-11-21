@@ -8,7 +8,7 @@ import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
 import { hsnFor } from '@/data/hsn'
 import { imageOf } from '@/lib/productimages'
-import { colourName, swatchOf, UNCOATED } from '@/data/colours'
+import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
 
 /* ── A quotation the customer can actually be handed ───────────────────────
    They asked us to look at what Tally and the rest already do — "we are
@@ -220,18 +220,16 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 <td className="border border-slate-300 px-2 py-1.5">
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
                     {asCoat && <span className="text-slate-400 mr-1">↳</span>}
-                    {l.name}
+                    {/* "Colour should be in the name" — theirs, on 22-11. */}
+                    {withColour(l.name, l.colour)}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
-                  {/* The finish it goes out in, which is what a customer
-                      rings up about — theirs, on 21-11. */}
+                  {/* The colour is in the name now — theirs, on 22-11 —
+                      so only the dot stays, to pick the line out by eye. */}
                   {l.colour && l.colour !== UNCOATED ? (
-                    <span className="text-slate-600 text-[10px] whitespace-nowrap">
-                      {' · '}
-                      <span className="inline-block w-[7px] h-[7px] rounded-full align-middle mr-1"
-                        style={{ background: swatchOf(l.colour), border: '1px solid #cbd5e1' }} />
-                      {colourName(l.colour)}
-                    </span>
+                    <span className="inline-block w-[7px] h-[7px] rounded-full align-middle ml-1"
+                      title={colourName(l.colour)}
+                      style={{ background: swatchOf(l.colour), border: '1px solid #cbd5e1' }} />
                   ) : null}
                   {/* The estimate is the working paper, so each piece carries
                       the weight it was priced on — theirs, on 21-11:

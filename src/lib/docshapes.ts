@@ -110,19 +110,29 @@ const linesOf = (d: BuiltDoc): Line[] => {
      out carrying "POWDER COATING · 0 kg · ₹0.00 · —", which is a line that
      says nothing and invites the question of what it is doing there. */
   if (d.coatingMode === 'cumulative') {
-    const rate = d.coatingRate ?? 0
+    /* ── One entry, out of what was typed on the lines ─────────────────
+       Theirs, on 22-11: "coating charge needs to get summed up and display
+       as a single entry as Powder Coating, whereas only sections list will
+       be shown."
+
+       So the charge is not a rate asked for at the top any more. Each
+       section carries its own, and what goes on the paper is the total of
+       them against the total weight — with the rate shown as what that
+       works out to a kilo, so a customer can still check it. */
     const unit = d.coatingUnit === 'nos' ? 'nos' : 'kg'
     const qty = coatingBaseOf(d)
+    const charged = +metal.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+    const rate = qty > 0 ? +(charged / qty).toFixed(2) : (d.coatingRate ?? 0)
     /* The slab most of the coated sections are at, since the charge covers
        them all as one supply. */
     const slab = metal.length
       ? [...metal.reduce((m, l) => m.set(l.gst, (m.get(l.gst) ?? 0) + 1), new Map<number, number>())
           .entries()].sort((a, b) => b[1] - a[1])[0][0]
       : 18
-    if (qty > 0 || rate > 0) out.push({
+    if (charged > 0 || qty > 0) out.push({
       code: '', name: 'POWDER COATING', hsn: hsnFor('coating'),
       unit, qty, rate,
-      gst: slab, amount: +(qty * rate).toFixed(2), cost: 0,
+      gst: slab, amount: charged, cost: 0,
       kg: totalKgOf(d.lines), basis: unit === 'kg' ? 'kg' : 'nos',
       group: 'coating',
     })

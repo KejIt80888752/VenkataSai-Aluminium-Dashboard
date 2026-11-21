@@ -205,13 +205,6 @@ export const totalKgOf = (lines: BuiltLine[]) =>
 export const totalNosOf = (lines: BuiltLine[]) =>
   lines.filter(isAluminium).reduce((s, l) => s + l.nos, 0)
 
-/** The slab most of a document's lines are at. */
-function commonSlab(lines: BuiltLine[]): number {
-  const count = new Map<number, number>()
-  for (const l of lines) count.set(l.gst, (count.get(l.gst) ?? 0) + 1)
-  return [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 18
-}
-
 export type DocKind = 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoice' | 'Purchase Bill'
 
 export const amountOf = (l: BuiltLine) =>
@@ -227,8 +220,6 @@ export const amountOf = (l: BuiltLine) =>
 export function totalsOf(
   lines: BuiltLine[],
   aluminium: AluminiumBlock = { on: false, rate: 0, gst: 18 },
-  coatingMode: CoatingMode = 'section',
-  coatingRate = 0,
   coatingUnit: 'kg' | 'nos' = 'kg',
 ) {
   const picked = lines.filter(l => l.productId)
@@ -256,13 +247,24 @@ export function totalsOf(
   const coatedLines = picked.filter(isAluminium)
   const otherLines = picked.filter(l => !isAluminium(l))
 
+  /* ── The coating is typed on the line it belongs to ───────────────────
+     Theirs, on 22-11: "we enter sections, weight should be calculated
+     automatically, in the same line we need to enter coating charge...
+     coating charge needs to get summed up and display as a single entry as
+     Powder Coating, whereas only sections list will be shown."
+
+     Which is right, and it is not what this was doing. One rate a kilo for
+     the whole lot was being asked for at the top, and every section's own
+     rate box was greyed out — so a job where the sixteen-foot runs cost
+     more to coat than the clips could not be priced at all.
+
+     Each section carries its own charge now, whatever the document does
+     with it afterwards. The mode decides only how it is *shown*: section by
+     section on the estimate, added into one POWDER COATING entry
+     everywhere else. The money is the same either way, which is the point —
+     changing how a document reads should not change what it comes to. */
   const coating = aluminium.on
-    ? (coatingMode === 'cumulative'
-        /* One figure for the lot, at its own rate — which has to be asked for
-           rather than taken off whichever section happens to be first, or
-           changing the order of the lines would change the money. */
-        ? +(coatBase * coatingRate).toFixed(2)
-        : +coatedLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2))
+    ? +coatedLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
     : 0
 
   /** Sold outright at its own rate, whatever the metal is doing. */
@@ -282,11 +284,7 @@ export function totalsOf(
      Every line carries its own slab now. The metal carries its own as well,
      because it is its own supply at its own HSN. */
   const coatingTax = aluminium.on
-    ? (coatingMode === 'cumulative'
-        /* Charged once, it is one supply — at the commonest slab on the
-           sections it covers, which is the one the shop is working in. */
-        ? coating * (commonSlab(coatedLines) / 100)
-        : coatedLines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0))
+    ? coatedLines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0)
     : 0
 
   /* Everything sold outright pays at its own slab — a hinge is not taxed at
@@ -422,7 +420,34 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
 
      On everything but the quotation the figure can be typed over, and a
      typed figure is what the line is priced on from then on. */
-  const autoWeighs = kind !== 'Tax Invoice' && kind !== 'Purchase Bill'
+  /* ── Who works the weight out ─────────────────────────────────────────
+     Theirs, on 22-11. On the quotation: "we enter sections, weight should
+     be calculated automatically." On the estimate: "we enter sections, but
+     we enter total weight manually."
+
+     So it is the quotation and nothing else. An estimate is written against
+     material that has been looked at, and the weight on it is the weight
+     somebody read; a quotation is an offer made before any of it exists, so
+     the only weight available is the one in their own coating books.     */
+  const autoWeighs = kind === 'Quotation'
+
+  /* ── Sold by weight, even before anybody has weighed it ───────────────
+     There are two different questions here and they were being answered
+     with one flag. Is this line priced by the kilo? And do we fill the
+     kilos in for them?
+
+     An estimate answers yes and no: the sections on it are aluminium and
+     belong under the metal line, but the weight on them is one somebody
+     reads off a scale — "we enter total weight manually". Answering both
+     with "no" put a sixteen-foot section in with the handles and the
+     rubber, charged its coating by the piece, and left it out of the
+     metal altogether.
+
+     A bill answers no to both, which is what they asked for: clips go in
+     as a count at a unit rate, and typing a weight is what turns a line
+     into one sold by the kilo.                                         */
+  const weighsByDefault = kind === 'Quotation' || kind === 'Estimate'
+    || kind === 'Proforma Invoice'
 
   /* The quotation prices in one lump sum, so it carries no weight column.
      Everywhere else the weight is on the line, because somebody has to put
@@ -501,21 +526,90 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const alu: AluminiumBlock = { on: aluOn && !isPurchase, rate: aluRate, gst: aluGst }
   /** True only where this line's charge is rolled into the one coating
       figure — which is to say, only where it is a coated section. */
+  /** Its charge is added into the one POWDER COATING entry on the paper —
+      but it is still typed here, on the line it belongs to. */
   const inTheLot = (l: BuiltLine) =>
     alu.on && coatingMode === 'cumulative' && isAluminium(l)
 
-  /** Every distinct metal rate in play, so the form can say when it is more
-      than one and the document can carry a line for each. */
-  const metalRates = useMemo(() => [...new Set(
-    lines.filter(isAluminium).map(l => l.metalRate && l.metalRate > 0 ? l.metalRate : aluRate),
-  )], [lines, aluRate])
+  /* ── One Aluminium Extruded Profiles line per rate ────────────────────
+     Theirs, on 22-11: "Aluminium Extruded Profiles rate might vary,
+     provision should give automatically for a different rate and if a new
+     one is added, give an option to add. Like for 85 mm series, when that
+     section is selected, again Aluminium Extruded Profiles should come."
 
-  const t = useMemo(() => totalsOf(lines, alu, coatingMode, coatingRate, coatingUnit),
+     So the form groups the sections by what the metal costs them, and shows
+     a line for each group. Put a rate against one section that nothing else
+     on the document carries and a second Aluminium Extruded Profiles line
+     appears above, with that section's weight on it. Nobody adds the line;
+     it follows from the rate.                                            */
+  interface MetalGroup { rate: number; kg: number; nos: number; keys: string[]; own: boolean }
+  const metalGroups = useMemo<MetalGroup[]>(() => {
+    const g = new Map<number, MetalGroup>()
+    for (const l of lines.filter(weighsOwn)) {
+      const own = !!(l.metalRate && l.metalRate > 0)
+      const r = own ? l.metalRate! : aluRate
+      const at = g.get(r) ?? { rate: r, kg: 0, nos: 0, keys: [], own }
+      at.kg = +(at.kg + l.kg).toFixed(3)
+      at.nos += l.nos
+      at.keys.push(l.key)
+      at.own = at.own && own
+      g.set(r, at)
+    }
+    /* The default line is there before a single section is, because that is
+       what they open a quotation expecting to see. */
+    if (!g.has(aluRate)) g.set(aluRate, { rate: aluRate, kg: 0, nos: 0, keys: [], own: false })
+    const all = [...g.values()].sort((a, b) => b.kg - a.kg || a.rate - b.rate)
+    /* The standing rate keeps its line while it is the only one. Once every
+       section has been priced somewhere else it is an empty row saying
+       nothing, so it goes. */
+    const live = all.filter(x => x.keys.length > 0)
+    return live.length ? live : all
+  }, [lines, aluRate])
+
+  /** Changing a group's rate moves every section inside it. */
+  const setGroupRate = (g: MetalGroup, rate: number) => {
+    if (!g.own) { setAluRate(rate); return }
+    setLines(ls => ls.map(l => g.keys.includes(l.key) ? { ...l, metalRate: rate } : l))
+  }
+
+  /* ── Typing over the total weight ─────────────────────────────────────
+     Theirs, on 22-11: "we should have option to edit summed up weight
+     also", and on the estimate, "we enter total weight manually".
+
+     A weighbridge ticket is one figure for a lorry load, not a figure per
+     section, so the total has to be typeable. What is typed is spread back
+     over the sections it covers in the proportion they already stand in —
+     equally where nothing has been worked out yet — so every line still
+     carries a weight and the total is exactly the figure on the ticket. */
+  const setGroupKg = (g: MetalGroup, total: number) => setLines(ls => {
+    const inGroup = ls.filter(l => g.keys.includes(l.key))
+    if (!inGroup.length) return ls
+    const had = inGroup.reduce((s, l) => s + l.kg, 0)
+    return ls.map(l => {
+      if (!g.keys.includes(l.key)) return l
+      const share = had > 0 ? l.kg / had : 1 / inGroup.length
+      return { ...l, kg: +(total * share).toFixed(3), basis: 'kg' as const }
+    })
+  })
+
+  const t = useMemo(() => totalsOf(lines, alu, coatingUnit),
     [lines, aluOn, aluRate, aluGst, coatingMode, coatingRate, coatingUnit, isPurchase])
   const rev = revisionNumber(docNo)
 
   const patch = (key: string, p: Partial<BuiltLine>) =>
     setLines(ls => ls.map(l => l.key === key ? { ...l, ...p } : l))
+
+  /* ── Where the cursor goes next ───────────────────────────────────────
+     Theirs, on 22-11: "once product is selected, cursor should move to qty
+     tab." Which is the order the work is done in — nobody picks a section
+     and then reaches for the mouse to say how many. The box is marked with
+     the line's own key so the right one is found however the table is
+     sorted or filtered. */
+  const toQty = (key: string) => requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLInputElement>(`[data-qty="${key}"]`)
+    el?.focus()
+    el?.select()
+  })
 
   /* Picking a product brings its code and, where your books have weighed it,
      the weight per piece — so the kilos follow from the count. */
@@ -525,10 +619,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     if (!p) return { ...l, productId: '', name: '', code: '' }
     /* Only a quotation guesses at a weight. Anywhere else the line starts
        priced by the count and waits to be told what it weighed. */
-    const basis: 'kg' | 'nos' = autoWeighs && p.kgPerPiece !== null ? 'kg' : 'nos'
+    const basis: 'kg' | 'nos' = weighsByDefault && p.kgPerPiece !== null ? 'kg' : 'nos'
     /* What this product went out at last time, and failing that the slab this
        kind of material usually carries. A rate typed once is not typed again. */
     const seen = recallRate(id)
+    /* ── What it starts at ──────────────────────────────────────────────
+       Theirs, on 22-11: the coating charge "should be taken from pre-fed
+       values", and on the estimate, "coating charges per length come by
+       default". Three places are tried, nearest first: what the line
+       already carries, what this product last went out at, and the figure
+       in the Powder Coating row, which is the shop's standing rate. */
+    const prefed = alu.on && p.kind === 'section' ? coatingRate : 0
     /* ── One, until it is told otherwise ────────────────────────────────
        Theirs, on 21-11: "after selecting an item, fill in the quantity
        automatically." A line with nothing against it is not a line, and
@@ -539,7 +640,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       ...l, productId: id, code: p.code, name: p.name, basis, nos,
       hsn: hsnFor(p.kind === 'section' || p.kind === 'rubber' ? p.kind : 'hardware'),
       kg: autoWeighs && p.kgPerPiece !== null ? +(p.kgPerPiece * nos).toFixed(3) : 0,
-      rate: l.rate > 0 ? l.rate : (seen?.rate ?? 0),
+      rate: l.rate > 0 ? l.rate : (seen?.rate || prefed || 0),
       gst: seen?.gst ?? recallSlab(p.kind) ?? l.gst,
       recalled: !!seen?.rate && l.rate <= 0,
     }
@@ -558,7 +659,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       ...l,
       productId: x.id, code: x.code, name: x.name,
       nos: l.nos > 0 ? l.nos : 1,
-      basis: autoWeighs && x.kgPerPiece !== null ? 'kg' : 'nos',
+      basis: weighsByDefault && x.kgPerPiece !== null ? 'kg' : 'nos',
       kg: autoWeighs && x.kgPerPiece !== null
         ? +(x.kgPerPiece * (l.nos > 0 ? l.nos : 1)).toFixed(3) : 0,
       rate: l.rate > 0 ? l.rate : (seen?.rate ?? 0),
@@ -603,6 +704,27 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      totals sat a column away from the lines they were adding up. */
   const cols = 7 + (showWeight ? 1 : 0) + (alu.on ? 1 : 0)
 
+  /* ── Adding a line without the mouse ──────────────────────────────────
+     Theirs, on 22-11: "keyboard shortcuts to add line." Ctrl+Enter — or
+     Cmd+Enter — adds one and puts the cursor in it, so a sheet of twenty
+     sections is entered without once leaving the keyboard. */
+  const addLine = () => {
+    const colour = lastColour ?? (isPurchase ? UNCOATED : firstCoated())
+    const row = blankLine(colour)
+    setLines(ls => [...ls, row])
+    requestAnimationFrame(() => {
+      const boxes = document.querySelectorAll<HTMLInputElement>('[data-section-picker-input]')
+      boxes[boxes.length - 1]?.focus()
+    })
+  }
+
+  const onFormKey = (e: React.KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault()
+      addLine()
+    }
+  }
+
   const theDate = isPurchase ? theirDate : date
   const theNo = isPurchase ? theirNo.trim() : docNo
 
@@ -639,17 +761,31 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       vehicle: vehicle.trim(), ewayBill: ewayBill.trim(), remarks: remarks.trim(),
       shipTo: shipTo.trim(), poNo: poNo.trim(), piNo: piNo.trim(),
       paymentTerms: paymentTerms.trim(),
-      ...totalsOf(keep, alu, coatingMode, coatingRate, coatingUnit),
+      ...totalsOf(keep, alu, coatingUnit),
       status,
     })
     onClose()
   }
 
+  /* ── Nothing typed is thrown away ─────────────────────────────────────
+     Theirs, on 22-11: "draft should be saved, if we click OUTSIDE by
+     default." Half an hour of a quotation went when somebody clicked past
+     the edge of the form, and a form that punishes a misplaced click is a
+     form people stop trusting. Clicking away now files what is there as a
+     draft; Cancel still throws it away, because that is what Cancel is
+     for, and a document that has not got a customer and a line on it has
+     nothing worth keeping anyway. */
+  const canDraft = !isPurchase && kind !== 'Tax Invoice'
+  const leave = () => {
+    if (ready && canDraft) save('Draft')
+    else onClose()
+  }
+
   return (
-    <Modal open={open} onClose={onClose}
+    <Modal open={open} onClose={leave}
       title={rev ? `${kind} ${docNo} — revision ${rev}`
         : isPurchase ? 'New Purchase Bill' : `New ${kind} — ${docNo}`} wide>
-      <div className="space-y-4">
+      <div className="space-y-4" onKeyDown={onFormKey}>
         <div className="rounded-lg p-3 flex items-start gap-2 text-[11.5px]"
           style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)', color: 'var(--text-3)' }}>
           <Info size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--brand)' }} />
@@ -657,6 +793,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             {isPurchase
               ? 'The bill number and date are the supplier\u2019s, so they are typed off the paper. '
               : 'The number and the date are issued here, not typed. '}
+            {canDraft && 'Click outside this form and it is kept as a draft. '}
             The taxable value, the GST and the total are what the lines below come to — nothing is entered
             against them.
             {rev > 0 && ' This is a revision: it keeps the number it revises and carries today’s date.'}
@@ -793,9 +930,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   options={['Section by section', 'Once for the lot']} className="min-w-[11rem]" />
               )}
             </div>
-            {metalRates.length > 1 && (
+            {metalGroups.length > 1 && (
               <p className="text-[11px] pb-2" style={{ color: 'var(--text-4)' }}>
-                {metalRates.length} metal rates on this document — set per line
+                {metalGroups.length} metal rates on this document — a line each, above
               </p>
             )}
           </div>
@@ -835,65 +972,91 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   <th className="num">Amount</th><th /></tr>
               </thead>
               <tbody>
-                {alu.on && (
-                  <tr style={{ background: 'var(--bg-card2)' }}>
+                {/* ── A line for the metal at each rate ──────────────────
+                    Theirs, on 22-11: a second Aluminium Extruded Profiles
+                    line is to appear by itself when a section is priced at
+                    a different rate a kilo — "like for 85 mm series". The
+                    weight on each is the sections under it added up, and it
+                    can be typed over: "we should have option to edit summed
+                    up weight also." */}
+                {alu.on && metalGroups.map((g, gi) => (
+                  <tr key={`metal-${g.rate}-${gi}`} style={{ background: 'var(--bg-card2)' }}>
                     <td className="font-semibold uppercase tracking-wide text-[11px]"
                       style={{ color: 'var(--text-1)' }}>
                       Aluminium Extruded Profiles
                       <span className="block text-[10px] normal-case font-normal tracking-normal"
-                        style={{ color: 'var(--text-4)' }}>every section below, added up — not typed</span>
+                        style={{ color: 'var(--text-4)' }}>
+                        {metalGroups.length > 1
+                          ? `the sections at ₹${g.rate.toLocaleString('en-IN')}/kg, added up`
+                          : 'every section below, added up — type over it to change it'}
+                      </span>
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>—</td>
-                    {/* The weight belongs under the weight column wherever
-                        there is one. It was sitting under the piece count and
-                        pushing every cell after it one column to the left, so
-                        on a tax invoice the GST box appeared under Rate. */}
-                    <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {showWeight ? '—' : `${t.kg} kg`}
+                    <td className="num tabular-nums" style={{ color: 'var(--text-4)' }}>
+                      {g.nos || '—'}
                     </td>
-                    {showWeight && (
+                    {/* The summed weight, and a box to type one over it. */}
+                    {showWeight ? (
+                      <td className="num">
+                        <input className="input !w-24 !py-1 text-right tabular-nums !text-xs font-semibold"
+                          value={g.kg || ''} placeholder="total kg"
+                          title="The sections under this, added up. Type a figure and it is spread back over them."
+                          onChange={e => setGroupKg(g, Number(e.target.value) || 0)} />
+                      </td>
+                    ) : (
                       <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                        {t.kg} kg
+                        {g.kg} kg
                       </td>
                     )}
                     <td className="num">
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                        value={aluRate || ''} placeholder="per kg"
-                        onChange={e => setAluRate(Number(e.target.value) || 0)} />
+                        value={g.rate || ''} placeholder="per kg"
+                        onChange={e => setGroupRate(g, Number(e.target.value) || 0)} />
                     </td>
                     <td className="num" />
                     <td className="num">
-                      <Select value={String(aluGst)} onChange={v => setAluGst(Number(v))}
-                        options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" />
+                      {gi === 0 ? (
+                        <Select value={String(aluGst)} onChange={v => setAluGst(Number(v))}
+                          options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" />
+                      ) : (
+                        <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>{aluGst}%</span>
+                      )}
                     </td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
-                      {t.metal ? inr2(t.metal) : '—'}
+                      {g.kg * g.rate ? inr2(+(g.kg * g.rate).toFixed(2)) : '—'}
                     </td>
                     {/* ── The first line, and a way to be rid of it ───────
                         Theirs, on 21-11: "a new quotation opens with one
                         default line, Aluminium Extrusion Profile, with an
-                        option to delete that line." It opens with it; this
-                        takes it off, and the box above puts it back. */}
+                        option to delete that line." */}
                     <td>
-                      <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
-                        title="Take the aluminium line off and price each section on its own"
-                        onClick={() => setAluOn(false)}>
-                        <Trash2 size={13} /></button>
+                      {gi === 0 && (
+                        <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
+                          title="Take the aluminium line off and price each section on its own"
+                          onClick={() => setAluOn(false)}>
+                          <Trash2 size={13} /></button>
+                      )}
                     </td>
                   </tr>
-                )}
-                {/* ── The coating comes above the list, not under it ──────
-                    Theirs, on 21-11: the powder coating is to come up the
-                    page. It belongs beside the metal — between them they
-                    are what is being charged for, and the sections below
-                    are the specification of what that charge covers. */}
+                ))}
+                {/* ── One Powder Coating entry, out of the lines ──────────
+                    Theirs, on 22-11: "in the same line we need to enter
+                    coating charge... coating charge needs to get summed up
+                    and display as a single entry as Powder Coating, whereas
+                    only sections list will be shown."
+
+                    So nothing is typed here. The rate box is the one a new
+                    section starts at — the pre-fed figure — and the money
+                    beside it is what the lines actually come to. */}
                 {alu.on && coatingMode === 'cumulative' && (
                   <tr style={{ background: 'var(--bg-card2)' }}>
                     <td className="font-semibold uppercase tracking-wide text-[11px]"
                       style={{ color: 'var(--text-1)' }}>
                       Powder Coating
                       <span className="block text-[10px] normal-case font-normal tracking-normal"
-                        style={{ color: 'var(--text-4)' }}>one charge for the lot</span>
+                        style={{ color: 'var(--text-4)' }}>
+                        the coating on every section below, added into one entry
+                      </span>
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>
                       {/* ── Per kilo, or per piece ──────────────────────
@@ -917,7 +1080,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
                         value={coatingRate || ''}
                         placeholder={coatingUnit === 'kg' ? 'per kg' : 'per piece'}
+                        title="What a new section starts at. Each line can then be changed on its own."
                         onChange={e => setCoatingRate(Number(e.target.value) || 0)} />
+                      <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--text-4)' }}>
+                        pre-fed
+                      </p>
                     </td>
                     <td className="num" />
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
@@ -925,7 +1092,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     </td>
                     <td>
                       <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
-                        title="Charge the coating on each section instead"
+                        title="Show the coating against each section instead of as one entry"
                         onClick={() => setCoatingMode('section')}
                         disabled={COATING_FIXED(kind)}>
                         <Trash2 size={13} /></button>
@@ -936,8 +1103,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   <tr key={l.key}>
                     <td>
                       <SectionPicker options={options} value={l.productId}
-                        onChange={id => pick(l.key, id)}
-                        onCreate={typed => create(l.key, typed)} />
+                        onChange={id => { pick(l.key, id); toQty(l.key) }}
+                        onCreate={typed => { create(l.key, typed); toQty(l.key) }} />
                       {/* ── Its own words ────────────────────────────────
                           Theirs, on 21-11: "add a Description / Narration
                           box for each item, like in Tally. Use it for items
@@ -994,6 +1161,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           cleared before anything can be typed into it, and
                           typing in front of it gives 0415. */}
                       <input className="input !w-20 !py-1 text-right tabular-nums !text-xs"
+                        data-qty={l.key}
                         value={l.nos || ''} placeholder="0"
                         onChange={e => setNos(l.key, Number(e.target.value) || 0)} />
                       {!showWeight && l.basis === 'kg' && l.kg > 0 && (
@@ -1054,11 +1222,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           also, so logic is applied as coating charge, remove
                           that". Greying their rate box was also why picking
                           a hinge looked as though the search had failed. */}
+                      {/* ── Typed here, whatever the document does with it ──
+                          Theirs, on 22-11: "in the same line we need to
+                          enter coating charge." This box was greyed out
+                          the moment the coating was shown as one entry, so
+                          a job where the long runs cost more to coat than
+                          the clips could not be priced at all. It is open
+                          on every document now; the single entry above is
+                          what these add up to. */}
                       <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
-                        value={inTheLot(l) ? '' : (l.rate || '')}
-                        disabled={inTheLot(l)}
-                        placeholder={inTheLot(l) ? 'charged once'
-                          : alu.on && isAluminium(l) ? 'coating / kg'
+                        value={l.rate || ''}
+                        placeholder={alu.on && isAluminium(l) ? 'coating / kg'
                           : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
@@ -1073,9 +1247,12 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
                         options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" /></td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {inTheLot(l)
-                        ? <span style={{ color: 'var(--text-4)' }}>in the lot</span>
-                        : amountOf(l) ? inr2(amountOf(l)) : '—'}</td>
+                      {amountOf(l) ? inr2(amountOf(l)) : '—'}
+                      {inTheLot(l) && amountOf(l) > 0 && (
+                        <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-4)' }}>
+                          into the one entry
+                        </p>
+                      )}</td>
                     <td>
                       <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
                         onClick={() => setLines(ls => ls.length > 1 ? ls.filter(x => x.key !== l.key) : ls)}>
@@ -1139,10 +1316,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             </table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
-            <button className="btn-outline"
-              onClick={() => setLines(ls => [...ls,
-                blankLine(lastColour ?? (isPurchase ? UNCOATED : firstCoated()))])}>
+            <button className="btn-outline" onClick={addLine}>
               <Plus size={14} /> Add a line
+              <span className="text-[10px] ml-1" style={{ color: 'var(--text-4)' }}>Ctrl ↵</span>
             </button>
             {t.goods > 0 && alu.on && (
               <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
@@ -1211,7 +1387,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               nil against {unpriced === 1 ? 'it' : 'them'}.
             </span>
           )}
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn-ghost" onClick={onClose}
+            title="Throw this away. Clicking outside the form keeps it as a draft instead.">
+            Cancel
+          </button>
           {/* ── Save, and save for later ─────────────────────────────────
               Theirs, on 21-11: "add a Save as Draft option", and "place
               Save / Draft clearly at the side". A draft is filed like

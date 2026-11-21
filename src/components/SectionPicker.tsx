@@ -208,6 +208,7 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
               style={{ color: 'var(--text-4)' }} />
             <input
               ref={inputRef}
+              data-section-picker-input
               className="input !py-1 !text-xs w-full !pl-7"
               placeholder={placeholder}
               value={query}
