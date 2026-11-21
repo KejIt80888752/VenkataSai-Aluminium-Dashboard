@@ -145,6 +145,12 @@ export const firstCoated = () => (snapshot.find(c => !c.raw)?.code ?? UNCOATED)
    record keeps the two apart, so neither can be lost or doubled up; it is
    put together here, at the moment anything is shown or printed.         */
 export const withColour = (name: string, colour?: string) => {
+  /* ── Only the metal is coated ────────────────────────────────────────
+     Theirs, on 21-11 at 23:18: "remove colours to hardware." A handle or a
+     hinge is bought finished and sold as it is; it never goes to a coater,
+     so a colour against it is a column of nothing. Their own book does put
+     MATT on a handle, but that is the handle's own finish as bought, not a
+     coating this shop had done, and it has no business on a quotation. */
   if (!colour || colour === UNCOATED) return name
   const c = snapshot.find(x => x.code === colour)
   if (!c) return name

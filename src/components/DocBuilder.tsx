@@ -636,8 +636,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
        every one of them had to be typed over before the form would let
        anything out. One piece is the count that needs no explaining. */
     const nos = l.nos > 0 ? l.nos : 1
+    /* "Remove colours to hardware" — theirs, on 21-11 at 23:18. */
+    const coatable = p.kind === 'section'
     return {
       ...l, productId: id, code: p.code, name: p.name, basis, nos,
+      colour: coatable ? l.colour : undefined,
       hsn: hsnFor(p.kind === 'section' || p.kind === 'rubber' ? p.kind : 'hardware'),
       kg: autoWeighs && p.kgPerPiece !== null ? +(p.kgPerPiece * nos).toFixed(3) : 0,
       rate: l.rate > 0 ? l.rate : (seen?.rate || prefed || 0),
@@ -1115,14 +1118,22 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           still the same section. */}
                       {l.productId && (
                         <div className="flex items-center gap-1.5 mt-1">
+                          {/* Hardware is bought finished and never coated,
+                              so it carries no colour — theirs, on 21-11. */}
                           {/* Set on the first line and carried to the next —
                               theirs, on 21-11. A purchase bill can be
                               uncoated because that is what comes off the
                               lorry; a sales document cannot go out in no
                               finish at all. */}
-                          <ColourPicker value={l.colour ?? UNCOATED} allowRaw={isPurchase}
-                            onChange={c => patch(l.key, { colour: c })}
-                            className="!w-[6.75rem] !py-0.5 !text-[11px] !min-w-0" />
+                          {productOf(l.productId)?.kind === 'section' ? (
+                            <ColourPicker value={l.colour ?? UNCOATED} allowRaw={isPurchase}
+                              onChange={c => patch(l.key, { colour: c })}
+                              className="!w-[6.75rem] !py-0.5 !text-[11px] !min-w-0" />
+                          ) : (
+                            <span className="text-[10px] shrink-0" style={{ color: 'var(--text-4)' }}>
+                              not coated
+                            </span>
+                          )}
                           <input className="input flex-1 min-w-0 !py-0.5 !text-[11px]"
                             value={l.narration ?? ''}
                             placeholder="Narration — thickness, finish, anything not in stock"

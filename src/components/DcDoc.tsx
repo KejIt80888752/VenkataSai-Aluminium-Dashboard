@@ -97,7 +97,9 @@ export default function DcDoc({ head, lines, totalKg, totalNos, overall, onClose
                 {/* "The material comes in without load. After conversion it
                     becomes a colour" — theirs, on 21-11. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-slate-700">
-                  {l.colour === UNCOATED ? 'Without load' : colourName(l.colour) || '—'}
+                  {!l.colour ? '—'
+                    : l.colour === UNCOATED ? 'Without load'
+                    : colourName(l.colour) || '—'}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.nos}</td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{l.weightRange ?? '—'}</td>

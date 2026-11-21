@@ -7,6 +7,7 @@ import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
 import { hsnFor } from '@/data/hsn'
+import { productById } from '@/data/productmaster'
 import { imageOf } from '@/lib/productimages'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
 
@@ -208,6 +209,10 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 quotes, and the way a customer can argue with it line by line. */}
             {printed.map(({ l, asCoat }, i) => {
               const metal = l.group === 'aluminium'
+              /* "Remove colours to hardware" — theirs, on 21-11 at 23:18.
+                 Only a coated section carries one. */
+              const shade = productById(l.productId)?.kind === 'section' || metal
+                ? l.colour : undefined
               /* The one coating charge is a summary line and carries no
                  product; a section charged for its own coating is an
                  ordinary line of material and must not be set in the
@@ -221,15 +226,15 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
                     {asCoat && <span className="text-slate-400 mr-1">↳</span>}
                     {/* "Colour should be in the name" — theirs, on 22-11. */}
-                    {withColour(l.name, l.colour)}
+                    {withColour(l.name, shade)}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
                   {/* The colour is in the name now — theirs, on 22-11 —
                       so only the dot stays, to pick the line out by eye. */}
-                  {l.colour && l.colour !== UNCOATED ? (
+                  {shade && shade !== UNCOATED ? (
                     <span className="inline-block w-[7px] h-[7px] rounded-full align-middle ml-1"
-                      title={colourName(l.colour)}
-                      style={{ background: swatchOf(l.colour), border: '1px solid #cbd5e1' }} />
+                      title={colourName(shade)}
+                      style={{ background: swatchOf(shade), border: '1px solid #cbd5e1' }} />
                   ) : null}
                   {/* The estimate is the working paper, so each piece carries
                       the weight it was priced on — theirs, on 21-11:
@@ -306,16 +311,20 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         {showsSlab && (
           <p className="text-[10px] text-slate-500 mt-1.5">
             The small figure beside an amount is the GST rate that line carries.
-            {!showTax && ' The tax is included in the total below.'}
           </p>
         )}
 
+        {/* ── No bank details on an offer ───────────────────────────────
+            Theirs, on 21-11 at 23:18: "remove bank details in ESTIMATE,
+            QUOTATION, PROFORMA INVOICE." Nothing is being collected against
+            any of the three — a quotation is a price, an estimate is a
+            working paper, and a proforma is followed by the bill that
+            carries the account to pay into. Printing the account number on
+            a document nobody is meant to pay against is how a shop's
+            details end up where they should not be. */}
         <div className="grid grid-cols-2 gap-4 mt-3">
           <div className="text-[11px]">
-            <p className="font-bold uppercase tracking-wider text-slate-500 text-[10px] mb-1">Bank Details</p>
-            <p className="text-slate-700">{COMPANY.bank.bank}, {COMPANY.bank.branch}</p>
-            <p className="text-slate-700">A/c {COMPANY.bank.acNo} · IFSC {COMPANY.bank.ifsc}</p>
-            <p className="text-slate-700">GSTIN: {COMPANY.gstin}</p>
+            <p className="text-slate-600">GSTIN: {COMPANY.gstin}</p>
           </div>
           <table className="w-full border-collapse text-[11px] self-start">
             <tbody>
@@ -323,8 +332,8 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                   the figure the customer is being asked to agree to. */}
               {showTax && <Total k={lumpSum ? 'Lump Sum Value' : 'Taxable Value'} v={inr2(doc.taxable)} />}
               {showTax && <Total k="GST" v={inr2(doc.tax)} />}
-              <Total k={showTax ? 'Grand Total' : 'Total, inclusive of GST'}
-                v={inr2(doc.total)} bold />
+              {/* "Remove inclusive of GST" — theirs, on 21-11 at 23:18. */}
+              <Total k="Total" v={inr2(doc.total)} bold />
             </tbody>
           </table>
         </div>

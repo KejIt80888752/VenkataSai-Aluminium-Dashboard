@@ -430,7 +430,8 @@ export default function PurchaseDC() {
     nos: r.nos,
     weightRange: rangeOf(r),
     kg: r.kg,
-    colour: r.colour ?? UNCOATED,
+    colour: productById(resolved(r))?.kind === 'section' || !resolved(r)
+      ? (r.colour ?? UNCOATED) : '',
   }))
 
   const exportXls = () => xlsDownload(
@@ -452,7 +453,8 @@ export default function PurchaseDC() {
     [], ['Code', 'Product Name', 'Colour', 'Qty (nos)', 'Weight Range', 'Weight (kgs)'],
     ...rows.map(r => [
       r.code, productById(resolved(r))?.name ?? r.written,
-      (r.colour ?? UNCOATED) === UNCOATED ? 'Without load' : colourName(r.colour),
+      productById(resolved(r)) && productById(resolved(r))!.kind !== 'section' ? ''
+        : (r.colour ?? UNCOATED) === UNCOATED ? 'Without load' : colourName(r.colour),
       r.nos, rangeOf(r) ?? '', r.kg ?? '',
     ]),
     [], ['Total weight', totalKg], ['Total pieces', totalNos],
@@ -655,9 +657,16 @@ export default function PurchaseDC() {
                       )}
                     </td>
                     <td>
-                      <ColourPicker value={r.colour ?? UNCOATED}
-                        onChange={c => setRows(rs => rs.map(x =>
-                          x.slNo === r.slNo ? { ...x, colour: c } : x))} />
+                      {/* "Remove colours to hardware" — theirs, on 21-11 at
+                          23:18. A handle is bought finished; it never goes
+                          to a coater, so there is no colour to give it. */}
+                      {!p || p.kind === 'section' ? (
+                        <ColourPicker value={r.colour ?? UNCOATED}
+                          onChange={c => setRows(rs => rs.map(x =>
+                            x.slNo === r.slNo ? { ...x, colour: c } : x))} />
+                      ) : (
+                        <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>not coated</span>
+                      )}
                     </td>
                     <td className="num">
                       <input className="input !w-20 !py-1 text-right tabular-nums !text-xs" value={r.nos}

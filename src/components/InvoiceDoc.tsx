@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom'
 import { Printer, X } from 'lucide-react'
 import { COMPANY } from '@/data/company'
+import { productById } from '@/data/productmaster'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
 import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
@@ -127,6 +128,9 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
           <tbody>
             {inv.lines.map((l, i) => {
               const metal = l.group === 'aluminium'
+              /* Hardware is never coated — theirs, on 21-11 at 23:18. */
+              const shade = productById(l.productId)?.kind === 'section' || metal
+                ? l.colour : undefined
               /* Only the summary lines are headings. A section charged for
                  its own coating is ordinary material. */
               const summary = metal || (l.group === 'coating' && !l.productId)
@@ -135,13 +139,13 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
-                    {withColour(nameFor(l.code, 'printInvoice', l.name), l.colour)}
+                    {withColour(nameFor(l.code, 'printInvoice', l.name), shade)}
                   </span>
                   {l.code && <span className="text-slate-500 text-[10px]"> ({l.code})</span>}
-                  {l.colour && l.colour !== UNCOATED ? (
+                  {shade && shade !== UNCOATED ? (
                     <span className="inline-block w-[7px] h-[7px] rounded-full align-middle ml-1"
-                      title={colourName(l.colour)}
-                      style={{ background: swatchOf(l.colour), border: '1px solid #cbd5e1' }} />
+                      title={colourName(shade)}
+                      style={{ background: swatchOf(shade), border: '1px solid #cbd5e1' }} />
                   ) : null}
                   {!summary && l.kg ? (
                     <span className="text-slate-500 text-[10px]"> · {l.kg} kg</span>
