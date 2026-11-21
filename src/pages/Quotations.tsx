@@ -58,6 +58,29 @@ export const ROUTE_OF: Record<Kind, string> = {
 
 const idOf = (x: { no: string }) => x.no
 
+/* ── What is at each slab ──────────────────────────────────────────────────
+   Theirs, on 21-11: "in estimate, GST view. Tax slab view."
+
+   A document whose lines sit at more than one rate prints one GST figure,
+   and nothing on it says which part of the supply carried which rate. That
+   matters here because the metal, the coating and the hardware are three
+   supplies and do not always share a slab. This is the working, on screen
+   only — the paper carries the small figure beside each amount instead,
+   because the breakdown is what they did not want a customer holding. */
+const slabsOf = (r: DocRow) => {
+  const by = new Map<number, { taxable: number; tax: number }>()
+  for (const l of r.lines) {
+    if (!l.amount) continue
+    const at = by.get(l.gst) ?? { taxable: 0, tax: 0 }
+    at.taxable += l.amount
+    at.tax += l.amount * (l.gst / 100)
+    by.set(l.gst, at)
+  }
+  return [...by.entries()]
+    .map(([gst, v]) => ({ gst, taxable: +v.taxable.toFixed(2), tax: +v.tax.toFixed(2) }))
+    .sort((a, b) => b.taxable - a.taxable)
+}
+
 /* A tax invoice is a different record from an offer — it splits its tax three
    ways and carries what has been received — so the two are built in one place
    and read back into one display row. See src/lib/docshapes.ts. */
@@ -467,6 +490,22 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
                 <tbody>
                   <tr><td className="pr-8 py-1" style={{ color: 'var(--text-3)' }}>Taxable</td>
                     <td className="text-right tabular-nums">{inr2(sel.taxable)}</td></tr>
+                  {/* ── The slab view ────────────────────────────────────
+                      Theirs, on 21-11, at 21:43: "in estimate, GST view.
+                      Tax slab view." A document that mixes eighteen and
+                      nine shows one GST figure and says nothing about how
+                      it got there. Each slab is on its own line here, on
+                      the screen — it does not go on the paper, because
+                      that is the part they do not want printed. */}
+                  {slabsOf(sel).map(x => (
+                    <tr key={x.gst}>
+                      <td className="pr-8 py-0.5 text-xs" style={{ color: 'var(--text-4)' }}>
+                        at {x.gst}% — on {inr2(x.taxable)}
+                      </td>
+                      <td className="text-right tabular-nums text-xs"
+                        style={{ color: 'var(--text-4)' }}>{inr2(x.tax)}</td>
+                    </tr>
+                  ))}
                   <tr><td className="pr-8 py-1" style={{ color: 'var(--text-3)' }}>GST</td>
                     <td className="text-right tabular-nums">{inr2(sel.tax)}</td></tr>
                   <tr className="font-bold" style={{ color: 'var(--text-1)' }}>

@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Printer, X } from 'lucide-react'
+import { Printer, X, Eye, EyeOff } from 'lucide-react'
 import { COMPANY } from '@/data/company'
 import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
@@ -50,6 +51,35 @@ export default function QuoteDoc({ doc, kind, onClose }: {
      A proforma goes out before the goods do, to somebody who often has not
      seen the section and is being asked to pay against it. */
   const showsPhoto = kind === 'Proforma Invoice'
+
+  /* ── Hiding the tax, and the eye that does it ─────────────────────────
+     Theirs, on 21-11, at 22:01: "if we print it, we'll get an idea of how
+     much we've put in the metal. We shouldn't know about it." — meaning the
+     customer should not be able to work the loading out of a tax breakdown
+     printed line by line. What goes out instead is the small figure beside
+     each amount: "18% is a symbol, 9% is a symbol."
+
+     So the whole tax block comes off the paper on the documents that are
+     offers, and the eye in the toolbar puts it back when they want to show
+     somebody the working. A proforma keeps it, because a proforma is what
+     an advance is paid against and the amount has to be defensible, and a
+     tax invoice is a different document altogether — it must carry CGST
+     and SGST by law and has no switch at all.
+
+     Whichever way they set it is remembered for that kind of document, so
+     nobody has to click it twice a day.                                 */
+  const TAX_KEY = `vsa-print-gst-${kind}`
+  const [showTax, setShowTax] = useState(() => {
+    try {
+      const held = localStorage.getItem(TAX_KEY)
+      if (held !== null) return held === '1'
+    } catch { /* blocked or private */ }
+    return !isOffer
+  })
+  const toggleTax = () => setShowTax(v => {
+    try { localStorage.setItem(TAX_KEY, v ? '0' : '1') } catch { /* ignore */ }
+    return !v
+  })
   /* The master may hold nothing yet, so the document's own buyer is what
      prints and the master only fills in what the document does not carry. */
   const client = CLIENTS.find(c => c.id === doc.clientId)
@@ -73,6 +103,14 @@ export default function QuoteDoc({ doc, kind, onClose }: {
   return createPortal(
     <div className="print-modal-overlay fixed inset-0 z-[60] bg-black/50 overflow-y-auto p-4" onClick={onClose}>
       <div className="max-w-[820px] mx-auto flex justify-end gap-2 mb-3 print:hidden" onClick={e => e.stopPropagation()}>
+        {/* "We shouldn't know about it" — theirs, on 21-11. */}
+        <button onClick={toggleTax} className="btn-outline !bg-white"
+          title={showTax
+            ? 'Take the tax breakdown off the paper — the rate still prints as a small figure beside each amount'
+            : 'Print the tax breakdown in full'}>
+          {showTax ? <EyeOff size={14} /> : <Eye size={14} />}
+          {showTax ? 'Hide GST' : 'Show GST'}
+        </button>
         <button onClick={() => window.print()} className="btn"><Printer size={14} /> Print / Save PDF</button>
         <button onClick={onClose} className="btn-outline !bg-white"><X size={14} /> Close</button>
       </div>
@@ -238,6 +276,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         {showsSlab && (
           <p className="text-[10px] text-slate-500 mt-1.5">
             The small figure beside an amount is the GST rate that line carries.
+            {!showTax && ' The tax is included in the total below.'}
           </p>
         )}
 
@@ -250,9 +289,12 @@ export default function QuoteDoc({ doc, kind, onClose }: {
           </div>
           <table className="w-full border-collapse text-[11px] self-start">
             <tbody>
-              <Total k={lumpSum ? 'Lump Sum Value' : 'Taxable Value'} v={inr2(doc.taxable)} />
-              <Total k="GST" v={inr2(doc.tax)} />
-              <Total k="Grand Total" v={inr2(doc.total)} bold />
+              {/* With the tax hidden only the one figure goes out, which is
+                  the figure the customer is being asked to agree to. */}
+              {showTax && <Total k={lumpSum ? 'Lump Sum Value' : 'Taxable Value'} v={inr2(doc.taxable)} />}
+              {showTax && <Total k="GST" v={inr2(doc.tax)} />}
+              <Total k={showTax ? 'Grand Total' : 'Total, inclusive of GST'}
+                v={inr2(doc.total)} bold />
             </tbody>
           </table>
         </div>
