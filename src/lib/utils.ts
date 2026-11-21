@@ -23,9 +23,20 @@ export const kg = (n: number) =>
   n.toLocaleString('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' kg'
 
 /** dd MMM yyyy */
+/**
+ * A date the way they write one: 21-11-2026.
+ *
+ * Asked for on 21-11-2026. It was reading "21 Nov 2026", which is fine on a
+ * screen and wrong on a document that goes to a customer beside a DC and a
+ * bill that both say 21-11-2026. One shape everywhere beats a nicer one in
+ * one place.
+ */
 export const fmtDate = (iso: string) => {
+  if (!iso) return '—'
   const d = new Date(iso + 'T00:00:00')
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  if (Number.isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`
 }
 
 /** Days between an ISO date and "today" (positive = in the past) */

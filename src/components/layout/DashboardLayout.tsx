@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
-import Watermark from '@/components/Watermark'
 
 export const TITLES: Record<string, string> = {
   '/':               'Dashboard',
@@ -74,7 +73,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <Topbar onMenu={() => setOpen(true)} title={TITLES[loc.pathname] ?? 'Venkata Sai Aluminium'} />
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
       </div>
-      <Watermark />
+      {/* The tiled name and email across every screen came off on 21-11-2026
+          — "in the background there is a watermark... remove it". It was
+          there to mark screenshots; they would rather read the figures. */}
     </div>
   )
 }

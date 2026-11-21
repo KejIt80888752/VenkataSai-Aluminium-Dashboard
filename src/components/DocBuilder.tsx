@@ -6,7 +6,7 @@ import { PICK_PRODUCTS, productById } from '@/data/productmaster'
 import { useExtraProducts, addExtraProduct } from '@/lib/extraproducts'
 import { CLIENTS, SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES } from '@/data/partycodes'
-import { inr2 } from '@/lib/utils'
+import { inr2, fmtDate } from '@/lib/utils'
 import { today, validTill, DEFAULT_VALID_DAYS, revisionNumber } from '@/lib/docnos'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { recallRate, recallSlab, rememberAll } from '@/lib/ratememory'
@@ -353,7 +353,31 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      rate on a section is per kilo and the amount has to come from somewhere.
      The despatch documents keep the column: a bill for aluminium sold by
      weight has to show the weight it was sold at. */
-  const showWeight = !(kind === 'Quotation' || kind === 'Estimate')
+  /* ── What the form works out, and what it is told ─────────────────────
+     Asked for by voice on 21-11-2026:
+
+       "In the tax invoice, when we enter aluminium sections it automatically
+        takes the weight, calculates it, and asks for the rate based on that
+        calculated weight. We don't need all that in the tax invoice. Whatever
+        we enter should be used as it is... Clips are entered as a quantity in
+        numbers, and weight isn't needed for clips in the invoice... All these
+        automatic calculations are only for the quotation."
+
+     Which is right, and it is the difference between the two documents. A
+     quotation is an estimate of what a job will weigh, so working the weight
+     out of their own books is the whole use of it. A tax invoice is a record
+     of what actually went out on a lorry and was actually weighed, and a
+     figure the system worked out has no business overwriting that.
+
+     So a quotation fills the weight in. Nothing else does: the field is there
+     and empty, and a line with no weight against it is priced by the count,
+     which is how clips are sold.                                          */
+  const autoWeighs = kind === 'Quotation'
+
+  /* The quotation prices in one lump sum, so it carries no weight column.
+     Everywhere else the weight is on the line, because somebody has to put
+     it there — "a weight field where we enter the weight". */
+  const showWeight = kind !== 'Quotation'
   const [theirNo, setTheirNo] = useState('')
   const [theirDate, setTheirDate] = useState(today())
 
@@ -424,14 +448,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     if (l.key !== key) return l
     const p = productOf(id)
     if (!p) return { ...l, productId: '', name: '', code: '' }
-    const basis: 'kg' | 'nos' = p.kgPerPiece !== null ? 'kg' : 'nos'
+    /* Only a quotation guesses at a weight. Anywhere else the line starts
+       priced by the count and waits to be told what it weighed. */
+    const basis: 'kg' | 'nos' = autoWeighs && p.kgPerPiece !== null ? 'kg' : 'nos'
     /* What this product went out at last time, and failing that the slab this
        kind of material usually carries. A rate typed once is not typed again. */
     const seen = recallRate(id)
     return {
       ...l, productId: id, code: p.code, name: p.name, basis,
       hsn: hsnFor(p.kind === 'section' || p.kind === 'rubber' ? p.kind : 'hardware'),
-      kg: p.kgPerPiece !== null ? +(p.kgPerPiece * l.nos).toFixed(3) : 0,
+      kg: autoWeighs && p.kgPerPiece !== null ? +(p.kgPerPiece * l.nos).toFixed(3) : 0,
       rate: l.rate > 0 ? l.rate : (seen?.rate ?? 0),
       gst: seen?.gst ?? recallSlab(p.kind) ?? l.gst,
       recalled: !!seen?.rate && l.rate <= 0,
@@ -450,8 +476,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setLines(ls => ls.map(l => l.key === key ? {
       ...l,
       productId: x.id, code: x.code, name: x.name,
-      basis: x.kgPerPiece !== null ? 'kg' : 'nos',
-      kg: x.kgPerPiece !== null ? +(x.kgPerPiece * l.nos).toFixed(3) : 0,
+      basis: autoWeighs && x.kgPerPiece !== null ? 'kg' : 'nos',
+      kg: autoWeighs && x.kgPerPiece !== null ? +(x.kgPerPiece * l.nos).toFixed(3) : 0,
       rate: l.rate > 0 ? l.rate : (seen?.rate ?? 0),
       gst: seen?.gst ?? l.gst,
       recalled: !!seen?.rate && l.rate <= 0,
@@ -464,8 +490,14 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     /* A merged line's weight lives on the line above, so its count must not
        work out a weight of its own. */
     if (l.mergedUp) return { ...l, nos, kg: 0 }
+    /* Changing the count on a bill does not move a weight somebody weighed. */
+    if (!autoWeighs) return { ...l, nos }
     return { ...l, nos, kg: p?.kgPerPiece != null ? +(p.kgPerPiece * nos).toFixed(3) : l.kg }
   }))
+
+  /** A weight typed on a bill is what that line is priced on, from then on. */
+  const setKg = (key: string, kg: number) => setLines(ls => ls.map(l =>
+    l.key === key ? { ...l, kg, basis: kg > 0 ? 'kg' : 'nos' } : l))
 
   /** Puts a line on the scale with the one above it, or takes it off again. */
   const toggleMerge = (key: string) => setLines(ls => ls.map(l => {
@@ -549,7 +581,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               <input type="date" className="input w-full" value={theirDate}
                 onChange={e => setTheirDate(e.target.value)} />
             ) : (
-              <input className="input w-full" value={date} readOnly
+              <input className="input w-full" value={fmtDate(date)} readOnly
                 title="Today. A revision carries the day it was revised."
                 style={{ color: 'var(--text-3)' }} />
             )}</div>
@@ -560,7 +592,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 : ['1 day', '2 days', '3 days', '7 days', '15 days', '30 days']}
               className="!w-full" /></div>
           <div><label className="label">{isInvoice ? 'Due on' : 'Valid till'}</label>
-            <input className="input w-full" value={validTill(theDate, days)} readOnly
+            <input className="input w-full" value={fmtDate(validTill(theDate, days))} readOnly
               style={{ color: 'var(--text-3)' }} /></div>
         </div>
 
@@ -742,14 +774,22 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     </td>
                     {showWeight && (
                       <td className="num">
+                        {/* On a bill the weight is typed, so the box is open
+                            whatever the line is priced on — it was greyed out
+                            wherever the master had no weight per piece, which
+                            is every line on a tax invoice now that a bill
+                            works nothing out for itself. Left empty, the line
+                            is priced by the count, which is how clips go. */}
                         <input className="input !w-24 !py-1 text-right tabular-nums !text-xs"
                           value={l.mergedUp ? '' : (l.kg || '')}
-                          placeholder={l.mergedUp ? 'with above' : '0'}
-                          disabled={l.basis === 'nos' || !!l.mergedUp}
+                          placeholder={l.mergedUp ? 'with above' : autoWeighs ? '0' : 'by nos'}
+                          disabled={!!l.mergedUp || (autoWeighs && l.basis === 'nos')}
                           title={l.mergedUp
                             ? 'Weighed together with the line above — that figure covers this one too'
-                            : l.basis === 'nos' ? 'No weight per piece in your books — priced per piece' : undefined}
-                          onChange={e => patch(l.key, { kg: Number(e.target.value) || 0 })} />
+                            : autoWeighs && l.basis === 'nos'
+                            ? 'No weight per piece in your books — priced per piece'
+                            : 'Leave it empty and this line is priced by the count'}
+                          onChange={e => setKg(l.key, Number(e.target.value) || 0)} />
                         {i > 0 && isAluminium(l) && (
                           <label className="text-[10px] flex items-center gap-1 justify-end mt-0.5"
                             style={{ color: l.mergedUp ? 'var(--brand)' : 'var(--text-4)' }}
