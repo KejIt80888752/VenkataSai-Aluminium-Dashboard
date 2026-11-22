@@ -14,6 +14,7 @@ import { DEFAULT_TERMS, termsFromText, termsToText } from '@/data/terms'
 import { useProductImages, setProductImage, removeProductImage } from '@/lib/productimages'
 import { hsnFor } from '@/data/hsn'
 import { ColourPicker } from '@/components/ColourPicker'
+import { weightOpinions, outOfTolerance, TOLERANCE_PCT } from '@/lib/weightcheck'
 import { UNCOATED, firstCoated } from '@/data/colours'
 
 /* ── Raising a quotation or a proforma ─────────────────────────────────────
@@ -402,7 +403,7 @@ const blankLine = (colour = UNCOATED): BuiltLine => ({
   basis: 'nos', nos: 0, kg: 0, rate: 0, gst: 18, colour,
 })
 
-export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial, parties = [], owner = DEFAULT_OWNER }: {
+export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial, parties = [], owner = DEFAULT_OWNER, carriedFrom = null }: {
   open: boolean
   onClose: () => void
   onSave: (doc: BuiltDoc) => void
@@ -416,6 +417,19 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   parties?: string[]
   /** who prepared it — on the document, so it can differ per document */
   owner?: string
+  /* ── Where this one came from ───────────────────────────────────────────
+     Theirs, on 22-11: "when converted from ESTIMATE to TAX INVOICE total tax
+     value should be displayed in a separate tab, and balance after
+     consumption or allocation should be *displayed only*, not on print.
+     Therefore it should match tax value collected on estimate to tax
+     invoice."
+
+     An estimate is often billed in parts, and what matters is that the tax
+     on the bills adds back to the tax on the estimate. So the estimate's
+     own figures travel with the form and sit beside the bill's — on the
+     screen, never on the paper, because they are the shop's working and
+     not the customer's business. */
+  carriedFrom?: { no: string; taxable: number; tax: number } | null
 }) {
   const [date, setDate] = useState(today())
   const [days, setDays] = useState(DEFAULT_VALID_DAYS)
@@ -586,7 +600,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
 
        The rate the sections were actually coated at comes across instead,
        and whoever is raising the bill can type over it. */
-    const forced = COATING_FIXED(kind)
+    /* ── A bill carries one coating figure ────────────────────────────
+       Theirs, on 22-11: "when estimate is converted to tax invoice,
+       individual length rates of powder coating should become cumulative
+       and shown as a single entry." The estimate prices each length; the
+       bill adds them into one. It can still be changed back or taken off
+       — the line is no longer locked. */
+    const forced = kind === 'Tax Invoice'
     setCoatingMode(forced
       ? 'cumulative'
       : initial?.coatingMode ?? DEFAULT_COATING[kind] ?? 'section')
@@ -897,6 +917,39 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
 
   const unpriced = lines.filter(l => l.productId && l.rate <= 0).length
 
+  /* ── What their own records say the lot should weigh ──────────────────
+     Theirs, on 22-11: "weight mismatch alert should come — 3 checks, one
+     from standard weight ranges given, previous purchase DC, and coating
+     weight per kg. Tolerance 2-3%." */
+  const opinions = useMemo(
+    () => weightOpinions(lines, t.kg),
+    [lines, t.kg])
+  const mismatched = outOfTolerance(opinions)
+
+  /* ── A line billed under what it was quoted at ────────────────────────
+     Theirs, on 22-11: on conversion it "should recollect and recommend
+     under value rates, reduction in qty accordingly." A bill is allowed to
+     go out under the estimate — that is what a negotiation is — but nobody
+     should find out about it afterwards. */
+  const quoted = useMemo(() => {
+    const m = new Map<string, { rate: number; nos: number }>()
+    for (const l of initial?.lines ?? []) {
+      if (l.productId) m.set(l.productId, { rate: l.rate, nos: l.nos })
+    }
+    return m
+  }, [initial])
+  const under = (l: BuiltLine) => {
+    const was = quoted.get(l.productId)
+    if (!was || !carriedFrom) return null
+    if (l.rate > 0 && was.rate > 0 && l.rate < was.rate) {
+      return `quoted at ${inr2(was.rate)}`
+    }
+    if (l.nos > 0 && was.nos > 0 && l.nos < was.nos) {
+      return `${was.nos} quoted, ${l.nos} billed`
+    }
+    return null
+  }
+
   /* ── Saving, and saving for later ─────────────────────────────────────
      Theirs, on 21-11: "add a Save as Draft option", and "place Save / Draft
      clearly at the side". A draft is filed like anything else and simply
@@ -957,6 +1010,31 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             {rev > 0 && ' This is a revision: it keeps the number it revises and carries today’s date.'}
           </span>
         </div>
+
+        {carriedFrom && (
+          <div className="rounded-lg p-3 text-[11.5px]"
+            style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+            <p className="font-medium mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--text-1)' }}>
+              <FileText size={13} style={{ color: 'var(--brand)' }} />
+              Carried forward from {carriedFrom.no} — on the screen only, never on the paper
+            </p>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 tabular-nums" style={{ color: 'var(--text-3)' }}>
+              <span>Tax on {carriedFrom.no}: <b>{inr2(carriedFrom.tax)}</b></span>
+              <span>Tax on this bill: <b>{inr2(t.tax)}</b></span>
+              <span style={{
+                color: Math.abs(carriedFrom.tax - t.tax) < 0.5 ? 'var(--green)' : 'var(--amber)',
+              }}>
+                {Math.abs(carriedFrom.tax - t.tax) < 0.5
+                  ? 'Matched in full'
+                  : `${inr2(+(carriedFrom.tax - t.tax).toFixed(2))} still to be billed`}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-1 tabular-nums" style={{ color: 'var(--text-4)' }}>
+              <span>Value on {carriedFrom.no}: {inr2(carriedFrom.taxable)}</span>
+              <span>Value on this bill: {inr2(t.taxable)}</span>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div><label className="label">
@@ -1420,6 +1498,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       {l.recalled && (
                         <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--green)' }}>last rate</p>
                       )}
+                      {under(l) && (
+                        <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--amber)' }}>
+                          {under(l)}
+                        </p>
+                      )}
                     </td>
                     <td className="num">
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
@@ -1493,6 +1576,45 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               </tfoot>
             </table>
           </div>
+          {alu.on && t.kg > 0 && opinions.some(o => o.kg !== null) && (
+            <div className="rounded-lg p-3 mt-2.5 text-[11.5px]"
+              style={{
+                background: mismatched.length
+                  ? 'color-mix(in srgb, var(--amber) 10%, transparent)'
+                  : 'var(--bg-card2)',
+                border: `1px solid ${mismatched.length ? 'var(--amber)' : 'var(--border-2)'}`,
+              }}>
+              <p className="flex items-center gap-1.5 font-medium mb-1.5"
+                style={{ color: mismatched.length ? 'var(--amber)' : 'var(--text-3)' }}>
+                {mismatched.length ? <AlertTriangle size={13} /> : <Info size={13} />}
+                {mismatched.length
+                  ? `${t.kg} kg is outside ${TOLERANCE_PCT}% of ${mismatched.length === 1
+                      ? 'one of your own records' : `${mismatched.length} of your own records`}`
+                  : `${t.kg} kg agrees with your own records, within ${TOLERANCE_PCT}%`}
+              </p>
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                {opinions.map(o => (
+                  <span key={o.source} className="tabular-nums"
+                    style={{
+                      color: o.offPct !== null && Math.abs(o.offPct) > TOLERANCE_PCT
+                        ? 'var(--amber)' : 'var(--text-4)',
+                    }}>
+                    {o.source}:{' '}
+                    {o.kg === null
+                      ? 'nothing on record'
+                      : `${o.kg} kg${o.offPct === null ? ''
+                          : ` · ${o.offPct > 0 ? '+' : ''}${o.offPct}%`}`}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-1.5" style={{ color: 'var(--text-4)' }}>
+                The figure you typed is the figure that goes out. A lot weighed with the
+                coating on it reads heavy; one short of the depot's own figure is worth a
+                second look before the document leaves.
+              </p>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3 mt-2.5">
             <button className="btn-outline" onClick={addLine}>
               <Plus size={14} /> Add a line

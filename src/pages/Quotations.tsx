@@ -159,6 +159,9 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   const [printing, setPrinting] = useState<DocRow | null>(null)
   /** set while a document is being carried forward into a different register */
   const [carryTo, setCarryTo] = useState<Kind | null>(null)
+  /** the document this one is being made out of, for the figures beside it */
+  const [carriedFrom, setCarriedFrom] =
+    useState<{ no: string; taxable: number; tax: number } | null>(null)
 
   /* The series are kept apart so their numbering cannot collide. Tax invoices
      share the billing screen's own store, so a bill raised here is the same
@@ -227,8 +230,10 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
     list.filter(y => baseDocNo(y.no) === baseDocNo(x.no))
       .sort((a, b) => revisionNumber(b.no) - revisionNumber(a.no))
 
-  const startNew = () =>
+  const startNew = () => {
+    setCarriedFrom(null)
     setBuilding({ no: nextDocNo(SERIES[kind].prefix, list.map(x => x.no)), from: null })
+  }
 
   /* ── Editing ──────────────────────────────────────────────────────────
      A quotation that has been sent is not changed, it is revised: the number
@@ -236,8 +241,10 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
      are holding. A tax invoice is not revised at all — theirs, on 20-11:
      "if invoice revised, need not add R1, that implies only to quotation."
      A bill is a bill; it is corrected or it is cancelled. */
-  const startRevision = (x: DocRow) =>
+  const startRevision = (x: DocRow) => {
+    setCarriedFrom(null)
     setBuilding({ no: isInvoiceKind ? x.no : revisionOf(x.no), from: toBuilt(x) })
+  }
 
   /** Taking a document off the register it actually lives in. */
   const removeDoc = (no: string) => (isInvoiceKind ? invs : crud).remove(no)
@@ -277,6 +284,9 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
     const base = toBuilt(x)
     const lines = base.lines ?? []
     setCarryTo(to)
+    /* What it was quoted at, so the bill can be read against it — theirs,
+       on 22-11. It is shown on the form and never printed. */
+    setCarriedFrom({ no: x.no, taxable: x.taxable, tax: x.tax })
     setBuilding({
       no: nextDocNo(SERIES[to].prefix, existing),
       from: {
@@ -302,6 +312,7 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
     else (target === 'Quotation' ? quotes : target === 'Estimate' ? ests : pis)
       .add(asQuotation(d, target, d.status === 'Draft' ? 'Draft' : 'Sent'))
     setBuilding(null)
+    setCarriedFrom(null)
     if (carryTo) { setCarryTo(null); setKind(carryTo) }
   }
 
@@ -419,9 +430,11 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
           kind={kind} onClose={() => setPrinting(null)} />
       )}
 
-      <DocBuilder open={!!building} onClose={() => { setBuilding(null); setCarryTo(null) }}
+      <DocBuilder open={!!building}
+        onClose={() => { setBuilding(null); setCarryTo(null); setCarriedFrom(null) }}
         kind={target}
         docNo={building?.no ?? ''} initial={building?.from} parties={parties}
+        carriedFrom={carriedFrom}
         onSave={fileDoc} />
 
       <Modal open={!!sel} onClose={() => setSel(null)}
