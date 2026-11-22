@@ -50,7 +50,9 @@ export const baseDocNo = (no: string) => no.replace(/-R\d+$/, '')
 export const today = () => new Date().toISOString().slice(0, 10)
 
 /** The shop's default validity. Changeable on the document. */
-export const DEFAULT_VALID_DAYS = 7
+/* Theirs, on 22-11: "keep valid for 1 day default." An aluminium price
+   moves with LME and a rate held open for a week is a rate given away. */
+export const DEFAULT_VALID_DAYS = 1
 
 export function validTill(from: string, days = DEFAULT_VALID_DAYS): string {
   const d = new Date(from + 'T00:00:00')

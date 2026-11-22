@@ -66,9 +66,13 @@ const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
   }
 })
 
+/** Every kilo on the document: the figure it was told, or the one it worked out. */
+export const metalKgOf = (d: BuiltDoc) =>
+  d.metalKg != null ? d.metalKg : totalKgOf(d.lines)
+
 /** What the one coating charge is worked out on — kilos, or pieces. */
 export const coatingBaseOf = (d: BuiltDoc) =>
-  d.coatingUnit === 'nos' ? totalNosOf(d.lines) : totalKgOf(d.lines)
+  d.coatingUnit === 'nos' ? totalNosOf(d.lines) : metalKgOf(d)
 
 const linesOf = (d: BuiltDoc): Line[] => {
   if (!d.aluminium?.on) return sectionLines(d)
@@ -80,9 +84,15 @@ const linesOf = (d: BuiltDoc): Line[] => {
      different... I need option to select sections and charge differently". */
   const metal = d.lines.filter(isAluminium)
   const byRate = new Map<number, number>()
-  for (const l of metal) {
-    const rate = l.metalRate && l.metalRate > 0 ? l.metalRate : d.aluminium.rate
-    byRate.set(rate, +((byRate.get(rate) ?? 0) + l.kg).toFixed(3))
+  if (d.metalKg != null) {
+    /* One weight, read off a scale and typed against the metal — theirs,
+       on 22-11: "we mix sections and weigh". There is nothing to group. */
+    byRate.set(d.aluminium.rate, d.metalKg)
+  } else {
+    for (const l of metal) {
+      const rate = l.metalRate && l.metalRate > 0 ? l.metalRate : d.aluminium.rate
+      byRate.set(rate, +((byRate.get(rate) ?? 0) + l.kg).toFixed(3))
+    }
   }
   const several = byRate.size > 1
 
@@ -121,7 +131,11 @@ const linesOf = (d: BuiltDoc): Line[] => {
        works out to a kilo, so a customer can still check it. */
     const unit = d.coatingUnit === 'nos' ? 'nos' : 'kg'
     const qty = coatingBaseOf(d)
-    const charged = +metal.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+    /* The sections' own charges added up; or, on a bill raised on the metal
+       alone, the standing rate against the weight. */
+    const charged = metal.length
+      ? +metal.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+      : +(qty * (d.coatingRate ?? 0)).toFixed(2)
     const rate = qty > 0 ? +(charged / qty).toFixed(2) : (d.coatingRate ?? 0)
     /* The slab most of the coated sections are at, since the charge covers
        them all as one supply. */
@@ -133,7 +147,7 @@ const linesOf = (d: BuiltDoc): Line[] => {
       code: '', name: 'POWDER COATING', hsn: hsnFor('coating'),
       unit, qty, rate,
       gst: slab, amount: charged, cost: 0,
-      kg: totalKgOf(d.lines), basis: unit === 'kg' ? 'kg' : 'nos',
+      kg: metalKgOf(d), basis: unit === 'kg' ? 'kg' : 'nos',
       group: 'coating',
     })
   }

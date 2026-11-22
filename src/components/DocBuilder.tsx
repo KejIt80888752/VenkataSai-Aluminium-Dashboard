@@ -132,15 +132,22 @@ export type CoatingMode = 'section' | 'cumulative'
    it as the specification. Section-by-section is still here for anybody who
    wants it, but nothing opens on it.                                     */
 export const DEFAULT_COATING: Record<string, CoatingMode> = {
-  'Estimate':         'cumulative',
+  /* Theirs, on 22-11: "cumulative of powder coating is working but this is
+     applicable to Quotation only", and "in ESTIMATE per length coating
+     charge should be visible." The estimate is the working paper and shows
+     what each length costs to coat; the quotation is the offer and shows
+     one figure. */
+  'Estimate':         'section',
   'Quotation':        'cumulative',
   'Proforma Invoice': 'cumulative',
   'Tax Invoice':      'cumulative',
   'Purchase Bill':    'section',
 }
 
-/** A tax invoice is cumulative and is not asked about it. */
-export const COATING_FIXED = (kind: string) => kind === 'Tax Invoice'
+/* The coating line can be taken off any document — theirs, on 22-11:
+   "powder coating delete option not working." A bill with no coating on it
+   is an ordinary thing to raise. */
+export const COATING_FIXED = (_kind: string) => false
 
 /** The coating, where it is charged once for the whole lot. */
 export interface CoatingBlock {
@@ -167,6 +174,9 @@ export interface BuiltDoc {
   interState: boolean
   /** the metal, priced once at the top by total weight */
   aluminium: AluminiumBlock
+  /* The one weight, where the document was told it rather than working it
+     out of the sections — every document but the quotation. */
+  metalKg?: number
   /** whether the coating is charged on each section or once for the lot */
   coatingMode: CoatingMode
   /** the one rate, where the lot is charged together */
@@ -202,11 +212,22 @@ export interface BuiltDoc {
  * are counted, never weighed, so folding them in would price handles by the
  * kilo and overstate the metal.
  */
-export const isAluminium = (l: BuiltLine) =>
-  !!l.productId && l.basis === 'kg' && productById(l.productId)?.kind === 'section'
+/* ── What counts as metal ─────────────────────────────────────────────────
+   This used to ask whether the line was priced by the kilo, which is a
+   different question and the wrong one. On an estimate the sections are
+   priced by the length — theirs, on 22-11: "in ESTIMATE per length coating
+   charge should be visible" — and asking the first question put a sixteen
+   foot section in with the handles, charged it as goods, and left it out of
+   the metal and the coating both.
 
-/** A merged line's weight is already inside the figure on the line above. */
-export const weighsOwn = (l: BuiltLine) => isAluminium(l) && !l.mergedUp
+   A section is a section. Whether it carries a weight of its own is a
+   separate matter, and that is what weighsOwn answers.                   */
+export const isAluminium = (l: BuiltLine) =>
+  !!l.productId && productById(l.productId)?.kind === 'section'
+
+/** Carries a weight of its own — not merged up, and actually priced on one. */
+export const weighsOwn = (l: BuiltLine) =>
+  isAluminium(l) && !l.mergedUp && l.basis === 'kg'
 
 export const totalKgOf = (lines: BuiltLine[]) =>
   +lines.filter(weighsOwn).reduce((s, l) => s + l.kg, 0).toFixed(3)
@@ -231,9 +252,20 @@ export function totalsOf(
   lines: BuiltLine[],
   aluminium: AluminiumBlock = { on: false, rate: 0, gst: 18 },
   coatingUnit: 'kg' | 'nos' = 'kg',
+  /* ── One weight for the lot ─────────────────────────────────────────
+     Theirs, on 22-11: "whatever format is given it is asking for
+     individual section weight and it's summing up. We mix sections and
+     weigh." So on every document but the quotation the weight is one
+     figure typed against the metal line, and the sections underneath
+     carry no weight at all. */
+  typedKg?: number,
+  /* The standing coating rate, used only where there are no sections to
+     carry one — a bill raised on the metal alone, which is how they raise
+     most of them: "we don't enter sections in tax invoice." */
+  lotRate = 0,
 ) {
   const picked = lines.filter(l => l.productId)
-  const kg = totalKgOf(picked)
+  const kg = typedKg != null ? typedKg : totalKgOf(picked)
   /** What the one coating charge is worked out on — kilos, or pieces. */
   const coatBase = coatingUnit === 'nos' ? totalNosOf(picked) : kg
 
@@ -244,9 +276,11 @@ export function totalsOf(
   /* Rounded once at the end rather than on every line: rounding each one and
      then adding them put the form a paisa away from the printed document. */
   const metal = aluminium.on
-    ? +picked.filter(weighsOwn)
-        .reduce((s, l) => s + l.kg * (l.metalRate && l.metalRate > 0 ? l.metalRate : aluminium.rate), 0)
-        .toFixed(2)
+    ? (typedKg != null
+        ? +(kg * aluminium.rate).toFixed(2)
+        : +picked.filter(weighsOwn)
+            .reduce((s, l) => s + l.kg * (l.metalRate && l.metalRate > 0 ? l.metalRate : aluminium.rate), 0)
+            .toFixed(2))
     : 0
   /* ── Three things on a sales document, not one ────────────────────────
      The metal, the coating done to it, and everything else the shop sells
@@ -274,7 +308,9 @@ export function totalsOf(
      everywhere else. The money is the same either way, which is the point —
      changing how a document reads should not change what it comes to. */
   const coating = aluminium.on
-    ? +coatedLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+    ? (coatedLines.length
+        ? +coatedLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+        : +(coatBase * lotRate).toFixed(2))
     : 0
 
   /** Sold outright at its own rate, whatever the metal is doing. */
@@ -294,7 +330,9 @@ export function totalsOf(
      Every line carries its own slab now. The metal carries its own as well,
      because it is its own supply at its own HSN. */
   const coatingTax = aluminium.on
-    ? coatedLines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0)
+    ? (coatedLines.length
+        ? coatedLines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0)
+        : coating * (aluminium.gst / 100))
     : 0
 
   /* Everything sold outright pays at its own slab — a hinge is not taxed at
@@ -393,6 +431,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [coatingMode, setCoatingMode] = useState<CoatingMode>('section')
   const [coatingRate, setCoatingRate] = useState(0)
   const [coatingUnit, setCoatingUnit] = useState<'kg' | 'nos'>('kg')
+  /** The one weight, where the document is told it rather than working it out. */
+  const [aluKg, setAluKg] = useState(0)
   const [preparedBy, setPreparedBy] = useState(owner)
   const [terms, setTerms] = useState('')
   const [showTerms, setShowTerms] = useState(false)
@@ -475,6 +515,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      material that has been looked at, and the weight on it is the weight
      somebody read; a quotation is an offer made before any of it exists, so
      the only weight available is the one in their own coating books.     */
+  /* ── Only a quotation works a weight out ──────────────────────────────
+     Theirs, on 22-11. On the quotation: "can display individual items
+     weights (it's assumed not exact, prefed). I will enter manually if
+     weighed separately." On the estimate: "don't display individual items
+     weights", and "we mix sections and weigh". On the tax invoice: "remove
+     individual weight tab, only one weight tab is sufficient for total."
+
+     So the quotation carries a weight on every line, filled in from their
+     coating books and typeable over. Everywhere else there is one weight,
+     typed against the metal, and the sections carry none. */
   const autoWeighs = kind === 'Quotation'
 
   /* ── Sold by weight, even before anybody has weighed it ───────────────
@@ -492,13 +542,22 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      A bill answers no to both, which is what they asked for: clips go in
      as a count at a unit rate, and typing a weight is what turns a line
      into one sold by the kilo.                                         */
-  const weighsByDefault = kind === 'Quotation' || kind === 'Estimate'
-    || kind === 'Proforma Invoice'
+  const weighsByDefault = kind === 'Quotation'
 
   /* The quotation prices in one lump sum, so it carries no weight column.
      Everywhere else the weight is on the line, because somebody has to put
      it there — "a weight field where we enter the weight". */
-  const showWeight = kind !== 'Quotation'
+  /* The weight column on each line belongs to the quotation alone. */
+  const showWeight = kind === 'Quotation'
+  /* ── One weight column, whoever fills it ──────────────────────────────
+     Theirs, on 22-11: "remove individual weight tab, only one weight tab is
+     sufficient for total i.e ALUMINIUM EXTRUDED PROFILES."
+
+     So the column stays wherever the metal is priced at the top — it is
+     where that one figure goes — and on a quotation each line has a box in
+     it as well. Dropping the column outright left the metal line a cell
+     longer than the header and pushed its rate under Coating rate, which
+     is where 265 a kilo for the metal ended up. */
   const [theirNo, setTheirNo] = useState('')
   const [theirDate, setTheirDate] = useState(today())
 
@@ -506,7 +565,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   useEffect(() => {
     if (!open) return
     setDate(today())
-    setDays(DEFAULT_VALID_DAYS)
+    /* A day's validity on an offer — theirs, on 22-11. A bill's box is
+       credit, not validity, and its list starts at nought, so "1 days"
+       matched nothing there and the box fell back to whatever was first. */
+    setDays(kind === 'Tax Invoice' || kind === 'Purchase Bill' ? 0 : DEFAULT_VALID_DAYS)
     setTheirNo(initial?.no ?? '')
     setTheirDate(initial?.date ?? today())
     setClientName(initial?.clientName ?? '')
@@ -537,7 +599,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       || (forced && initial?.coatingMode === 'section' && sectionCoating.length
         ? Math.max(...sectionCoating)
         : 0))
-    setCoatingUnit(initial?.coatingUnit ?? 'kg')
+    /* Per length on an estimate, by the kilo where the lot is one charge —
+       theirs, on 22-11: the coating unit "should be per length or per piece
+       and prefed". */
+    setCoatingUnit(initial?.coatingUnit
+      ?? (kind === 'Estimate' ? 'nos' : 'kg'))
+    /* A carried-forward document brings its weight across; a new one starts
+       at nothing and is told. */
+    setAluKg(kind === 'Quotation' ? 0
+      : +(initial?.lines ?? []).reduce((s, l) => s + (l.kg || 0), 0).toFixed(3))
     setPreparedBy(initial?.owner || owner)
     setTerms(termsToText(initial?.terms?.length ? initial.terms : DEFAULT_TERMS[kind]))
     setShowTerms(false)
@@ -659,8 +729,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     })
   })
 
-  const t = useMemo(() => totalsOf(lines, alu, coatingUnit),
-    [lines, aluOn, aluRate, aluGst, coatingMode, coatingRate, coatingUnit, isPurchase])
+  const t = useMemo(
+    () => totalsOf(lines, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate),
+    [lines, aluOn, aluRate, aluGst, coatingMode, coatingRate, coatingUnit, aluKg, isPurchase])
   const rev = revisionNumber(docNo)
 
   const patch = (key: string, p: Partial<BuiltLine>) =>
@@ -689,7 +760,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     const basis: 'kg' | 'nos' = weighsByDefault && p.kgPerPiece !== null ? 'kg' : 'nos'
     /* What this product went out at last time, and failing that the slab this
        kind of material usually carries. A rate typed once is not typed again. */
-    const seen = recallRate(id)
+    const seen = recallRate(id, clientName)
     /* ── What it starts at ──────────────────────────────────────────────
        Theirs, on 22-11: the coating charge "should be taken from pre-fed
        values", and on the estimate, "coating charges per length come by
@@ -724,7 +795,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     /* Set from what was just created rather than by picking it out of the
        list: the list is state, and state has not caught up with the write
        yet, so picking by id here would look the product up and not find it. */
-    const seen = recallRate(x.id)
+    const seen = recallRate(x.id, clientName)
     setLines(ls => ls.map(l => l.key === key ? {
       ...l,
       productId: x.id, code: x.code, name: x.name,
@@ -772,7 +843,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      lands under Amount: cols - 3, a blank, the figure, and the bin's column.
      It was spanning five whatever the table held, so on a tax invoice the
      totals sat a column away from the lines they were adding up. */
-  const cols = 7 + (showWeight ? 1 : 0) + (alu.on ? 1 : 0)
+  const cols = 7 + (showWeight || alu.on ? 1 : 0) + (alu.on ? 1 : 0)
 
   /* ── Adding a line without the mouse ──────────────────────────────────
      Theirs, on 22-11: "keyboard shortcuts to add line." Ctrl+Enter — or
@@ -804,9 +875,25 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      product in the master has a price yet, so every amount was nought and the
      button never lit. A quotation for material at a rate still to be settled
      is an ordinary thing to send. A party and material on it is the test. */
+  /* A tax invoice is often the metal and nothing else — theirs, on 22-11:
+     "we don't enter sections in tax invoice. Make it manual entry." A
+     weight and a rate against the aluminium line is a document. */
+  const metalAlone = alu.on && !autoWeighs && aluKg > 0 && aluRate > 0
   const ready = clientName.trim() !== ''
     && (!isPurchase || theNo !== '')
-    && lines.some(l => l.productId && (l.basis === 'kg' ? l.kg : l.nos) > 0)
+    && (metalAlone
+      || lines.some(l => l.productId && (l.basis === 'kg' ? l.kg : l.nos) > 0))
+
+  /* ── Anything at all is worth keeping ─────────────────────────────────
+     Theirs, on 22-11: "while raising a new quotation or estimate, when we
+     click outside by mistake it's vanished. Fix it, it should automatically
+     save by default in draft, we will continue from there."
+
+     It was only filing a draft once the document was complete enough to
+     send — a customer and a priced line — so the half-typed ones, which
+     are exactly the ones worth not losing, still went. A product picked or
+     a customer chosen is enough now. */
+  const worthKeeping = clientName.trim() !== '' || lines.some(l => l.productId)
 
   const unpriced = lines.filter(l => l.productId && l.rate <= 0).length
 
@@ -822,16 +909,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       productId: l.productId,
       kind: productOf(l.productId)?.kind ?? '',
       rate: l.rate, gst: l.gst,
-    })))
+    })), clientName)
     onSave({
       no: theNo, date: theDate, validTill: validTill(theDate, days),
       clientName: clientName.trim(), subject: subject.trim(), owner: preparedBy.trim(),
       terms: termsFromText(terms),
       lines: keep, interState, aluminium: alu, coatingMode, coatingRate, coatingUnit,
+      metalKg: autoWeighs ? undefined : aluKg,
       vehicle: vehicle.trim(), ewayBill: ewayBill.trim(), remarks: remarks.trim(),
       shipTo: shipTo.trim(), poNo: poNo.trim(), piNo: piNo.trim(),
       paymentTerms: paymentTerms.trim(),
-      ...totalsOf(keep, alu, coatingUnit),
+      ...totalsOf(keep, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate),
       status,
     })
     onClose()
@@ -847,7 +935,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      nothing worth keeping anyway. */
   const canDraft = !isPurchase && kind !== 'Tax Invoice'
   const leave = () => {
-    if (ready && canDraft) save('Draft')
+    if (worthKeeping && canDraft) save('Draft')
     else onClose()
   }
 
@@ -1031,8 +1119,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     with the narration now. */}
                 <tr><th className="min-w-[18rem]">Product</th><th>Code</th>
                   <th className="num">Qty (nos)</th>
-                  {showWeight && <th className="num">Weight (kg)</th>}
-                  {alu.on && <th className="num">Metal ₹/kg</th>}
+                  {(showWeight || alu.on) && <th className="num">Weight (kg)</th>}
+                  {alu.on && <th className="num">Metal rate ₹/kg</th>}
                   {/* Where the metal is priced at the top, a section's own
                       rate is the coating charge and nothing else, so the
                       column says so rather than leaving it to be worked out
@@ -1069,18 +1157,19 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       {g.nos || '—'}
                     </td>
                     {/* The summed weight, and a box to type one over it. */}
-                    {showWeight ? (
-                      <td className="num">
-                        <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs font-semibold"
-                          value={g.kg} placeholder="total kg"
-                          title="The sections under this, added up. Type a figure and it is spread back over them."
-                          onChange={v => setGroupKg(g, v)} />
-                      </td>
-                    ) : (
-                      <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                        {g.kg} kg
-                      </td>
-                    )}
+                    {/* "We mix sections and weigh" — theirs, on 22-11. On
+                        everything but the quotation this is one figure
+                        somebody read off a scale, typed here and nowhere
+                        else. The quotation works it out of the sections and
+                        lets a typed total be spread back over them. */}
+                    <td className="num">
+                      <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs font-semibold"
+                        value={autoWeighs ? g.kg : aluKg} placeholder="total kg"
+                        title={autoWeighs
+                          ? 'The sections under this, added up. Type a figure and it is spread back over them.'
+                          : 'The weight this lot was weighed at. The sections below carry none of their own.'}
+                        onChange={v => autoWeighs ? setGroupKg(g, v) : setAluKg(v)} />
+                    </td>
                     <td className="num">
                       <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
                         value={g.rate} placeholder="per kg"
@@ -1096,7 +1185,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       )}
                     </td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
-                      {g.kg * g.rate ? inr2(+(g.kg * g.rate).toFixed(2)) : '—'}
+                      {metalGroups.length > 1 && autoWeighs
+                        ? (g.kg * g.rate ? inr2(+(g.kg * g.rate).toFixed(2)) : '—')
+                        : (t.metal ? inr2(t.metal) : '—')}
                     </td>
                     {/* ── The first line, and a way to be rid of it ───────
                         Theirs, on 21-11: "a new quotation opens with one
@@ -1140,10 +1231,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         options={['per kg', 'per piece']}
                         className="!w-[6.5rem] !py-1 !text-[11px] !min-w-0" />
                     </td>
-                    <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {coatingUnit === 'nos' ? `${t.coatBase} nos` : showWeight ? '—' : `${t.kg} kg`}
+                    <td className="num tabular-nums" style={{ color: 'var(--text-4)' }}>
+                      {coatingUnit === 'nos' ? `${t.coatBase} nos` : '—'}
                     </td>
-                    {showWeight && (
+                    {(showWeight || alu.on) && (
                       <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
                         {t.kg} kg
                       </td>
@@ -1250,8 +1341,14 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           style={{ color: 'var(--text-4)' }}>{l.kg} kg</p>
                       )}
                     </td>
-                    {showWeight && (
+                    {(showWeight || alu.on) && (
                       <td className="num">
+                        {!showWeight ? (
+                          <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+                            in the total
+                          </span>
+                        ) : (
+                        <>
                         {/* On a bill the weight is typed, so the box is open
                             whatever the line is priced on — it was greyed out
                             wherever the master had no weight per piece, which
@@ -1278,6 +1375,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                               onChange={() => toggleMerge(l.key)} />
                             weighed above
                           </label>
+                        )}
+                        </>
                         )}
                       </td>
                     )}

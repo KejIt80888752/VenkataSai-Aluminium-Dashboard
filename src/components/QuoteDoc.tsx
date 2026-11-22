@@ -7,6 +7,7 @@ import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
 import { productById } from '@/data/productmaster'
+import type { Line } from '@/data/txns'
 import { imageOf } from '@/lib/productimages'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
 
@@ -44,7 +45,14 @@ export default function QuoteDoc({ doc, kind, onClose }: {
      working paper, so each piece carries its weight and the coating is
      priced on its own line.                                              */
   const lumpSum = kind === 'Quotation'
-  const showsKg = kind === 'Estimate'
+  /* "Don't display individual items weights (it's assumed not exact)" —
+     theirs, on 22-11, about the estimate. The quotation is the one that
+     carries them, because there they are worked out of their own books and
+     the customer is being shown the working. */
+  const showsKg = false
+  /* "HSN code display only for tax invoice only, all other books not
+     required to display" — theirs, on 22-11. */
+  const showsHsn = false
   /* "When printing, show the tax rate as a small symbol (18%, 9%) instead of
      full details" — theirs, on 21-11. It rides beside the amount. */
   const showsSlab = !lumpSum
@@ -110,7 +118,23 @@ export default function QuoteDoc({ doc, kind, onClose }: {
 
      Everywhere else the coating is one figure for the lot and already has
      a line to itself.                                                   */
-  const printed = doc.lines.map(l => ({ l, asCoat: false }))
+  /* ── The order a yard thinks in ───────────────────────────────────────
+     Theirs, on 22-11: "we enter items i.e inventory, with mix of sections,
+     hardware, sheets. It should organise sections first, then sheets, then
+     hardware even though randomly entered."
+
+     The two summary lines keep the head of the document, because they are
+     what is being charged for; the specification under them is sorted. */
+  const RANK: Record<string, number> = { section: 1, sheet: 2, rubber: 3, hardware: 4 }
+  const rankOf = (l: Line) => {
+    if (l.group === 'aluminium') return 0
+    if (l.group === 'coating' && !l.productId) return 0
+    return RANK[productById(l.productId)?.kind ?? ''] ?? 5
+  }
+  const printed = doc.lines
+    .map((l, at) => ({ l, at }))
+    .sort((a, b) => rankOf(a.l) - rankOf(b.l) || a.at - b.at)
+    .map(({ l }) => ({ l }))
 
   const metalLines = doc.lines.filter(l => l.group === 'aluminium')
   const totalQty = metalLines.length
@@ -183,9 +207,10 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         <table className="w-full mt-3 border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              {['#', 'Description of Goods', 'HSN', 'Qty', 'Unit', 'Rate', 'Amount'].map((h, i) => (
+              {['#', 'Description of Goods', ...(showsHsn ? ['HSN'] : []), 'Qty', 'Unit', 'Rate', 'Amount']
+                .map((h, i) => (
                 <th key={h}
-                  className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= 3 ? 'text-right' : 'text-left'}`}>
+                  className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= (showsHsn ? 3 : 2) ? 'text-right' : 'text-left'}`}>
                   {h}
                 </th>
               ))}
@@ -207,6 +232,8 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                  heading's bold capitals, nor lose the weight it was
                  priced on. */
               const summary = metal || (l.group === 'coating' && !l.productId)
+              /** the one coating entry, charged for the lot */
+              const lotCoating = l.group === 'coating' && !l.productId
               return (
               <tr key={`${l.code}-${i}`} className={summary ? 'bg-slate-50' : undefined}>
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
@@ -241,22 +268,31 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                       className="mt-1 w-14 h-14 object-cover rounded border border-slate-200" />
                   ) : null}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>
+                {showsHsn && <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>}
                 {/* The aluminium line already carries every kilo on the
                     document. Repeating it against each section read as the
                     same weight twice — theirs: "displaying double time" — so
                     a section shows the count it was supplied in. */}
+                {/* ── The coating goes out as one lump ──────────────────
+                    Theirs, on 22-11: "don't show weight or nos in Powder
+                    Coating, show 1, Unit: L/S meaning Lumpsum", and "rate
+                    of powder coating should not be visible, let the total
+                    amount reflect". */}
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                  {l.qty.toLocaleString('en-IN')}
+                  {lotCoating ? '1' : l.qty.toLocaleString('en-IN')}
                 </td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
+                <td className="border border-slate-300 px-2 py-1.5 text-right">
+                  {lotCoating ? 'L/S' : l.unit}
+                </td>
                 {/* On a quotation neither of these is printed: the money is
                     one figure at the foot. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
                   {/* A section whose coating has been lifted onto its own
                       line below is specification, not money. Nought rupees
                       printed against it reads as a free supply. */}
-                  {lumpSum || !l.rate ? <span className="text-slate-400">—</span> : inr2(l.rate)}
+                  {lumpSum || lotCoating || !l.rate
+                    ? <span className="text-slate-400">—</span>
+                    : inr2(l.rate)}
                 </td>
                 <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${summary ? 'font-bold' : 'font-medium'}`}>
                   {lumpSum
@@ -273,12 +309,12 @@ export default function QuoteDoc({ doc, kind, onClose }: {
               </tr>
             )})}
             {printed.length === 0 && (
-              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={7}>
+              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={showsHsn ? 7 : 6}>
                 No material on this {kind.toLowerCase()} yet.
               </td></tr>
             )}
             <tr className="bg-slate-50 font-semibold">
-              <td className="border border-slate-300 px-2 py-1.5" colSpan={3}>
+              <td className="border border-slate-300 px-2 py-1.5" colSpan={showsHsn ? 3 : 2}>
                 {lumpSum ? 'Lump Sum Value' : 'Total'}
               </td>
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
@@ -287,6 +323,33 @@ export default function QuoteDoc({ doc, kind, onClose }: {
               <td className="border border-slate-300 px-2 py-1.5" colSpan={2} />
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(doc.taxable)}</td>
             </tr>
+            {/* ── The tax, in the list rather than beside it ──────────────
+                Theirs, on 22-11: "tax amount should come as an inventory
+                (value of GST) should be visible." It is a line of the
+                document like any other, and it was only ever in the little
+                table off to the side. */}
+            {showTax && doc.tax > 0 && (
+              <tr>
+                <td className="border border-slate-300 px-2 py-1.5" colSpan={showsHsn ? 3 : 2}>
+                  Value of GST
+                </td>
+                <td className="border border-slate-300 px-2 py-1.5" colSpan={3} />
+                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                  {inr2(doc.tax)}
+                </td>
+              </tr>
+            )}
+            {showTax && doc.tax > 0 && (
+              <tr className="bg-slate-50 font-bold">
+                <td className="border border-slate-300 px-2 py-1.5" colSpan={showsHsn ? 3 : 2}>
+                  Total with GST
+                </td>
+                <td className="border border-slate-300 px-2 py-1.5" colSpan={3} />
+                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                  {inr2(doc.total)}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
 

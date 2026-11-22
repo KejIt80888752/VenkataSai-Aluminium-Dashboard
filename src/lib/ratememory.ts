@@ -32,16 +32,25 @@ interface Memory {
   byProduct: Record<string, Remembered>
   /** by kind of material — the slab, where the product itself is new */
   byKind: Record<string, number>
+  /* ── What this customer was charged ─────────────────────────────────────
+     Theirs, on 22-11: "in each section it should remember previous charged
+     rate as per customer."
+
+     Which is how a trade counter actually works. A builder who takes forty
+     tonnes a year is not quoted what a one-off fabricator is quoted, and the
+     man at the counter is expected to remember that. Keyed by the customer's
+     name and the product, it is tried before the general figure. */
+  byCustomer: Record<string, Record<string, Remembered>>
 }
 
-const empty = (): Memory => ({ byProduct: {}, byKind: {} })
+const empty = (): Memory => ({ byProduct: {}, byKind: {}, byCustomer: {} })
 
 function read(): Memory {
   try {
     const raw = localStorage.getItem(KEY)
     if (!raw) return empty()
     const p = JSON.parse(raw)
-    return { byProduct: p.byProduct ?? {}, byKind: p.byKind ?? {} }
+    return { byProduct: p.byProduct ?? {}, byKind: p.byKind ?? {}, byCustomer: p.byCustomer ?? {} }
   } catch { return empty() }
 }
 
@@ -49,9 +58,26 @@ function write(m: Memory) {
   try { localStorage.setItem(KEY, JSON.stringify(m)) } catch { /* blocked or full */ }
 }
 
-/** What this product went out at last, if it ever has. */
-export function recallRate(productId: string): Remembered | undefined {
-  return productId ? read().byProduct[productId] : undefined
+/** The key a customer is remembered under — their name, however typed. */
+const whose = (customer?: string) => (customer || '').trim().toLowerCase()
+
+/**
+ * What this product went out at last.
+ *
+ * This customer's own last rate first, where there is one, because that is
+ * the figure they will argue from; then the general one.
+ */
+export function recallRate(productId: string, customer?: string): Remembered | undefined {
+  if (!productId) return undefined
+  const m = read()
+  const mine = whose(customer) ? m.byCustomer[whose(customer)]?.[productId] : undefined
+  return mine ?? m.byProduct[productId]
+}
+
+/** True where the figure came from this customer's own history. */
+export function recalledFromCustomer(productId: string, customer?: string): boolean {
+  if (!productId || !whose(customer)) return false
+  return !!read().byCustomer[whose(customer)]?.[productId]
 }
 
 /** The slab this kind of material usually carries. */
@@ -69,12 +95,20 @@ export function remember(productId: string, kind: string, rate: number, gst: num
 }
 
 /** Remembers a whole document in one write. */
-export function rememberAll(lines: { productId: string; kind: string; rate: number; gst: number }[]) {
+export function rememberAll(
+  lines: { productId: string; kind: string; rate: number; gst: number }[],
+  customer?: string,
+) {
   const m = read()
   const at = new Date().toISOString().slice(0, 10)
+  const who = whose(customer)
+  if (who && !m.byCustomer[who]) m.byCustomer[who] = {}
   for (const l of lines) {
     if (!l.productId) continue
-    if (l.rate > 0) m.byProduct[l.productId] = { rate: l.rate, gst: l.gst, at }
+    if (l.rate > 0) {
+      m.byProduct[l.productId] = { rate: l.rate, gst: l.gst, at }
+      if (who) m.byCustomer[who][l.productId] = { rate: l.rate, gst: l.gst, at }
+    }
     if (l.kind) m.byKind[l.kind] = l.gst
   }
   write(m)
