@@ -155,7 +155,8 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('All Status')
   const [sel, setSel] = useState<DocRow | null>(null)
-  const [building, setBuilding] = useState<{ no: string; from: Partial<BuiltDoc> | null } | null>(null)
+  const [building, setBuilding] = useState<
+    { no: string; from: Partial<BuiltDoc> | null; replacing?: string | null } | null>(null)
   const [printing, setPrinting] = useState<DocRow | null>(null)
   /** set while a document is being carried forward into a different register */
   const [carryTo, setCarryTo] = useState<Kind | null>(null)
@@ -241,9 +242,23 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
      are holding. A tax invoice is not revised at all — theirs, on 20-11:
      "if invoice revised, need not add R1, that implies only to quotation."
      A bill is a bill; it is corrected or it is cancelled. */
+  /* ── A draft is continued, not revised ────────────────────────────────
+     Theirs, on 22-11: "it should automatically save by default in draft, we
+     will continue from there and then it should move to respective books."
+
+     A draft was never sent, so there is nothing to revise and no customer
+     holding an earlier version. Opening one picks up exactly where it was
+     left, under its own number, and filing it replaces the draft rather
+     than leaving a dead one behind it. A document that has gone out is a
+     different matter and still takes R1, R2. */
   const startRevision = (x: DocRow) => {
     setCarriedFrom(null)
-    setBuilding({ no: isInvoiceKind ? x.no : revisionOf(x.no), from: toBuilt(x) })
+    const draft = x.status === 'Draft'
+    setBuilding({
+      no: draft || isInvoiceKind ? x.no : revisionOf(x.no),
+      from: toBuilt(x),
+      replacing: draft ? x.no : null,
+    })
   }
 
   /** Taking a document off the register it actually lives in. */
@@ -308,9 +323,17 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
   const target = carryTo ?? kind
 
   const fileDoc = (d: BuiltDoc) => {
-    if (target === 'Tax Invoice') invs.add(asInvoice(d))
-    else (target === 'Quotation' ? quotes : target === 'Estimate' ? ests : pis)
-      .add(asQuotation(d, target, d.status === 'Draft' ? 'Draft' : 'Sent'))
+    /* The draft this one grew out of goes in the same write, so the
+       register carries the document and not both halves of it. */
+    const over = building?.replacing ?? null
+    if (target === 'Tax Invoice') {
+      const rec = asInvoice(d)
+      over ? invs.replace(over, rec) : invs.add(rec)
+    } else {
+      const reg = target === 'Quotation' ? quotes : target === 'Estimate' ? ests : pis
+      const rec = asQuotation(d, target, d.status === 'Draft' ? 'Draft' : 'Sent')
+      over ? reg.replace(over, rec) : reg.add(rec)
+    }
     setBuilding(null)
     setCarriedFrom(null)
     if (carryTo) { setCarryTo(null); setKind(carryTo) }

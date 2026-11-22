@@ -35,6 +35,12 @@ export interface Crud<T> {
   addMany: (recs: T[]) => void
   update: (id: string, patch: Partial<T>) => void
   remove: (id: string) => void
+  /* ── Out with one, in with the other, in a single write ───────────────
+     Adding a record and removing another in the same breath did not work:
+     both read the same unchanged overlay and the second wrote over the
+     first, so a draft finished and sent left the draft sitting beside the
+     document it had become. This does both in one write. */
+  replace: (id: string, rec: T) => void
   restore: () => void
   isNew: (id: string) => boolean
   isEdited: (id: string) => boolean
@@ -74,6 +80,9 @@ export function useCrud<T>(collection: string, seed: T[], idOf: (r: T) => string
     remove:  id => addedIds.has(id)
       ? save({ ...o, added: o.added.filter(r => idOf(r) !== id) })
       : save({ ...o, deleted: [...o.deleted, id] }),
+    replace: (id, rec) => addedIds.has(id)
+      ? save({ ...o, added: [rec, ...o.added.filter(r => idOf(r) !== id)] })
+      : save({ ...o, added: [rec, ...o.added], deleted: [...o.deleted, id] }),
     restore: () => save(empty<T>()),
     isNew:    id => addedIds.has(id),
     isEdited: id => id in o.edited,
