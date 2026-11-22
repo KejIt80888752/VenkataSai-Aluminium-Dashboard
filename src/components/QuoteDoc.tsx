@@ -7,7 +7,6 @@ import { inr2, fmtDate } from '@/lib/utils'
 import type { Quotation } from '@/data/txns'
 import { DEFAULT_TERMS } from '@/data/terms'
 import { productById } from '@/data/productmaster'
-import type { Line } from '@/data/txns'
 import { imageOf } from '@/lib/productimages'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
 
@@ -44,7 +43,12 @@ export default function QuoteDoc({ doc, kind, onClose }: {
      The estimate is the opposite document and keeps everything: it is the
      working paper, so each piece carries its weight and the coating is
      priced on its own line.                                              */
-  const lumpSum = kind === 'Quotation'
+  /* ── Only the coating is one figure ───────────────────────────────────
+     Theirs, on 22-11: "we said cumulative single entry required only for
+     Powder Coating, not for all. Weight, hardware etc are displayed as it
+     is." The quotation was printing every rate and every amount blank with
+     one lump sum at the foot, which was more than they asked for. */
+  const lumpSum = false
   /* "Don't display individual items weights (it's assumed not exact)" —
      theirs, on 22-11, about the estimate. The quotation is the one that
      carries them, because there they are worked out of their own books and
@@ -125,21 +129,16 @@ export default function QuoteDoc({ doc, kind, onClose }: {
 
      The two summary lines keep the head of the document, because they are
      what is being charged for; the specification under them is sorted. */
-  const RANK: Record<string, number> = { section: 1, sheet: 2, rubber: 3, hardware: 4 }
-  const rankOf = (l: Line) => {
-    if (l.group === 'aluminium') return 0
-    if (l.group === 'coating' && !l.productId) return 0
-    return RANK[productById(l.productId)?.kind ?? ''] ?? 5
-  }
-  const printed = doc.lines
-    .map((l, at) => ({ l, at }))
-    .sort((a, b) => rankOf(a.l) - rankOf(b.l) || a.at - b.at)
-    .map(({ l }) => ({ l }))
+  /* The order is settled when the document is built — each metal line with
+     its own sections under it, then everything bought finished. */
+  const printed = doc.lines.map(l => ({ l }))
 
-  const metalLines = doc.lines.filter(l => l.group === 'aluminium')
-  const totalQty = metalLines.length
-    ? +metalLines.reduce((s, l) => s + l.qty, 0).toFixed(3)
-    : doc.lines.reduce((s, l) => s + l.qty, 0)
+  /* Lengths of aluminium on the document — the sections, counted, with the
+     metal and coating summaries and the hardware left out. */
+  const sectionPieces = doc.lines
+    .filter(l => l.productId && productById(l.productId)?.kind === 'section')
+    .reduce((s, l) => s + (l.nos ?? l.qty ?? 0), 0)
+
 
   return createPortal(
     <div className="print-modal-overlay fixed inset-0 z-[60] bg-black/50 overflow-y-auto p-4" onClick={onClose}>
@@ -207,13 +206,17 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         <table className="w-full mt-3 border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              {['#', 'Description of Goods', ...(showsHsn ? ['HSN'] : []), 'Qty', 'Unit', 'Rate', 'Amount']
-                .map((h, i) => (
-                <th key={h}
-                  className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= (showsHsn ? 3 : 2) ? 'text-right' : 'text-left'}`}>
-                  {h}
-                </th>
-              ))}
+              {[...(showsPhoto ? ['Image'] : []), '#', 'Description of Goods',
+                ...(showsHsn ? ['HSN'] : []), 'Qty', 'Unit', 'Rate', 'Amount']
+                .map((h, i) => {
+                  const firstNum = (showsPhoto ? 1 : 0) + (showsHsn ? 3 : 2)
+                  return (
+                    <th key={h}
+                      className={`border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ${i >= firstNum ? 'text-right' : 'text-left'}`}>
+                      {h}
+                    </th>
+                  )
+                })}
             </tr>
           </thead>
           <tbody>
@@ -236,6 +239,21 @@ export default function QuoteDoc({ doc, kind, onClose }: {
               const lotCoating = l.group === 'coating' && !l.productId
               return (
               <tr key={`${l.code}-${i}`} className={summary ? 'bg-slate-50' : undefined}>
+                {/* ── The picture, in a column of its own ────────────────
+                    Theirs, on 22-11: "images should come in a separate
+                    column and the image should adjust." Set against the
+                    description it pushed the text about; given its own
+                    narrow column it sits square and the words stay put. */}
+                {showsPhoto && (
+                  <td className="border border-slate-300 px-1 py-1 align-middle text-center">
+                    {imageOf(l.productId) ? (
+                      <img src={imageOf(l.productId)} alt=""
+                        className="w-12 h-12 object-contain mx-auto" />
+                    ) : (
+                      <span className="text-slate-300 text-[10px]">—</span>
+                    )}
+                  </td>
+                )}
                 <td className="border border-slate-300 px-2 py-1.5">{i + 1}</td>
                 <td className="border border-slate-300 px-2 py-1.5">
                   <span className={summary ? 'font-bold text-slate-900 uppercase tracking-wide' : 'font-medium text-slate-900'}>
@@ -263,10 +281,7 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                   {l.narration ? (
                     <span className="block text-[10px] text-slate-500 italic">{l.narration}</span>
                   ) : null}
-                  {showsPhoto && imageOf(l.productId) ? (
-                    <img src={imageOf(l.productId)} alt=""
-                      className="mt-1 w-14 h-14 object-cover rounded border border-slate-200" />
-                  ) : null}
+
                 </td>
                 {showsHsn && <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>}
                 {/* The aluminium line already carries every kilo on the
@@ -309,16 +324,22 @@ export default function QuoteDoc({ doc, kind, onClose }: {
               </tr>
             )})}
             {printed.length === 0 && (
-              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={showsHsn ? 7 : 6}>
+              <tr><td className="border border-slate-300 px-2 py-3 text-slate-500" colSpan={(showsPhoto ? 1 : 0) + (showsHsn ? 7 : 6)}>
                 No material on this {kind.toLowerCase()} yet.
               </td></tr>
             )}
             <tr className="bg-slate-50 font-semibold">
-              <td className="border border-slate-300 px-2 py-1.5" colSpan={showsHsn ? 3 : 2}>
-                {lumpSum ? 'Lump Sum Value' : 'Total'}
+              <td className="border border-slate-300 px-2 py-1.5" colSpan={(showsPhoto ? 1 : 0) + (showsHsn ? 3 : 2)}>
+                Total
               </td>
+              {/* ── What the total counts ────────────────────────────────
+                  Theirs, on 22-11: "in Total, let it represent only total
+                  number of Aluminium sections and length items — hardware
+                  not required like rubber etc, weight not required." So it
+                  is a count of lengths of aluminium: what went on the
+                  lorry, not what it weighed and not the handles. */}
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                {lumpSum ? '' : totalQty.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
+                {sectionPieces ? sectionPieces.toLocaleString('en-IN') : ''}
               </td>
               <td className="border border-slate-300 px-2 py-1.5" colSpan={2} />
               <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(doc.taxable)}</td>
@@ -330,8 +351,8 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 table off to the side. */}
             {showTax && doc.tax > 0 && (
               <tr>
-                <td className="border border-slate-300 px-2 py-1.5" colSpan={showsHsn ? 3 : 2}>
-                  Value of GST
+                <td className="border border-slate-300 px-2 py-1.5" colSpan={(showsPhoto ? 1 : 0) + (showsHsn ? 3 : 2)}>
+                  Tax
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5" colSpan={3} />
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
@@ -341,8 +362,8 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             )}
             {showTax && doc.tax > 0 && (
               <tr className="bg-slate-50 font-bold">
-                <td className="border border-slate-300 px-2 py-1.5" colSpan={showsHsn ? 3 : 2}>
-                  Total with GST
+                <td className="border border-slate-300 px-2 py-1.5" colSpan={(showsPhoto ? 1 : 0) + (showsHsn ? 3 : 2)}>
+                  Grand Total
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5" colSpan={3} />
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
@@ -372,20 +393,12 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             carries the account to pay into. Printing the account number on
             a document nobody is meant to pay against is how a shop's
             details end up where they should not be. */}
-        <div className="grid grid-cols-2 gap-4 mt-3">
-          <div className="text-[11px]">
-            <p className="text-slate-600">GSTIN: {COMPANY.gstin}</p>
-          </div>
-          <table className="w-full border-collapse text-[11px] self-start">
-            <tbody>
-              {/* With the tax hidden only the one figure goes out, which is
-                  the figure the customer is being asked to agree to. */}
-              {showTax && <Total k={lumpSum ? 'Lump Sum Value' : 'Taxable Value'} v={inr2(doc.taxable)} />}
-              {showTax && <Total k="GST" v={inr2(doc.tax)} />}
-              {/* "Remove inclusive of GST" — theirs, on 21-11 at 23:18. */}
-              <Total k="Total" v={inr2(doc.total)} bold />
-            </tbody>
-          </table>
+        {/* ── No second set of totals ─────────────────────────────────
+            Theirs, on 22-11: "remove small box below (taxable value, GST,
+            total)." The same three figures are the last three lines of the
+            table now, which is where a reader looks for them. */}
+        <div className="mt-3 text-[11px]">
+          <p className="text-slate-600">GSTIN: {COMPANY.gstin}</p>
         </div>
 
         <div className="mt-4 pt-3 border-t border-slate-300 grid grid-cols-2 gap-4">
@@ -430,9 +443,3 @@ const Meta = ({ k, v, bold }: { k: string; v: string; bold?: boolean }) => (
   </p>
 )
 
-const Total = ({ k, v, bold }: { k: string; v: string; bold?: boolean }) => (
-  <tr>
-    <td className={`border border-slate-300 px-2 py-1 ${bold ? 'font-bold' : ''}`}>{k}</td>
-    <td className={`border border-slate-300 px-2 py-1 text-right tabular-nums ${bold ? 'font-bold' : ''}`}>{v}</td>
-  </tr>
-)

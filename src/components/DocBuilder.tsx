@@ -14,7 +14,7 @@ import { DEFAULT_TERMS, termsFromText, termsToText } from '@/data/terms'
 import { useProductImages, setProductImage, removeProductImage } from '@/lib/productimages'
 import { hsnFor } from '@/data/hsn'
 import { ColourPicker } from '@/components/ColourPicker'
-import { weightOpinions, outOfTolerance, TOLERANCE_PCT } from '@/lib/weightcheck'
+import { weightOpinions, toleranceBand, TOLERANCE_PCT } from '@/lib/weightcheck'
 import { UNCOATED, firstCoated } from '@/data/colours'
 
 /* ── Raising a quotation or a proforma ─────────────────────────────────────
@@ -107,7 +107,9 @@ export interface AluminiumBlock {
   gst: number
 }
 
-export type CoatingMode = 'section' | 'cumulative'
+/* 'off' is theirs, on 22-11: a bill opens without a coating line at all,
+   and it comes back the moment somebody asks for one. */
+export type CoatingMode = 'section' | 'cumulative' | 'off'
 
 /* ── How each document charges the coating ─────────────────────────────────
    Theirs, on 20-11:
@@ -178,6 +180,14 @@ export interface BuiltDoc {
   /* The one weight, where the document was told it rather than working it
      out of the sections — every document but the quotation. */
   metalKg?: number
+  /* ── The metal, a line for each rate it is sold at ──────────────────────
+     Theirs, on 22-11: "you have given rate tab for each section; when we
+     enter a different rate, how will it account for, without having a
+     separate ALUMINIUM EXTRUDED PROFILES?" It will not, and that was the
+     hole: one typed weight was being priced at one rate however many rates
+     the sections carried. Each rate is its own block now, with its own
+     weight against it, and the document carries a line for each. */
+  metalBlocks?: { rate: number; kg: number; gst: number }[]
   /** whether the coating is charged on each section or once for the lot */
   coatingMode: CoatingMode
   /** the one rate, where the lot is charged together */
@@ -264,6 +274,9 @@ export function totalsOf(
      carry one — a bill raised on the metal alone, which is how they raise
      most of them: "we don't enter sections in tax invoice." */
   lotRate = 0,
+  /* What the metal comes to across every rate on the document, where there
+     is more than one of them. */
+  typedMetal?: number,
 ) {
   const picked = lines.filter(l => l.productId)
   const kg = typedKg != null ? typedKg : totalKgOf(picked)
@@ -277,7 +290,9 @@ export function totalsOf(
   /* Rounded once at the end rather than on every line: rounding each one and
      then adding them put the form a paisa away from the printed document. */
   const metal = aluminium.on
-    ? (typedKg != null
+    ? (typedMetal != null
+        ? typedMetal
+        : typedKg != null
         ? +(kg * aluminium.rate).toFixed(2)
         : +picked.filter(weighsOwn)
             .reduce((s, l) => s + l.kg * (l.metalRate && l.metalRate > 0 ? l.metalRate : aluminium.rate), 0)
@@ -445,8 +460,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [coatingMode, setCoatingMode] = useState<CoatingMode>('section')
   const [coatingRate, setCoatingRate] = useState(0)
   const [coatingUnit, setCoatingUnit] = useState<'kg' | 'nos'>('kg')
-  /** The one weight, where the document is told it rather than working it out. */
-  const [aluKg, setAluKg] = useState(0)
+  /* ── A weight for each rate ───────────────────────────────────────────
+     Keyed by the rate a kilo, because that is what tells one block of metal
+     from another: the eighty-five millimetre series at three-ten and the
+     rest at two-fifty are two lines, two weights and two amounts. */
+  const [aluKgBy, setAluKgBy] = useState<Record<string, number>>({})
+  const setAluKg = (v: number) => setAluKgBy({ [String(aluRate)]: v })
+  const aluKg = useMemo(
+    () => +Object.values(aluKgBy).reduce((s, v) => s + v, 0).toFixed(3),
+    [aluKgBy])
   const [preparedBy, setPreparedBy] = useState(owner)
   const [terms, setTerms] = useState('')
   const [showTerms, setShowTerms] = useState(false)
@@ -607,8 +629,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
        bill adds them into one. It can still be changed back or taken off
        — the line is no longer locked. */
     const forced = kind === 'Tax Invoice'
+    /* ── A bill opens with the metal and nothing else ──────────────────
+       Theirs, on 22-11: "default Powder Coating remove, only ALUMINIUM
+       EXTRUDED PROFILES." Most bills are for metal that was coated weeks
+       ago and billed then; the coating line is added when there is a
+       coating to charge, by setting it to one entry above. */
     setCoatingMode(forced
-      ? 'cumulative'
+      ? (initial ? 'cumulative' : 'off')
       : initial?.coatingMode ?? DEFAULT_COATING[kind] ?? 'section')
     /* Only a coated section's rate is a coating rate. A handle at 55 a
        piece is sold outright and has nothing to do with the coater. */
@@ -626,8 +653,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       ?? (kind === 'Estimate' ? 'nos' : 'kg'))
     /* A carried-forward document brings its weight across; a new one starts
        at nothing and is told. */
-    setAluKg(kind === 'Quotation' ? 0
-      : +(initial?.lines ?? []).reduce((s, l) => s + (l.kg || 0), 0).toFixed(3))
+    /* The weight the document was told, where it was told one. A quotation
+       works its own out of the sections and keeps none. */
+    setAluKgBy(kind === 'Quotation'
+      ? {}
+      : initial?.metalBlocks?.length
+        ? Object.fromEntries(initial.metalBlocks.map(b => [String(b.rate), b.kg]))
+        : {
+            [String(initial?.aluminium?.rate ?? 0)]:
+              initial?.metalKg
+                ?? +(initial?.lines ?? []).reduce((s, l) => s + (l.kg || 0), 0).toFixed(3),
+          })
     setPreparedBy(initial?.owner || owner)
     setTerms(termsToText(initial?.terms?.length ? initial.terms : DEFAULT_TERMS[kind]))
     setShowTerms(false)
@@ -691,6 +727,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       at.own = at.own && own
       g.set(r, at)
     }
+    /* Where the weight is typed rather than worked out, it belongs to the
+       rate it was typed against — not to whatever the sections add up to. */
+    if (!autoWeighs) {
+      for (const [r, kg] of Object.entries(aluKgBy)) {
+        const rate = Number(r)
+        const at = g.get(rate) ?? { rate, kg: 0, nos: 0, keys: [], own: rate !== aluRate }
+        at.kg = kg
+        g.set(rate, at)
+      }
+      for (const at of g.values()) at.kg = aluKgBy[String(at.rate)] ?? 0
+    }
     /* The default line is there before a single section is, because that is
        what they open a quotation expecting to see. */
     if (!g.has(aluRate)) g.set(aluRate, { rate: aluRate, kg: 0, nos: 0, keys: [], own: false })
@@ -698,9 +745,11 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     /* The standing rate keeps its line while it is the only one. Once every
        section has been priced somewhere else it is an empty row saying
        nothing, so it goes. */
-    const live = all.filter(x => x.keys.length > 0)
+    /* A block with a weight against it stays even when no section points
+       at it yet — somebody has put the metal on the document. */
+    const live = all.filter(x => x.keys.length > 0 || x.kg > 0)
     return live.length ? live : all
-  }, [lines, aluRate])
+  }, [lines, aluRate, aluKgBy, autoWeighs])
 
   /* ── The standing rate reaches the lines already on the form ──────────
      Theirs, on 22-11: the coating charge "should be taken from pre-fed
@@ -719,6 +768,21 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
 
   /** Changing a group's rate moves every section inside it. */
   const setGroupRate = (g: MetalGroup, rate: number) => {
+    /* ── The weight follows the rate ────────────────────────────────────
+       The weight typed against a block is held under the rate it was typed
+       at, so changing that rate has to carry it across. It did not, and a
+       weight typed before the rate — which is the order anybody works in —
+       was left behind under the old key: 26 kg entered, then 250 a kilo,
+       and the metal came out at nothing. */
+    if (!autoWeighs) {
+      setAluKgBy(prev => {
+        const next = { ...prev }
+        const kg = next[String(g.rate)] ?? 0
+        delete next[String(g.rate)]
+        next[String(rate)] = kg
+        return next
+      })
+    }
     if (!g.own) { setAluRate(rate); return }
     setLines(ls => ls.map(l => g.keys.includes(l.key) ? { ...l, metalRate: rate } : l))
   }
@@ -732,7 +796,12 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      over the sections it covers in the proportion they already stand in —
      equally where nothing has been worked out yet — so every line still
      carries a weight and the total is exactly the figure on the ticket. */
-  const setGroupKg = (g: MetalGroup, total: number) => setLines(ls => {
+  const setGroupKg = (g: MetalGroup, total: number) => {
+    if (!autoWeighs) {
+      setAluKgBy(prev => ({ ...prev, [String(g.rate)]: total }))
+      return
+    }
+    setLines(ls => {
     const inGroup = ls.filter(l => g.keys.includes(l.key))
     if (!inGroup.length) return ls
     /* Spread by the weights already there; failing that by the piece
@@ -747,11 +816,18 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
         : 1 / inGroup.length
       return { ...l, kg: +(total * share).toFixed(3), basis: 'kg' as const }
     })
-  })
+    })
+  }
 
+  const typedMetal = useMemo(
+    () => +metalGroups.reduce((s, g) => s + g.kg * g.rate, 0).toFixed(2),
+    [metalGroups])
   const t = useMemo(
-    () => totalsOf(lines, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate),
-    [lines, aluOn, aluRate, aluGst, coatingMode, coatingRate, coatingUnit, aluKg, isPurchase])
+    () => totalsOf(lines, alu, coatingUnit,
+      autoWeighs ? undefined : aluKg, coatingRate,
+      autoWeighs ? undefined : typedMetal),
+    [lines, aluOn, aluRate, aluGst, coatingMode, coatingRate, coatingUnit,
+      aluKg, typedMetal, isPurchase])
   const rev = revisionNumber(docNo)
 
   const patch = (key: string, p: Partial<BuiltLine>) =>
@@ -883,6 +959,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault()
       addLine()
+      return
+    }
+    /* ── Raising it without the mouse ──────────────────────────────────
+       Theirs, on 22-11: "shortcut key to raise bill." Ctrl+S, because that
+       is the one everybody's hand already knows, and the browser's own Save
+       is no use inside a form. */
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      e.preventDefault()
+      if (ready) save('Sent')
     }
   }
 
@@ -924,7 +1009,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const opinions = useMemo(
     () => weightOpinions(lines, t.kg),
     [lines, t.kg])
-  const mismatched = outOfTolerance(opinions)
+  const band = useMemo(() => toleranceBand(opinions, t.kg), [opinions, t.kg])
 
   /* ── A line billed under what it was quoted at ────────────────────────
      Theirs, on 22-11: on conversion it "should recollect and recommend
@@ -972,7 +1057,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       vehicle: vehicle.trim(), ewayBill: ewayBill.trim(), remarks: remarks.trim(),
       shipTo: shipTo.trim(), poNo: poNo.trim(), piNo: piNo.trim(),
       paymentTerms: paymentTerms.trim(),
-      ...totalsOf(keep, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate),
+      ...totalsOf(keep, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate,
+        autoWeighs ? undefined : typedMetal),
+      metalBlocks: metalGroups.map(g => ({ rate: g.rate, kg: g.kg, gst: aluGst })),
       status,
     })
     onClose()
@@ -1161,9 +1248,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   Once for the lot
                 </p>
               ) : (
-                <Select value={coatingMode === 'section' ? 'Section by section' : 'Once for the lot'}
-                  onChange={v => setCoatingMode(v.startsWith('Section') ? 'section' : 'cumulative')}
-                  options={['Section by section', 'Once for the lot']} className="min-w-[11rem]" />
+                <Select
+                  value={coatingMode === 'section' ? 'Section by section'
+                    : coatingMode === 'off' ? 'Not charged here'
+                    : 'Once for the lot'}
+                  onChange={v => setCoatingMode(
+                    v.startsWith('Section') ? 'section'
+                    : v.startsWith('Not') ? 'off'
+                    : 'cumulative')}
+                  options={['Section by section', 'Once for the lot', 'Not charged here']}
+                  className="min-w-[11rem]" />
               )}
             </div>
             {metalGroups.length > 1 && (
@@ -1334,9 +1428,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     </td>
                     <td>
                       <button className="btn-ghost !px-1.5 !py-1" style={{ color: 'var(--red)' }}
-                        title="Show the coating against each section instead of as one entry"
-                        onClick={() => setCoatingMode('section')}
-                        disabled={COATING_FIXED(kind)}>
+                        title="Take the coating off this document"
+                        onClick={() => setCoatingMode('off')}>
                         <Trash2 size={13} /></button>
                     </td>
                   </tr>
@@ -1576,41 +1669,33 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               </tfoot>
             </table>
           </div>
-          {alu.on && t.kg > 0 && opinions.some(o => o.kg !== null) && (
+          {alu.on && band && (
             <div className="rounded-lg p-3 mt-2.5 text-[11.5px]"
               style={{
-                background: mismatched.length
-                  ? 'color-mix(in srgb, var(--amber) 10%, transparent)'
-                  : 'var(--bg-card2)',
-                border: `1px solid ${mismatched.length ? 'var(--amber)' : 'var(--border-2)'}`,
+                background: band.ok
+                  ? 'var(--bg-card2)'
+                  : 'color-mix(in srgb, var(--amber) 10%, transparent)',
+                border: `1px solid ${band.ok ? 'var(--border-2)' : 'var(--amber)'}`,
               }}>
               <p className="flex items-center gap-1.5 font-medium mb-1.5"
-                style={{ color: mismatched.length ? 'var(--amber)' : 'var(--text-3)' }}>
-                {mismatched.length ? <AlertTriangle size={13} /> : <Info size={13} />}
-                {mismatched.length
-                  ? `${t.kg} kg is outside ${TOLERANCE_PCT}% of ${mismatched.length === 1
-                      ? 'one of your own records' : `${mismatched.length} of your own records`}`
-                  : `${t.kg} kg agrees with your own records, within ${TOLERANCE_PCT}%`}
+                style={{ color: band.ok ? 'var(--text-3)' : 'var(--amber)' }}>
+                {band.ok ? <Info size={13} /> : <AlertTriangle size={13} />}
+                {band.ok
+                  ? `${t.kg} kg sits inside what your records expect — ${band.low} to ${band.high} kg`
+                  : `${t.kg} kg is ${band.offPct! > 0 ? '+' : ''}${band.offPct}% outside what your `
+                    + `records expect — ${band.low} to ${band.high} kg`}
               </p>
               <div className="flex flex-wrap gap-x-5 gap-y-1">
                 {opinions.map(o => (
-                  <span key={o.source} className="tabular-nums"
-                    style={{
-                      color: o.offPct !== null && Math.abs(o.offPct) > TOLERANCE_PCT
-                        ? 'var(--amber)' : 'var(--text-4)',
-                    }}>
-                    {o.source}:{' '}
-                    {o.kg === null
-                      ? 'nothing on record'
-                      : `${o.kg} kg${o.offPct === null ? ''
-                          : ` · ${o.offPct > 0 ? '+' : ''}${o.offPct}%`}`}
+                  <span key={o.source} className="tabular-nums" style={{ color: 'var(--text-4)' }}>
+                    {o.source}: {o.kg === null ? 'nothing on record' : `${o.kg} kg`}
                   </span>
                 ))}
               </div>
               <p className="mt-1.5" style={{ color: 'var(--text-4)' }}>
-                The figure you typed is the figure that goes out. A lot weighed with the
-                coating on it reads heavy; one short of the depot's own figure is worth a
-                second look before the document leaves.
+                The band is the lowest and highest of those three, give or take {TOLERANCE_PCT}%
+                — a lot weighed with the coating on it reads heavy and one off the mill reads
+                light, and both are ordinary. Whatever you typed is what goes out.
               </p>
             </div>
           )}
@@ -1620,6 +1705,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               <Plus size={14} /> Add a line
               <span className="text-[10px] ml-1" style={{ color: 'var(--text-4)' }}>Ctrl ↵</span>
             </button>
+            <span className="text-[10px]" style={{ color: 'var(--text-4)' }}>
+              Ctrl + S raises it
+            </span>
             {t.goods > 0 && alu.on && (
               <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
                 {inr2(t.goods)} of that is hardware and rubber, sold outright at its own rate — not coated,

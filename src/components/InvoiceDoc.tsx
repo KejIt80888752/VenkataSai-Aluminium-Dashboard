@@ -161,7 +161,13 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
                   {l.qty.toLocaleString('en-IN')}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5 text-right">{l.unit}</td>
-                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{inr2(l.rate)}</td>
+                {/* "Remove zero in sections when allotted to" — theirs, on
+                    22-11. A section whose money sits on the metal line
+                    above it is specification; ₹0.00 against it reads as a
+                    free supply. */}
+                <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
+                  {l.rate ? inr2(l.rate) : <span className="text-slate-400">—</span>}
+                </td>
                 {/* "Show the tax rate as a small symbol (18%, 9%) instead of
                     full details" — theirs, on 21-11. */}
                 <td className={`border border-slate-300 px-2 py-1.5 text-right tabular-nums ${summary ? 'font-bold' : 'font-medium'}`}>
@@ -205,8 +211,12 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
                 <td className="px-2 py-2 font-bold uppercase text-[11px] tracking-wide">Invoice Total</td>
                 <td className="px-2 py-2 text-right font-bold tabular-nums text-[13px]">{inr2(inv.total)}</td>
               </tr>
-              <Total k="Amount Received" v={inr2(inv.received)} />
-              <Total k="Balance Due" v={inr2(inv.total - inv.received)} bold />
+              {/* ── No balance on the face of the bill ──────────────────
+                  Theirs, on 22-11: "remove balance due." A bill states what
+                  is owed for the goods on it; what has been received against
+                  it is a matter for the ledger and changes after the paper
+                  has gone out, so printing it dates the document the day it
+                  is printed. It is still on the billing screen. */}
             </tbody>
           </table>
         </div>

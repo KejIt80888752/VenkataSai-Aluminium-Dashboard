@@ -106,11 +106,25 @@ const resolveProduct = (code: string, name: string) => {
    The shape of the document is read back off those summary lines now, and
    each section carries the weight and the basis it was priced on.         */
 const toBuilt = (r: DocRow): Partial<BuiltDoc> => {
-  const metalL = r.lines.find(l => l.group === 'aluminium')
+  const metals = r.lines.filter(l => l.group === 'aluminium')
+  const metalL = metals[0]
   const coatL = r.lines.find(l => l.group === 'coating' && !l.productId && !l.code)
   return {
   ...builtFrom(r),
   aluminium: { on: !!metalL, rate: metalL?.rate ?? 0, gst: metalL?.gst ?? 18 },
+  /* ── The weight comes back with the document ────────────────────────
+     Theirs, on 22-11: "while trying to edit ESTIMATE again, weight
+     disappeared." It had nowhere to come back from. Everywhere but the
+     quotation the weight is one figure typed against the metal, so it
+     lives on the metal line — and the metal line is a summary, which this
+     drops on the way in so the same kilos are not billed twice. The
+     figure was going out with it.
+
+     It is read off that line before it is dropped. A quotation works its
+     own weight out of the sections, so it wants none of this. */
+  metalKg: metals.length
+    ? +metals.reduce((s, l) => s + (l.kg ?? l.qty ?? 0), 0).toFixed(3)
+    : undefined,
   coatingMode: coatL ? 'cumulative' : 'section',
   coatingRate: coatL?.rate ?? 0,
   coatingUnit: coatL?.unit === 'nos' ? 'nos' : 'kg',

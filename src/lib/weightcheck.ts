@@ -146,6 +146,37 @@ export function weightOpinions(lines: BuiltLine[], typed: number): Opinion[] {
   return sources.map(s => ({ ...s, offPct: off(s.kg) }))
 }
 
+/* ── One band, not three verdicts ─────────────────────────────────────────
+   Theirs, on 22-11: "tolerance not working properly."
+
+   It was judging the typed weight against each record separately and
+   complaining about every one it missed — so a lot that agreed with the
+   depot but read heavy against the coating book, which it always will
+   because the coating book weighs the powder too, was flagged twice for
+   being exactly right.
+
+   The three are now read as what they are: a band. The lot is in order if
+   it falls anywhere between the lowest of them less the tolerance and the
+   highest plus it. Outside that band something is genuinely wrong — a
+   length on the wrong line, a count mistyped, or short weight.          */
+export interface Band {
+  low: number
+  high: number
+  ok: boolean
+  /** how far outside the band, where it is outside */
+  offPct: number | null
+}
+
+export function toleranceBand(ops: Opinion[], typed: number): Band | null {
+  const known = ops.map(o => o.kg).filter((k): k is number => k !== null && k > 0)
+  if (!known.length || typed <= 0) return null
+  const low = +(Math.min(...known) * (1 - TOLERANCE_PCT / 100)).toFixed(3)
+  const high = +(Math.max(...known) * (1 + TOLERANCE_PCT / 100)).toFixed(3)
+  const ok = typed >= low && typed <= high
+  const against = typed < low ? low : high
+  return { low, high, ok, offPct: ok ? null : +(((typed - against) / against) * 100).toFixed(1) }
+}
+
 /** The ones far enough out to be worth saying something about. */
 export const outOfTolerance = (ops: Opinion[]) =>
   ops.filter(o => o.offPct !== null && Math.abs(o.offPct) > TOLERANCE_PCT)

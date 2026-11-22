@@ -17,7 +17,7 @@
    the fields a bill has and a proforma does not are filled in.            */
 
 import type { Quotation, Invoice, Line } from '@/data/txns'
-import type { BuiltDoc } from '@/components/DocBuilder'
+import type { BuiltDoc, BuiltLine } from '@/components/DocBuilder'
 import { amountOf, totalKgOf, totalNosOf, isAluminium } from '@/components/DocBuilder'
 import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
@@ -83,23 +83,45 @@ const linesOf = (d: BuiltDoc): Line[] => {
      hides them — theirs: "in your case it clubs all, like 85 mm series it's
      different... I need option to select sections and charge differently". */
   const metal = d.lines.filter(isAluminium)
+  const rateOf = (l: BuiltLine) =>
+    l.metalRate && l.metalRate > 0 ? l.metalRate : d.aluminium.rate
   const byRate = new Map<number, number>()
-  if (d.metalKg != null) {
-    /* One weight, read off a scale and typed against the metal — theirs,
-       on 22-11: "we mix sections and weigh". There is nothing to group. */
+  if (d.metalBlocks?.length) {
+    /* A block for each rate the metal is sold at, with the weight typed
+       against it — theirs, on 22-11. */
+    for (const b of d.metalBlocks) byRate.set(b.rate, b.kg)
+  } else if (d.metalKg != null) {
     byRate.set(d.aluminium.rate, d.metalKg)
   } else {
     for (const l of metal) {
-      const rate = l.metalRate && l.metalRate > 0 ? l.metalRate : d.aluminium.rate
-      byRate.set(rate, +((byRate.get(rate) ?? 0) + l.kg).toFixed(3))
+      byRate.set(rateOf(l), +((byRate.get(rateOf(l)) ?? 0) + l.kg).toFixed(3))
     }
   }
   const several = byRate.size > 1
 
-  const out: Line[] = [...byRate.entries()]
-    .filter(([, kg]) => kg > 0)
+  /* ── Each block, and the sections it covers under it ───────────────────
+     Theirs, on 22-11: "ALUMINIUM EXTRUDED PROFILES should come above the
+     section of its weight, not at last. Like if I have given a different
+     rate, it should be displayed above of that section."
+
+     Which is how a reader makes sense of it: this much metal at this rate,
+     and here is what it was cut into. All the metal first and all the
+     sections afterwards left nobody able to say which weight belonged to
+     which run.                                                          */
+  const sections = sectionLines(d)
+  const sectionAt = (rate: number) =>
+    sections.filter((_, i) => d.lines[i] && isAluminium(d.lines[i]) && rateOf(d.lines[i]) === rate)
+
+  const out: Line[] = []
+  const shown = new Set<number>()
+  /* A block is printed where it has a weight or a section under it. One
+     with neither is a rate nobody used. */
+  const blocks = [...byRate.entries()]
+    .filter(([rate, k]) => k > 0 || metal.some(l => rateOf(l) === rate))
     .sort((a, b) => b[1] - a[1])
-    .map(([rate, kg]) => ({
+  for (const [rate, kg] of blocks) {
+    shown.add(rate)
+    out.push({
       code: '', hsn: hsnFor('section'),
       name: several
         ? `ALUMINIUM EXTRUDED PROFILES @ ${rate.toLocaleString('en-IN')}/kg`
@@ -108,7 +130,9 @@ const linesOf = (d: BuiltDoc): Line[] => {
       gst: d.aluminium.gst, amount: +(kg * rate).toFixed(2), cost: 0,
       kg, basis: 'kg' as const,
       group: 'aluminium' as const,
-    }))
+    })
+    out.push(...sectionAt(rate))
+  }
 
   /* ── The coating charge goes above the sections ───────────────────────
      Theirs, on 21-11: it is to come up the page, not sit at the bottom
@@ -152,7 +176,13 @@ const linesOf = (d: BuiltDoc): Line[] => {
     })
   }
 
-  out.push(...sectionLines(d))
+  /* Any section whose rate had no block of its own, then everything bought
+     finished — hardware, rubber — in the order it was entered. */
+  out.push(...sections.filter((_, i) => {
+    const l = d.lines[i]
+    return l && isAluminium(l) && !shown.has(rateOf(l))
+  }))
+  out.push(...sections.filter((_, i) => !(d.lines[i] && isAluminium(d.lines[i]))))
   return out
 }
 
