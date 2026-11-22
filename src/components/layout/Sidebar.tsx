@@ -10,6 +10,7 @@ import {
   ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BUILT } from '@/lib/version'
 
 /* ── The order they asked for, on 20-11-2026 ───────────────────────────────
    "Sales at top, purchase second, material flow third. Coating book at top."
@@ -193,6 +194,11 @@ export default function Sidebar({ open, onClose }: Props) {
           <button onClick={handleLogout} className="nav-link w-full text-red-400 hover:!text-red-600 hover:!bg-red-50 dark:hover:!bg-red-900/20">
             <LogOut size={14} /> Sign Out
           </button>
+          {/* The build this copy is, so a question about whether a change
+              has landed is one glance rather than an argument. */}
+          <p className="px-2 pt-1.5 text-[10px] tabular-nums" style={{ color: 'var(--text-4)' }}>
+            Build {BUILT}
+          </p>
         </div>
       </aside>
     </>
