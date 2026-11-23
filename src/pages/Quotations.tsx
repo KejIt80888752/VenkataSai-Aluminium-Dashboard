@@ -147,6 +147,7 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => {
     nos: l.nos ?? (l.unit === 'kg' ? 0 : l.qty),
     kg: l.kg ?? (l.unit === 'kg' ? l.qty : 0),
     metalRate: l.metalRate,
+    uom: l.uom,
     narration: l.narration,
     colour: l.colour,
     rate: l.rate, gst: l.gst,

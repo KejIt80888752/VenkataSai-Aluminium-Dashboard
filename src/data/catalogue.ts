@@ -190,42 +190,9 @@ function addedProducts(): Product[] {
   } catch { return [] }
 }
 
-/* ── The two lines every document already carries ─────────────────────────
-   Theirs, on 22-11: "ALUMINIUM EXTRUDED PROFILES and POWDER COATING,
-   whatever you created to display by default, is not in the list of
-   inventory. Fix it."
-
-   They are right that it was a hole. Both appear on every quotation and
-   every bill the shop sends out, both carry an HSN and a slab, and neither
-   existed anywhere a man could look them up, price them or put a rate
-   against them. They do now.
-
-   They are not stock lines and never will be — nothing is counted in either,
-   because the aluminium is counted as the sections it was cut into and the
-   coating is a job done to them, not a thing on a rack. They are here to be
-   read, costed and reported on. They stay out of the document picker for
-   the same reason: a quotation builds both of them from the sections on it,
-   so picking one by hand would charge the same metal twice.             */
-const DOCUMENT_LINES: Product[] = [
-  {
-    id: 'DOC-ALU', code: 'ALU-EXT', name: 'ALUMINIUM EXTRUDED PROFILES',
-    category: 'Sliding Sections', series: '—', brand: '—', finish: 'Mill Finish',
-    lengthFt: 0, kgPerLength: 1, unit: 'kg',
-    ratePerKg: 0, costPerKg: 0, hsn: '76042090', gst: 18,
-    stockPcs: 0, reorderPcs: 0, rack: '—', godown: 'Main Godown', active: true,
-  },
-  {
-    id: 'DOC-PC', code: 'PWD-COAT', name: 'POWDER COATING',
-    category: 'Consumables', series: '—', brand: '—', finish: 'Mill Finish',
-    lengthFt: 0, kgPerLength: 1, unit: 'kg',
-    ratePerKg: 0, costPerKg: 0, hsn: '998898', gst: 18,
-    stockPcs: 0, reorderPcs: 0, rack: '—', godown: 'Main Godown', active: true,
-  },
-]
-
 export const P: Product[] = SHOW_SAMPLE
   ? SAMPLE_P
-  : [...DOCUMENT_LINES, ...MASTER.map(fromMaster), ...addedProducts()]
+  : [...MASTER.map(fromMaster), ...addedProducts()]
 
 /** True while the catalogue carries no prices — the screens say so instead of
     showing a rupee figure nobody can stand behind. */

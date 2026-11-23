@@ -406,10 +406,14 @@ export default function QuoteDoc({ doc, kind, onClose }: {
             <p className="font-bold uppercase tracking-wider text-slate-500 text-[10px] mb-1">Terms & Conditions</p>
             {/* The document's own terms, settled when it was raised. */}
             <ol className="list-decimal list-inside text-[10px] text-slate-600 space-y-0.5">
+              {/* ── Their terms, and only theirs ─────────────────────────
+                  Theirs, on 22-11: "terms not updated." A fourth line was
+                  being added here whatever the document said, so editing
+                  the terms never quite gave what was typed. The document
+                  prints the terms it carries. */}
               {(doc.terms?.length ? doc.terms : DEFAULT_TERMS[kind]).map((t, i) => (
                 <li key={i}>{t}</li>
               ))}
-              <li>Rates quoted ex-godown, {COMPANY.address.line3}.</li>
             </ol>
           </div>
           <div className="text-right flex flex-col justify-between">

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Plus, Trash2, Info, X, AlertTriangle, FileText, Save, ImagePlus } from 'lucide-react'
 import { Modal, Select } from '@/components/ui'
 import { SectionPicker } from '@/components/SectionPicker'
-import { PICK_PRODUCTS, productById } from '@/data/productmaster'
+import { PICK_PRODUCTS, productById, DOC_ALU, DOC_COAT } from '@/data/productmaster'
 import { useExtraProducts, addExtraProduct } from '@/lib/extraproducts'
 import { CLIENTS, SUPPLIERS } from '@/data/parties'
 import { PARTY_CODES } from '@/data/partycodes'
@@ -78,7 +78,20 @@ export interface BuiltLine {
   narration?: string
   /** the finish this line is supplied in — see src/data/colours.ts */
   colour?: string
+  /* ── What it is sold in ─────────────────────────────────────────────────
+     Theirs, on 22-11: "hardware UOM incorrect." A handle goes by the piece,
+     rubber by the kilo on their own coating sheets and by the metre on half
+     the bills in the trade, and a lock set by the set. Guessing it from the
+     kind of material got it wrong for somebody every time, so the line says
+     which, and whoever is raising the document can change it.
+
+     Nos, mtr, set and sqft are all counted; kg is weighed, and a line in kg
+     is priced on the weight against it. */
+  uom?: string
 }
+
+/** What a line can be sold in. */
+export const UOMS = ['nos', 'kg', 'mtr', 'set', 'sqft', 'ltr'] as const
 
 /* ── How a fabricator quotes ───────────────────────────────────────────────
    Asked for on 20-11-2026:
@@ -234,7 +247,12 @@ export interface BuiltDoc {
    A section is a section. Whether it carries a weight of its own is a
    separate matter, and that is what weighsOwn answers.                   */
 export const isAluminium = (l: BuiltLine) =>
-  !!l.productId && productById(l.productId)?.kind === 'section'
+  !!l.productId
+  /* The two standing lines are the document's own: added by hand they are
+     priced as typed and never folded into the metal or the coating, or the
+     same money would be counted twice. */
+  && l.productId !== 'ALU-EXT' && l.productId !== 'PWD-COAT'
+  && productById(l.productId)?.kind === 'section'
 
 /** Carries a weight of its own — not merged up, and actually priced on one. */
 export const weighsOwn = (l: BuiltLine) =>
@@ -251,6 +269,27 @@ export type DocKind = 'Quotation' | 'Estimate' | 'Proforma Invoice' | 'Tax Invoi
 
 export const amountOf = (l: BuiltLine) =>
   +((l.basis === 'kg' ? l.kg : l.nos) * l.rate).toFixed(2)
+
+/* ── What the coating is charged on ───────────────────────────────────────
+   Theirs, on 22-11: "powder coating by default it should be per length rate
+   which is prefed... now it's taking per kg and wrong multiplication with
+   weight is happening."
+
+   They are right and it was two questions answered with one flag. A section
+   is *weighed* in kilos — that is what the metal is priced on — and it is
+   *coated* by the length: a coater charges so much to put powder on a
+   sixteen foot run, whatever it weighs. The line's own basis was being used
+   for both, so a hundred and twenty clips at a hundred and seventy-five
+   came out multiplied by their weight.
+
+   The coating unit now decides the coating, and the line's basis decides
+   everything else. Hardware and rubber are untouched: they are sold, not
+   coated.                                                                */
+export const coatingQty = (l: BuiltLine, unit: 'kg' | 'nos') =>
+  unit === 'kg' ? l.kg : l.nos
+
+export const lineAmount = (l: BuiltLine, coated: boolean, unit: 'kg' | 'nos') =>
+  +((coated ? coatingQty(l, unit) : (l.basis === 'kg' ? l.kg : l.nos)) * l.rate).toFixed(2)
 
 /**
  * What the document comes to.
@@ -325,7 +364,7 @@ export function totalsOf(
      changing how a document reads should not change what it comes to. */
   const coating = aluminium.on
     ? (coatedLines.length
-        ? +coatedLines.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+        ? +coatedLines.reduce((s, l) => s + lineAmount(l, true, coatingUnit), 0).toFixed(2)
         : +(coatBase * lotRate).toFixed(2))
     : 0
 
@@ -347,7 +386,7 @@ export function totalsOf(
      because it is its own supply at its own HSN. */
   const coatingTax = aluminium.on
     ? (coatedLines.length
-        ? coatedLines.reduce((s, l) => s + amountOf(l) * (l.gst / 100), 0)
+        ? coatedLines.reduce((s, l) => s + lineAmount(l, true, coatingUnit) * (l.gst / 100), 0)
         : coating * (aluminium.gst / 100))
     : 0
 
@@ -367,10 +406,8 @@ export function totalsOf(
    invoice. 0 is here for anything quoted outside GST, which is dropped from
    a tax invoice altogether rather than billed at nought. */
 const GST_RATES = ['18', '12', '9', '5', '0', '28']
-const ADD_NEW = '+ Someone new'
 /** Who raises the shop's documents. On the form, so it can be changed. */
 const DEFAULT_OWNER = 'ROHITH'
-const CHOOSE = '— choose —'
 /* ── A new line opens in the colour of the one above it ───────────────────
    Theirs, on 21-11: "once a colour is selected for the first item, carry it
    forward to the next items. Allow it to be changed." A job is nearly always
@@ -459,7 +496,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [aluGst, setAluGst] = useState(18)
   const [coatingMode, setCoatingMode] = useState<CoatingMode>('section')
   const [coatingRate, setCoatingRate] = useState(0)
-  const [coatingUnit, setCoatingUnit] = useState<'kg' | 'nos'>('kg')
+  const [coatingUnit, setCoatingUnit] = useState<'kg' | 'nos'>('nos')
   /* ── A weight for each rate ───────────────────────────────────────────
      Keyed by the rate a kilo, because that is what tells one block of metal
      from another: the eighty-five millimetre series at three-ten and the
@@ -649,8 +686,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     /* Per length on an estimate, by the kilo where the lot is one charge —
        theirs, on 22-11: the coating unit "should be per length or per piece
        and prefed". */
-    setCoatingUnit(initial?.coatingUnit
-      ?? (kind === 'Estimate' ? 'nos' : 'kg'))
+    /* Per length, on every document — theirs, on 22-11: "powder coating by
+       default it should be per length rate which is prefed". A coater
+       charges to coat a sixteen foot run, not to coat a kilo. */
+    setCoatingUnit(initial?.coatingUnit ?? 'nos')
     /* A carried-forward document brings its weight across; a new one starts
        at nothing and is told. */
     /* The weight the document was told, where it was told one. A quotation
@@ -872,10 +911,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     const nos = l.nos > 0 ? l.nos : 1
     /* "Remove colours to hardware" — theirs, on 21-11 at 23:18. */
     const coatable = p.kind === 'section'
+    /* Their own coating sheets write rubber in KGS; everything else they
+       count. It is only a starting point — the box is there to change. */
+    const uom = l.uom
+      ?? (p.kind === 'rubber' ? 'kg' : 'nos')
     return {
-      ...l, productId: id, code: p.code, name: p.name, basis, nos,
+      ...l, productId: id, code: p.code, name: p.name, basis, nos, uom,
       colour: coatable ? l.colour : undefined,
-      hsn: hsnFor(p.kind === 'section' || p.kind === 'rubber' ? p.kind : 'hardware'),
+      hsn: id === DOC_COAT ? hsnFor('coating')
+        : id === DOC_ALU ? hsnFor('section')
+        : hsnFor(p.kind === 'section' || p.kind === 'rubber' ? p.kind : 'hardware'),
       kg: autoWeighs && p.kgPerPiece !== null ? +(p.kgPerPiece * nos).toFixed(3) : 0,
       rate: l.rate > 0 ? l.rate : (seen?.rate || prefed || 0),
       gst: seen?.gst ?? recallSlab(p.kind) ?? l.gst,
@@ -1164,15 +1209,18 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 theirs, on 20-11: "customer name from data selection". Anyone
                 new is typed once and is on the list from then on. */}
             {known.length > 0 && !newParty ? (
-              /* The blank first entry matters: without it the box showed the
-                 first name on the list while nothing was actually chosen, and
-                 the form sat there asking for a customer it appeared to have. */
-              <Select value={clientName || CHOOSE}
-                onChange={v => {
-                  if (v === ADD_NEW) { setNewParty(true); setClientName('') }
-                  else setClientName(v === CHOOSE ? '' : v)
-                }}
-                options={[CHOOSE, ...known, ADD_NEW]} className="!w-full" />
+              /* ── Typed, not hunted ──────────────────────────────────────
+                 Theirs, on 22-11: "customer name also search option like
+                 inventory." A dropdown is fine at ten names and useless at
+                 two hundred, which is where their customer list is going.
+                 It is the same box the sections are picked with, so it is
+                 the same three keystrokes. */
+              <SectionPicker
+                options={known.map(n => ({ id: n, code: '', name: n }))}
+                value={clientName}
+                onChange={v => setClientName(v)}
+                onCreate={typed => { setNewParty(true); setClientName(typed) }}
+                placeholder={isPurchase ? 'Type a supplier name…' : 'Type a customer name…'} />
             ) : (
               <div className="flex gap-1.5">
                 <input className="input w-full" value={clientName} autoFocus
@@ -1398,9 +1446,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       {/* ── Per kilo, or per piece ──────────────────────
                           Theirs, on 21-11: "powder coating needs a unit
                           (per kg or unit price). It is missing now." */}
-                      <Select value={coatingUnit === 'kg' ? 'per kg' : 'per piece'}
+                      <Select value={coatingUnit === 'kg' ? 'per kg' : 'per length'}
                         onChange={v => setCoatingUnit(v === 'per kg' ? 'kg' : 'nos')}
-                        options={['per kg', 'per piece']}
+                        options={['per length', 'per kg']}
                         className="!w-[6.5rem] !py-1 !text-[11px] !min-w-0" />
                     </td>
                     <td className="num tabular-nums" style={{ color: 'var(--text-4)' }}>
@@ -1448,6 +1496,21 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           description and belongs to this supply, not to the
                           product: the same section in another finish is
                           still the same section. */}
+                      {l.productId && !isAluminium(l) && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[10px] shrink-0" style={{ color: 'var(--text-4)' }}>
+                            sold in
+                          </span>
+                          <Select value={l.uom ?? 'nos'}
+                            onChange={v => patch(l.key, {
+                              uom: v,
+                              /* A line in kilos is priced on the weight
+                                 against it; everything else on the count. */
+                              basis: v === 'kg' ? 'kg' : 'nos',
+                            })}
+                            options={[...UOMS]} className="!w-20 !py-0.5 !text-[11px] !min-w-0" />
+                        </div>
+                      )}
                       {l.productId && (
                         <div className="flex items-center gap-1.5 mt-1">
                           {/* Hardware is bought finished and never coated,
@@ -1581,7 +1644,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           what these add up to. */}
                       <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
                         value={l.rate}
-                        placeholder={alu.on && isAluminium(l) ? 'coating / kg'
+                        placeholder={alu.on && isAluminium(l)
+                          ? (coatingUnit === 'kg' ? 'coating / kg' : 'coating / nos')
                           : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
@@ -1601,7 +1665,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
                         options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" /></td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {amountOf(l) ? inr2(amountOf(l)) : '—'}
+                      {lineAmount(l, inTheLot(l) || (alu.on && isAluminium(l)), coatingUnit)
+                        ? inr2(lineAmount(l, inTheLot(l) || (alu.on && isAluminium(l)), coatingUnit))
+                        : '—'}
                       {inTheLot(l) && amountOf(l) > 0 && (
                         <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-4)' }}>
                           into the one entry

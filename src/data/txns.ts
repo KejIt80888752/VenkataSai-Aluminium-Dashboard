@@ -55,6 +55,8 @@ export interface Line {
      priced on lived nowhere. The metal line then weighed nothing, the
      coating came out at nought, and a quotation that had gone out at one
      figure reopened at another. Both are carried now. */
+  /** what it was sold in — nos, kg, mtr, set — as chosen on the line */
+  uom?: string
   /** this line's own weight, where it has one */
   kg?: number
   /** 'kg' where the line is priced by weight, 'nos' where it is by count */

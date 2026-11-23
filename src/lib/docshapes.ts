@@ -18,7 +18,7 @@
 
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc, BuiltLine } from '@/components/DocBuilder'
-import { amountOf, totalKgOf, totalNosOf, isAluminium } from '@/components/DocBuilder'
+import { lineAmount, totalKgOf, totalNosOf, isAluminium } from '@/components/DocBuilder'
 import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
 
@@ -46,18 +46,30 @@ const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
     /* Sections are quoted by the piece — theirs: "all sections are nos". The
        kilos are on the metal line above and do not belong twice on one
        document, which is what they meant by "displaying double time". */
-    unit: alu ? 'nos' : (l.basis === 'kg' ? 'kg' : 'nos'),
+    /* What it is sold in, as the line says — theirs, on 22-11:
+       "hardware UOM incorrect". */
+    unit: alu
+      ? (d.coatingUnit === 'kg' ? 'kg' : 'nos')
+      : (l.uom ?? (l.basis === 'kg' ? 'kg' : 'nos')),
     /* The quantity is the count the line was supplied in. It used to be the
        kilos with "nos" written beside them, which read as a count and was
        not one, and reopened as a count on the next revision. */
-    qty: alu ? l.nos : (l.basis === 'kg' ? l.kg : l.nos),
-    rate: charged ? l.rate : 0,
+    qty: alu
+      ? (d.coatingUnit === 'kg' ? l.kg : l.nos)
+      : (l.basis === 'kg' ? l.kg : l.nos),
+    /* ── The rate stays on the line ──────────────────────────────────────
+       Theirs, on 22-11: "coating rates are vanishing while editing." A
+       coated section whose charge is added into one entry was being stored
+       with its rate zeroed, so reopening the document found nothing there
+       and the coating came back at nought. The rate is kept; the printer
+       decides whether to show it. */
+    rate: l.rate,
     gst: l.gst,
-    amount: charged ? amountOf(l) : 0,
+    amount: charged ? lineAmount(l, !!coated, d.coatingUnit === 'kg' ? 'kg' : 'nos') : 0,
     cost: 0,
     productId: l.productId, nos: l.nos,
     /* Carried so a revision reopens on what it was actually priced on. */
-    kg: l.kg, basis: l.basis, metalRate: l.metalRate,
+    kg: l.kg, basis: l.basis, metalRate: l.metalRate, uom: l.uom,
     narration: l.narration,
     /* The finish it is supplied in, which is half of what a stock line is —
        theirs, on 21-11: "inventory is managed by colour". */
@@ -97,7 +109,6 @@ const linesOf = (d: BuiltDoc): Line[] => {
       byRate.set(rateOf(l), +((byRate.get(rateOf(l)) ?? 0) + l.kg).toFixed(3))
     }
   }
-  const several = byRate.size > 1
 
   /* ── Each block, and the sections it covers under it ───────────────────
      Theirs, on 22-11: "ALUMINIUM EXTRUDED PROFILES should come above the
@@ -123,9 +134,13 @@ const linesOf = (d: BuiltDoc): Line[] => {
     shown.add(rate)
     out.push({
       code: '', hsn: hsnFor('section'),
-      name: several
-        ? `ALUMINIUM EXTRUDED PROFILES @ ${rate.toLocaleString('en-IN')}/kg`
-        : 'ALUMINIUM EXTRUDED PROFILES',
+      /* ── No rate inside the name ─────────────────────────────────────
+         Theirs, on 22-11: "rate details should not be visible in
+         particulars, @415/- and @435/- is visible now." The rate has a
+         column of its own two cells away; printing it inside the
+         description as well is the shop's working on the customer's
+         paper. */
+      name: 'ALUMINIUM EXTRUDED PROFILES',
       unit: 'kg', qty: kg, rate,
       gst: d.aluminium.gst, amount: +(kg * rate).toFixed(2), cost: 0,
       kg, basis: 'kg' as const,
@@ -158,7 +173,7 @@ const linesOf = (d: BuiltDoc): Line[] => {
     /* The sections' own charges added up; or, on a bill raised on the metal
        alone, the standing rate against the weight. */
     const charged = metal.length
-      ? +metal.reduce((s, l) => s + amountOf(l), 0).toFixed(2)
+      ? +metal.reduce((s, l) => s + lineAmount(l, true, unit), 0).toFixed(2)
       : +(qty * (d.coatingRate ?? 0)).toFixed(2)
     const rate = qty > 0 ? +(charged / qty).toFixed(2) : (d.coatingRate ?? 0)
     /* The slab most of the coated sections are at, since the charge covers

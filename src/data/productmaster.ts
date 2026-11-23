@@ -189,7 +189,36 @@ function build(): MasterProduct[] {
     .sort((x, y) => x.kind.localeCompare(y.kind) || x.name.localeCompare(y.name))
 }
 
-export const MASTER: MasterProduct[] = build()
+/* ── The two lines every document carries ─────────────────────────────────
+   Theirs, on 22-11: "ALUMINIUM EXTRUDED PROFILES and POWDER COATING not
+   visible in list", and again, "it should be visible in inventory... and we
+   should be able to add multiple times if required."
+
+   They had taken to typing WEIGHT ALUMINIUM EXTRUDED PROFILES in as a new
+   item to get round it, which is exactly the sort of thing that makes a
+   product list useless inside a month. Both are in the list now and can be
+   added by hand, as many times as a job has rates.
+
+   The metal is priced by the kilo — one kilo a piece, so the quantity typed
+   against it is the weight. The coating is priced by the length or by the
+   lot and carries no weight at all.                                      */
+export const DOC_ALU = 'ALU-EXT'
+export const DOC_COAT = 'PWD-COAT'
+
+const DOCUMENT_LINES: MasterProduct[] = [
+  {
+    id: DOC_ALU, code: 'ALU-EXT', name: 'ALUMINIUM EXTRUDED PROFILES',
+    alt: 'aluminium extruded profiles weight metal section',
+    lengthFt: 0, groove: '', kgPerPiece: 1, colours: [], kind: 'section',
+  },
+  {
+    id: DOC_COAT, code: 'PWD-COAT', name: 'POWDER COATING',
+    alt: 'powder coating pc coat',
+    lengthFt: 0, groove: '', kgPerPiece: null, colours: [], kind: 'hardware',
+  },
+]
+
+export const MASTER: MasterProduct[] = [...DOCUMENT_LINES, ...build()]
 
 /* ── A cross section, as against a length of one ───────────────────────────
    The depot writes SP on a line and the length in its own column — SP at 10',
