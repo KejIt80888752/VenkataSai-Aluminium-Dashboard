@@ -48,15 +48,12 @@ const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
        document, which is what they meant by "displaying double time". */
     /* What it is sold in, as the line says — theirs, on 22-11:
        "hardware UOM incorrect". */
-    unit: alu
-      ? (d.coatingUnit === 'kg' ? 'kg' : 'nos')
-      : (l.uom ?? (l.basis === 'kg' ? 'kg' : 'nos')),
+    /* A section is coated by the length, so its quantity is its count. */
+    unit: alu ? 'nos' : (l.uom ?? (l.basis === 'kg' ? 'kg' : 'nos')),
     /* The quantity is the count the line was supplied in. It used to be the
        kilos with "nos" written beside them, which read as a count and was
        not one, and reopened as a count on the next revision. */
-    qty: alu
-      ? (d.coatingUnit === 'kg' ? l.kg : l.nos)
-      : (l.basis === 'kg' ? l.kg : l.nos),
+    qty: alu ? l.nos : (l.basis === 'kg' ? l.kg : l.nos),
     /* ── The rate stays on the line ──────────────────────────────────────
        Theirs, on 22-11: "coating rates are vanishing while editing." A
        coated section whose charge is added into one entry was being stored
@@ -65,7 +62,7 @@ const sectionLines = (d: BuiltDoc): Line[] => d.lines.map(l => {
        decides whether to show it. */
     rate: l.rate,
     gst: l.gst,
-    amount: charged ? lineAmount(l, !!coated, d.coatingUnit === 'kg' ? 'kg' : 'nos') : 0,
+    amount: charged ? lineAmount(l, !!coated) : 0,
     cost: 0,
     productId: l.productId, nos: l.nos,
     /* Carried so a revision reopens on what it was actually priced on. */
@@ -172,8 +169,12 @@ const linesOf = (d: BuiltDoc): Line[] => {
     const qty = coatingBaseOf(d)
     /* The sections' own charges added up; or, on a bill raised on the metal
        alone, the standing rate against the weight. */
-    const charged = metal.length
-      ? +metal.reduce((s, l) => s + lineAmount(l, true, unit), 0).toFixed(2)
+    /* By the kilo it is the weight of the lot at the rate on this line; by
+       the length it is what the sections underneath come to. */
+    const charged = unit === 'kg'
+      ? +(metalKgOf(d) * (d.coatingRate ?? 0)).toFixed(2)
+      : metal.length
+      ? +metal.reduce((s, l) => s + lineAmount(l, true), 0).toFixed(2)
       : +(qty * (d.coatingRate ?? 0)).toFixed(2)
     const rate = qty > 0 ? +(charged / qty).toFixed(2) : (d.coatingRate ?? 0)
     /* The slab most of the coated sections are at, since the charge covers

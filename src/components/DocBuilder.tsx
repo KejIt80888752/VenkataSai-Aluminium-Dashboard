@@ -285,11 +285,21 @@ export const amountOf = (l: BuiltLine) =>
    The coating unit now decides the coating, and the line's basis decides
    everything else. Hardware and rubber are untouched: they are sold, not
    coated.                                                                */
-export const coatingQty = (l: BuiltLine, unit: 'kg' | 'nos') =>
-  unit === 'kg' ? l.kg : l.nos
+/* ── Where each of the two coating figures lives ──────────────────────────
+   Theirs, on 22-11: "powder coating by default it should be per length rate
+   which is prefed... per kg multiplication can be given at top also."
 
-export const lineAmount = (l: BuiltLine, coated: boolean, unit: 'kg' | 'nos') =>
-  +((coated ? coatingQty(l, unit) : (l.basis === 'kg' ? l.kg : l.nos)) * l.rate).toFixed(2)
+   Two different charges, and they belong in two different places. The rate
+   on a section is what it costs to coat a length of it — a coater charges
+   to put powder on a sixteen-foot run, not on a kilo — so a section line is
+   always its count times its rate. The rate at the top, on the Powder
+   Coating line, is the one by the kilo, against the weight of the lot.
+
+   Mixing them is what made every coating figure read nought on an estimate:
+   the line was being multiplied by a weight it does not carry, because on
+   an estimate the weight is one figure at the top. A line has a count. */
+export const lineAmount = (l: BuiltLine, coated: boolean, _unit?: 'kg' | 'nos') =>
+  +((coated ? l.nos : (l.basis === 'kg' ? l.kg : l.nos)) * l.rate).toFixed(2)
 
 /**
  * What the document comes to.
@@ -362,9 +372,14 @@ export function totalsOf(
      section on the estimate, added into one POWDER COATING entry
      everywhere else. The money is the same either way, which is the point —
      changing how a document reads should not change what it comes to. */
+  /* By the kilo it is one charge against the weight of the lot, at the rate
+     on the Powder Coating line. By the length it is what the sections
+     themselves come to. */
   const coating = aluminium.on
-    ? (coatedLines.length
-        ? +coatedLines.reduce((s, l) => s + lineAmount(l, true, coatingUnit), 0).toFixed(2)
+    ? (coatingUnit === 'kg'
+        ? +(kg * lotRate).toFixed(2)
+        : coatedLines.length
+        ? +coatedLines.reduce((s, l) => s + lineAmount(l, true), 0).toFixed(2)
         : +(coatBase * lotRate).toFixed(2))
     : 0
 
@@ -385,8 +400,8 @@ export function totalsOf(
      Every line carries its own slab now. The metal carries its own as well,
      because it is its own supply at its own HSN. */
   const coatingTax = aluminium.on
-    ? (coatedLines.length
-        ? coatedLines.reduce((s, l) => s + lineAmount(l, true, coatingUnit) * (l.gst / 100), 0)
+    ? (coatingUnit !== 'kg' && coatedLines.length
+        ? coatedLines.reduce((s, l) => s + lineAmount(l, true) * (l.gst / 100), 0)
         : coating * (aluminium.gst / 100))
     : 0
 
@@ -502,7 +517,6 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
      from another: the eighty-five millimetre series at three-ten and the
      rest at two-fifty are two lines, two weights and two amounts. */
   const [aluKgBy, setAluKgBy] = useState<Record<string, number>>({})
-  const setAluKg = (v: number) => setAluKgBy({ [String(aluRate)]: v })
   const aluKg = useMemo(
     () => +Object.values(aluKgBy).reduce((s, v) => s + v, 0).toFixed(3),
     [aluKgBy])
@@ -756,7 +770,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   interface MetalGroup { rate: number; kg: number; nos: number; keys: string[]; own: boolean }
   const metalGroups = useMemo<MetalGroup[]>(() => {
     const g = new Map<number, MetalGroup>()
-    for (const l of lines.filter(weighsOwn)) {
+    /* ── Which rate a section belongs to, not whether it was weighed ────
+       Theirs, on 23-11: "415, 445 different rates not displaying at top."
+       This was reading only the lines that carry a weight of their own,
+       and on an estimate or a bill none of them do — the weight is one
+       figure at the top. So a section priced at 445 a kilo never reached
+       the grouping and no second ALUMINIUM EXTRUDED PROFILES line could
+       appear. A section's rate is its rate; the weight is a separate
+       question answered below. */
+    for (const l of lines.filter(l => isAluminium(l) && !l.mergedUp)) {
       const own = !!(l.metalRate && l.metalRate > 0)
       const r = own ? l.metalRate! : aluRate
       const at = g.get(r) ?? { rate: r, kg: 0, nos: 0, keys: [], own }
@@ -1383,12 +1405,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         else. The quotation works it out of the sections and
                         lets a typed total be spread back over them. */}
                     <td className="num">
+                      {/* Each block's own weight. It was showing the
+                          document's total against every one of them, so two
+                          rates read as the same sixty-five kilos twice. */}
                       <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs font-semibold"
-                        value={autoWeighs ? g.kg : aluKg} placeholder="total kg"
+                        value={g.kg} placeholder="total kg"
                         title={autoWeighs
                           ? 'The sections under this, added up. Type a figure and it is spread back over them.'
                           : 'The weight this lot was weighed at. The sections below carry none of their own.'}
-                        onChange={v => autoWeighs ? setGroupKg(g, v) : setAluKg(v)} />
+                        onChange={v => setGroupKg(g, v)} />
                     </td>
                     <td className="num">
                       <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
@@ -1405,9 +1430,10 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       )}
                     </td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
-                      {metalGroups.length > 1 && autoWeighs
-                        ? (g.kg * g.rate ? inr2(+(g.kg * g.rate).toFixed(2)) : '—')
-                        : (t.metal ? inr2(t.metal) : '—')}
+                      {/* Each block's own money. Showing the document's
+                          metal total against every one of them read as the
+                          same eight thousand three hundred twice. */}
+                      {g.kg * g.rate ? inr2(+(g.kg * g.rate).toFixed(2)) : '—'}
                     </td>
                     {/* ── The first line, and a way to be rid of it ───────
                         Theirs, on 21-11: "a new quotation opens with one
@@ -1439,7 +1465,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       Powder Coating
                       <span className="block text-[10px] normal-case font-normal tracking-normal"
                         style={{ color: 'var(--text-4)' }}>
-                        the coating on every section below, added into one entry
+                        {coatingUnit === 'kg'
+                          ? 'charged once, on the whole weight, at the rate here'
+                          : 'the coating on every section below, added into one entry'}
                       </span>
                     </td>
                     <td className="font-mono text-xs" style={{ color: 'var(--text-4)' }}>
@@ -1645,7 +1673,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <NumBox className="input !w-24 !py-1 text-right tabular-nums !text-xs"
                         value={l.rate}
                         placeholder={alu.on && isAluminium(l)
-                          ? (coatingUnit === 'kg' ? 'coating / kg' : 'coating / nos')
+                          ? 'coating / nos'
                           : l.basis === 'kg' ? 'per kg' : 'per piece'}
                         style={l.recalled ? { borderColor: 'var(--green)' } : undefined}
                         title={l.recalled
@@ -1665,8 +1693,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                       <Select value={String(l.gst)} onChange={v => patch(l.key, { gst: Number(v) })}
                         options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" /></td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>
-                      {lineAmount(l, inTheLot(l) || (alu.on && isAluminium(l)), coatingUnit)
-                        ? inr2(lineAmount(l, inTheLot(l) || (alu.on && isAluminium(l)), coatingUnit))
+                      {lineAmount(l, alu.on && isAluminium(l))
+                        ? inr2(lineAmount(l, alu.on && isAluminium(l)))
                         : '—'}
                       {inTheLot(l) && amountOf(l) > 0 && (
                         <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-4)' }}>
