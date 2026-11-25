@@ -944,9 +944,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
         : id === DOC_ALU ? hsnFor('section')
         : hsnFor(p.kind === 'section' || p.kind === 'rubber' ? p.kind : 'hardware'),
       kg: autoWeighs && p.kgPerPiece !== null ? +(p.kgPerPiece * nos).toFixed(3) : 0,
-      rate: l.rate > 0 ? l.rate : (seen?.rate || prefed || 0),
+      /* ── The standing rate wins ───────────────────────────────────
+         Theirs, on 22-11: "when we select sections it should reflect."
+         The figure typed on this document a moment ago is a decision
+         about this job; what the product went out at on somebody else's
+         quotation last month is a memory. The memory fills in only where
+         nothing has been said here. */
+      rate: l.rate > 0 ? l.rate : (prefed || seen?.rate || 0),
       gst: seen?.gst ?? recallSlab(p.kind) ?? l.gst,
-      recalled: !!seen?.rate && l.rate <= 0,
+      recalled: !prefed && !!seen?.rate && l.rate <= 0,
     }
   }))
 
@@ -1382,11 +1388,17 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   <th className="num">Qty (nos)</th>
                   {(showWeight || alu.on) && <th className="num">Weight (kg)</th>}
                   {alu.on && <th className="num">Metal rate ₹/kg</th>}
-                  {/* Where the metal is priced at the top, a section's own
-                      rate is the coating charge and nothing else, so the
-                      column says so rather than leaving it to be worked out
-                      from the box underneath. */}
-                  <th className="num">{alu.on ? 'Coating rate' : 'Rate'}</th>
+                  {/* ── One rate column, two kinds of rate ──────────────
+                      Theirs, on 22-11: "hardware qty etc double tab", twice.
+                      A hinge was sitting under a column headed Coating rate
+                      with a weight cell reading "in the total" and a metal
+                      cell reading "not metal" — three boxes that mean
+                      nothing for a hinge and one heading that is wrong for
+                      it. The column is Rate; each line's box says which kind
+                      of rate it wants, and a line that is neither weighed
+                      nor coated says nothing in the columns that are not
+                      about it. */}
+                  <th className="num">Rate</th>
                   <th className="num">GST %</th>
                   <th className="num">Amount</th><th /></tr>
               </thead>
@@ -1543,23 +1555,18 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                           description and belongs to this supply, not to the
                           product: the same section in another finish is
                           still the same section. */}
-                      {l.productId && !isAluminium(l) && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-[10px] shrink-0" style={{ color: 'var(--text-4)' }}>
-                            sold in
-                          </span>
-                          <Select value={l.uom ?? 'nos'}
-                            onChange={v => patch(l.key, {
-                              uom: v,
-                              /* A line in kilos is priced on the weight
-                                 against it; everything else on the count. */
-                              basis: v === 'kg' ? 'kg' : 'nos',
-                            })}
-                            options={[...UOMS]} className="!w-20 !py-0.5 !text-[11px] !min-w-0" />
-                        </div>
-                      )}
                       {l.productId && (
                         <div className="flex items-center gap-1.5 mt-1">
+                          {!isAluminium(l) && (
+                            <Select value={l.uom ?? 'nos'}
+                              onChange={v => patch(l.key, {
+                                uom: v,
+                                /* A line in kilos is priced on the weight
+                                   against it; everything else on the count. */
+                                basis: v === 'kg' ? 'kg' : 'nos',
+                              })}
+                              options={[...UOMS]} className="!w-[4.5rem] !py-0.5 !text-[11px] !min-w-0" />
+                          )}
                           {/* Hardware is bought finished and never coated,
                               so it carries no colour — theirs, on 21-11. */}
                           {/* Set on the first line and carried to the next —
@@ -1624,7 +1631,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     </td>
                     {(showWeight || alu.on) && (
                       <td className="num">
-                        {!showWeight ? (
+                        {!isAluminium(l) ? (
+                          <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>—</span>
+                        ) : !showWeight ? (
                           <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>
                             in the total
                           </span>
@@ -1669,7 +1678,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                             title="Leave it empty to use the rate at the top. Fill it in for a series that is priced differently."
                             onChange={v => patch(l.key, { metalRate: v || undefined })} />
                         ) : (
-                          <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>not metal</span>
+                          <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>—</span>
                         )}
                       </td>
                     )}
