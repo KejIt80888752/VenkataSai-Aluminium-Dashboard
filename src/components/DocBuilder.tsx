@@ -1330,6 +1330,25 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                   className="min-w-[11rem]" />
               )}
             </div>
+            {/* ── The standing coating rate, wherever the coating is shown ──
+                Theirs, on 22-11: "powder coating by default it should be
+                per length rate which is prefed, and when we select sections
+                it should reflect."
+
+                It could only be typed on the Powder Coating line, and an
+                estimate — which shows the coating section by section — has
+                no such line, so on the one document that prices the coating
+                per length there was nowhere to put the standing figure and
+                every section started at nothing. It is here now, beside the
+                mode, on every document. */}
+            {coatingMode !== 'off' && (
+              <div>
+                <label className="label">Coating rate, per length</label>
+                <NumBox className="input !w-32" value={coatingRate} placeholder="per length"
+                  title="What a section starts at. Every line with nothing against it follows this; one you have typed stays as it is."
+                  onChange={setStandingCoating} />
+              </div>
+            )}
             {metalGroups.length > 1 && (
               <p className="text-[11px] pb-2" style={{ color: 'var(--text-4)' }}>
                 {metalGroups.length} metal rates on this document — a line each, above
