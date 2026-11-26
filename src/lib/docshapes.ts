@@ -192,13 +192,27 @@ const linesOf = (d: BuiltDoc): Line[] => {
     })
   }
 
-  /* Any section whose rate had no block of its own, then everything bought
-     finished — hardware, rubber — in the order it was entered. */
+  /* Any section whose rate had no block of its own. */
   out.push(...sections.filter((_, i) => {
     const l = d.lines[i]
     return l && isAluminium(l) && !shown.has(rateOf(l))
   }))
-  out.push(...sections.filter((_, i) => !(d.lines[i] && isAluminium(d.lines[i]))))
+
+  /* ── Sheets, then everything bought finished ──────────────────────────
+     Theirs, on 22-11: "it should organise sections first, then sheets, then
+     hardware even though randomly entered."
+
+     Sections and hardware sorted; a sheet had nowhere to go, because there
+     is no sheet in the item list yet — their coating sheets carry sections,
+     hardware and rubber and nothing else. Waiting on a list of sheets would
+     leave the order half done, so it is read off the name: anything called
+     a sheet, a coil, ACP or plain takes second place. Add one to the
+     catalogue under any of those names and it lands where they asked, with
+     nothing to set up.                                                   */
+  const SHEETY = /\b(sheet|sheets|coil|coils|acp|plain)\b/i
+  const rest = sections.filter((_, i) => !(d.lines[i] && isAluminium(d.lines[i])))
+  out.push(...rest.filter(l => SHEETY.test(l.name || '')))
+  out.push(...rest.filter(l => !SHEETY.test(l.name || '')))
   return out
 }
 

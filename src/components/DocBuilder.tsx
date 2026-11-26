@@ -10,6 +10,7 @@ import { inr2, fmtDate } from '@/lib/utils'
 import { today, validTill, DEFAULT_VALID_DAYS, revisionNumber } from '@/lib/docnos'
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { recallRate, recallSlab, rememberAll } from '@/lib/ratememory'
+import { priceOf, pricedCount } from '@/lib/pricelist'
 import { DEFAULT_TERMS, termsFromText, termsToText } from '@/data/terms'
 import { useProductImages, setProductImage, removeProductImage } from '@/lib/productimages'
 import { hsnFor } from '@/data/hsn'
@@ -925,6 +926,15 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
        already carries, what this product last went out at, and the figure
        in the Powder Coating row, which is the shop's standing rate. */
     const prefed = alu.on && p.kind === 'section' ? coatingRate : 0
+    /* ── The catalogue is the price list ────────────────────────────────
+       Every rate box has opened empty since 20-11 while we waited for a
+       product list with prices on it. It never needed to come to us: the
+       Product Catalogue is theirs to edit, and whatever is in it is read
+       here. A rate put against a section once fills in on every document
+       after it. Only for things sold outright — a section's rate on a
+       coated document is the coating charge, which is a different figure
+       and has its own standing rate above. */
+    const listed = p.kind === 'section' && alu.on ? undefined : priceOf(id, p.code)
     /* ── One, until it is told otherwise ────────────────────────────────
        Theirs, on 21-11: "after selecting an item, fill in the quantity
        automatically." A line with nothing against it is not a line, and
@@ -950,9 +960,9 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
          about this job; what the product went out at on somebody else's
          quotation last month is a memory. The memory fills in only where
          nothing has been said here. */
-      rate: l.rate > 0 ? l.rate : (prefed || seen?.rate || 0),
-      gst: seen?.gst ?? recallSlab(p.kind) ?? l.gst,
-      recalled: !prefed && !!seen?.rate && l.rate <= 0,
+      rate: l.rate > 0 ? l.rate : (prefed || seen?.rate || listed?.rate || 0),
+      gst: seen?.gst ?? listed?.gst ?? recallSlab(p.kind) ?? l.gst,
+      recalled: !prefed && (!!seen?.rate || !!listed?.rate) && l.rate <= 0,
     }
   }))
 
@@ -1842,8 +1852,12 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
             {isPurchase
               ? 'Rates are typed off the supplier\u2019s bill. Once the product list reaches us with a cost '
                 + 'price against each code, a rate far from it will be flagged here rather than found later.'
-              : 'Rates are typed because selling prices have not been given to us yet. Send the product list '
-                + 'with cost and selling price against each code and the rate will fill itself in.'}
+              : pricedCount() > 0
+                ? `${pricedCount()} ${pricedCount() === 1 ? 'product carries' : 'products carry'} a selling `
+                  + 'price in the Product Catalogue and fills in here by itself. Put a rate against the rest '
+                  + 'on that screen and they will too.'
+                : 'Put a selling price against each code on the Product Catalogue screen and every rate here '
+                  + 'fills itself in. Nothing has to be sent to us — that screen is yours to edit.'}
           </p>
         </div>
 
