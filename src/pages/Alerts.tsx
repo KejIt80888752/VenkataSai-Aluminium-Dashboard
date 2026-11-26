@@ -9,8 +9,12 @@ import { INVOICES } from '@/data/txns'
 import { CLIENTS } from '@/data/parties'
 import { inr, fmtDate, daysAgo, csvDownload, cn } from '@/lib/utils'
 import { COMPANY, TODAY } from '@/data/company'
+import Calendar from '@/components/Calendar'
 
-const TABS = ['Stock Alerts', 'Payment Reminders'] as const
+/* Calendar is theirs, on 26-11. It sits beside the other two because a
+   reminder and a date are the same thing looked at twice: the tabs say what
+   needs chasing, the calendar says which day it falls on. */
+const TABS = ['Stock Alerts', 'Payment Reminders', 'Calendar'] as const
 
 export default function Alerts() {
   const [tab, setTab] = useState<typeof TABS[number]>('Stock Alerts')
@@ -37,7 +41,7 @@ export default function Alerts() {
         ))}
       </div>
 
-      {tab === 'Stock Alerts' ? <StockAlerts /> : <PaymentReminders />}
+      {tab === 'Stock Alerts' ? <StockAlerts /> : tab === 'Payment Reminders' ? <PaymentReminders /> : <Calendar />}
     </div>
   )
 }

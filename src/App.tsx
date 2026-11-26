@@ -57,6 +57,7 @@ import PurchaseDC      from '@/pages/PurchaseDC'
 import CoatBook        from '@/pages/CoatBook'
 import DcFlow          from '@/pages/DcFlow'
 import Stats           from '@/pages/Stats'
+import CalendarPage    from '@/pages/Calendar'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -128,6 +129,7 @@ function AppRoutes() {
               <Route path="/coat-book"       element={<CoatBook        />} />
               <Route path="/dc-flow"         element={<DcFlow          />} />
               <Route path="/stats"           element={<Stats           />} />
+              <Route path="/calendar"        element={<CalendarPage    />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>

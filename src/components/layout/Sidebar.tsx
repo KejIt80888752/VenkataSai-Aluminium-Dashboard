@@ -7,7 +7,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2, Search, FileCheck2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch, CalendarDays,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BUILT } from '@/lib/version'
@@ -23,6 +23,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { group: 'Overview' },
   { to: '/',                 icon: LayoutDashboard, label: 'Dashboard'         },
   { to: '/alerts',           icon: BellRing,        label: 'Alerts & Reminders'},
+  { to: '/calendar',         icon: CalendarDays,    label: 'Calendar'          },
   { group: 'Sales' },
   { to: '/estimate',         icon: FileText,        label: 'Estimate'          },
   { to: '/quotation',        icon: FileText,        label: 'Quotation'         },

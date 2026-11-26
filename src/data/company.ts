@@ -1,3 +1,4 @@
+import { SHOW_SAMPLE } from './sample'
 /** Company master — sourced from venkatasaialuminiu.wixsite.com/venkatasaialuminium */
 export const COMPANY = {
   name:      'VENKATA SAI ALUMINIUM TRADE LINKS',
@@ -43,5 +44,22 @@ export const COMPANY = {
 }
 
 export const FY = 'FY 2026–27'
+
+/* ── "Today" ───────────────────────────────────────────────────────────────
+   It was a fixed date, because the sample book is three months long and ends
+   on 20-08-2026: with a real clock every invented bill in it would read as
+   overdue. The sample is off for this shop, so "today" is now the day it
+   actually is — a calendar that opens on the wrong month is worse than no
+   calendar, and daysAgo() has always run off the real clock anyway. Turning
+   the sample back on for a demo brings the fixed date back with it.
+
+   The local clock, not toISOString(): that is UTC, so between midnight and
+   half past five in the morning in India it hands back yesterday.          */
+const localIso = () => {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 /** Treated as "today" throughout the dashboard */
-export const TODAY = '2026-08-20'
+export const TODAY = SHOW_SAMPLE ? '2026-08-20' : localIso()
