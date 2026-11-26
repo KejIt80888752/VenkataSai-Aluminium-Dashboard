@@ -4,8 +4,38 @@ import { Warehouse, PackageX, Scale, IndianRupee, AlertTriangle } from 'lucide-r
 import { PageHead, Stat, SearchBox, Select, ExportBtn, TableCard, Pager, usePaged, Empty, useChartTheme } from '@/components/ui'
 import { P, CATEGORIES, stockQty, stockValue, isLow } from '@/data/catalogue'
 import { inr, inrShort, csvDownload, cn } from '@/lib/utils'
+import { useCrud } from '@/lib/store'
+import { INVOICES, type Invoice } from '@/data/txns'
+import { SAMPLE_DC } from '@/data/despatch'
+import { LOADED } from '@/data/coatbook'
+import { masterIdOf, productById } from '@/data/productmaster'
+import { issuedByProduct, receivedByProduct, positionOf } from '@/lib/stockledger'
 
 export default function Inventory() {
+  /* ── Stock that moves ──────────────────────────────────────────────────
+     Theirs, on 22-11: "in stock qty and weight reduces." It did not — the
+     figure sat where it had been put however many bills went out, which is
+     worse than no figure at all because somebody will trust it.
+
+     It is worked out now, the way a ledger is: the opening figure against
+     the product, plus every lorry on a purchase DC, less everything billed
+     out on a tax invoice. Pieces and kilos both, because they sell both
+     ways. See src/lib/stockledger.ts. */
+  const invs = useCrud<Invoice>('invoices', INVOICES, (x: Invoice) => x.no)
+  const issued = useMemo(() => issuedByProduct(invs.rows), [invs.rows])
+  const received = useMemo(() => receivedByProduct([
+    {
+      rows: LOADED.map(l => ({
+        productId: masterIdOf(l) ?? '', nos: l.nos ?? 0, kg: l.kg,
+      })),
+    },
+    {
+      rows: SAMPLE_DC.lines.map(l => ({
+        productId: '', nos: l.pieces, kg: l.netWeightKg,
+      })),
+    },
+  ]), [])
+
   const [q, setQ]         = useState('')
   const [cat, setCat]     = useState('All Categories')
   const [god, setGod]     = useState('All Godowns')
@@ -39,7 +69,8 @@ export default function Inventory() {
 
   return (
     <div>
-      <PageHead title="Stock & Inventory" sub="Rack-wise position across Main Godown and Yard 2, valued at landed cost">
+      <PageHead title="Stock & Inventory"
+        sub="Opening, plus every purchase DC, less everything billed out — in pieces and in kilos">
         <ExportBtn onClick={exportCsv} />
       </PageHead>
 
@@ -99,24 +130,53 @@ export default function Inventory() {
       <TableCard>
         <thead>
           <tr>
-            <th>Code</th><th>Product</th><th>Godown / Rack</th>
-            <th className="num">On Hand</th><th className="num">Qty</th>
-            <th className="num">Reorder</th><th className="num">Stock Value</th><th>Status</th>
+            <th>Code</th><th>Product</th>
+            <th className="num">Opening</th>
+            <th className="num">Received</th>
+            <th className="num">Billed out</th>
+            <th className="num">On hand</th>
+            <th className="num">On hand (kg)</th>
+            <th className="num">Stock Value</th><th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {paged.slice.map(p => (
+          {paged.slice.map(p => {
+            const kgEach = productById(p.id)?.kgPerPiece ?? null
+            const pos = positionOf(
+              p.id,
+              { nos: p.stockPcs, kg: kgEach !== null ? +(p.stockPcs * kgEach).toFixed(3) : 0 },
+              received, issued,
+            )
+            const short = pos.onHand.nos < 0
+            return (
             <tr key={p.id}>
               <td className="font-mono text-xs whitespace-nowrap" style={{ color: 'var(--text-1)' }}>{p.code}</td>
               <td className="font-medium max-w-[15rem] truncate" style={{ color: 'var(--text-1)' }}>{p.name}</td>
-              <td className="text-xs whitespace-nowrap">{p.godown} · <span style={{ color: 'var(--text-4)' }}>{p.rack}</span></td>
-              <td className={cn('num tabular-nums', isLow(p) && 'text-amber-600 font-semibold')}>{p.stockPcs} pcs</td>
-              <td className="num tabular-nums text-xs">{stockQty(p).toLocaleString('en-IN', { maximumFractionDigits: 1 })} {p.unit}</td>
-              <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>{p.reorderPcs}</td>
+              <td className="num tabular-nums text-xs" style={{ color: 'var(--text-4)' }}>
+                {pos.opening.nos || '—'}
+              </td>
+              <td className="num tabular-nums text-xs" style={{ color: pos.received.nos ? 'var(--green)' : 'var(--text-4)' }}>
+                {pos.received.nos ? `+${pos.received.nos}` : '—'}
+              </td>
+              <td className="num tabular-nums text-xs" style={{ color: pos.issued.nos ? 'var(--red)' : 'var(--text-4)' }}>
+                {pos.issued.nos ? `−${pos.issued.nos}` : '—'}
+              </td>
+              <td className={cn('num tabular-nums font-semibold', short && 'text-amber-600')}
+                style={short ? undefined : { color: 'var(--text-1)' }}>
+                {pos.onHand.nos} pcs
+              </td>
+              <td className="num tabular-nums text-xs">
+                {pos.onHand.kg ? `${pos.onHand.kg.toLocaleString('en-IN', { maximumFractionDigits: 2 })} kg` : '—'}
+              </td>
               <td className="num tabular-nums font-semibold" style={{ color: 'var(--text-1)' }}>{inr(stockValue(p))}</td>
-              <td>{isLow(p) ? <span className="badge-yellow">Reorder</span> : <span className="badge-green">In Stock</span>}</td>
+              <td>
+                {short
+                  ? <span className="badge-red">Billed over stock</span>
+                  : isLow(p) ? <span className="badge-yellow">Reorder</span>
+                  : <span className="badge-green">In Stock</span>}
+              </td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </TableCard>
       {rows.length === 0 && <Empty msg="No stock lines match these filters" />}
