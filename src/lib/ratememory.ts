@@ -90,7 +90,14 @@ export function remember(productId: string, kind: string, rate: number, gst: num
   if (!productId) return
   const m = read()
   if (rate > 0) m.byProduct[productId] = { rate, gst, at: new Date().toISOString().slice(0, 10) }
-  if (kind) m.byKind[kind] = gst
+  /* ── Nought is never learned ──────────────────────────────────────────
+     A slab of nought is a decision about one line — something quoted
+     outside GST — not a standing rule for everything of that kind. This
+     remembered it anyway, so one such line taught every later section to
+     open untaxed, and their quotation to SDM Interiors went out with
+     ₹1,392 of coating at 0% beside metal at 18%. A real slab is
+     remembered; nought is left where it was typed.                      */
+  if (kind && gst > 0) m.byKind[kind] = gst
   write(m)
 }
 

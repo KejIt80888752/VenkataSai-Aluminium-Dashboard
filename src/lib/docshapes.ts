@@ -18,7 +18,7 @@
 
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc, BuiltLine } from '@/components/DocBuilder'
-import { lineAmount, totalKgOf, totalNosOf, isAluminium } from '@/components/DocBuilder'
+import { lineAmount, totalKgOf, totalNosOf, isAluminium, coatingSlabOf } from '@/components/DocBuilder'
 import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
 
@@ -178,11 +178,10 @@ const linesOf = (d: BuiltDoc): Line[] => {
       : +(qty * (d.coatingRate ?? 0)).toFixed(2)
     const rate = qty > 0 ? +(charged / qty).toFixed(2) : (d.coatingRate ?? 0)
     /* The slab most of the coated sections are at, since the charge covers
-       them all as one supply. */
-    const slab = metal.length
-      ? [...metal.reduce((m, l) => m.set(l.gst, (m.get(l.gst) ?? 0) + 1), new Map<number, number>())
-          .entries()].sort((a, b) => b[1] - a[1])[0][0]
-      : 18
+       them all as one supply — and the metal's where they carry none, so a
+       charge beside taxed metal is never printed untaxed. The form works it
+       out the same way, from the same function. */
+    const slab = coatingSlabOf(metal.map(l => l.gst), d.aluminium?.gst ?? 18)
     if (charged > 0 || qty > 0) out.push({
       code: '', name: 'POWDER COATING', hsn: hsnFor('coating'),
       unit, qty, rate,

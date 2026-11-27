@@ -166,7 +166,7 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
                     above it is specification; ₹0.00 against it reads as a
                     free supply. */}
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
-                  {l.rate ? inr2(l.rate) : <span className="text-slate-400">—</span>}
+                  {l.rate && l.amount ? inr2(l.rate) : <span className="text-slate-400">—</span>}
                 </td>
                 {/* "Show the tax rate as a small symbol (18%, 9%) instead of
                     full details" — theirs, on 21-11. */}

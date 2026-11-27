@@ -304,8 +304,15 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                 <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">
                   {/* A section whose coating has been lifted onto its own
                       line below is specification, not money. Nought rupees
-                      printed against it reads as a free supply. */}
-                  {lumpSum || lotCoating || !l.rate
+                      printed against it reads as a free supply.
+
+                      And a rate with no amount beside it reads as an error.
+                      Their quotation to SDM Interiors on 27-11 printed
+                      "5 nos · ₹144.00 · —" three times over, because the
+                      charge for those lengths had gone up into the one
+                      POWDER COATING line and only the rate stayed behind.
+                      A rate prints where there is money against it. */}
+                  {lumpSum || lotCoating || !l.rate || !l.amount
                     ? <span className="text-slate-400">—</span>
                     : inr2(l.rate)}
                 </td>

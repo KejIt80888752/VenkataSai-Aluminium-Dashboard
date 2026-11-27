@@ -9,7 +9,7 @@ import { inr, inr2, fmtDate, csvDownload } from '@/lib/utils'
 import { COMPANY, FY } from '@/data/company'
 import { useCrud } from '@/lib/store'
 import { RowActions, EditedDot } from '@/components/crud'
-import DocBuilder, { type BuiltDoc, type BuiltLine } from '@/components/DocBuilder'
+import DocBuilder, { WHOLE_SLAB, type BuiltDoc, type BuiltLine } from '@/components/DocBuilder'
 import QuoteDoc from '@/components/QuoteDoc'
 import InvoiceDoc from '@/components/InvoiceDoc'
 import {
@@ -295,12 +295,13 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
      theirs: "we should have option to change unit rate in tax invoice".
 
      Two rules on the way into a bill, both theirs. A line at nought per cent
-     does not belong on a tax invoice at all and is dropped. A line at nine —
-     the half of a split slab, written as if it were the whole — is put back to
-     the eighteen the bill has to charge.                                   */
+     does not belong on a tax invoice at all and is dropped. A line written at
+     the half of a split slab — 2.5 for the five, 9 for the eighteen, as the
+     CGST column alone collects it — is put back to the whole slab the bill
+     has to charge.                                                         */
   const forTaxInvoice = (lines: BuiltLine[]) => lines
     .filter(l => l.gst > 0)
-    .map(l => ({ ...l, gst: l.gst === 9 ? 18 : l.gst }))
+    .map(l => ({ ...l, gst: WHOLE_SLAB[l.gst] ?? l.gst }))
 
   const carryForward = (x: DocRow) => {
     const to = NEXT_STEP[kind]

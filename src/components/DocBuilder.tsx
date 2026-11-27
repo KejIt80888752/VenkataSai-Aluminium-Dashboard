@@ -400,9 +400,22 @@ export function totalsOf(
 
      Every line carries its own slab now. The metal carries its own as well,
      because it is its own supply at its own HSN. */
+  /* ── The coating is never silently untaxed ────────────────────────────
+     Theirs, on 27-11, over and over on the call: "GST is not added." Their
+     own quotation to SDM Interiors is the proof — ₹1,392 of powder coating
+     printed at 0% beside metal at 18%, and the tax of ₹2,928.14 was the
+     metal and the rubber and nothing else.
+
+     The coating took its slab from the sections it covers, and a section
+     line had quietly opened at nought because the last one somebody put
+     outside GST taught the rate memory to do it. A charge that is being
+     made cannot be at no slab while the metal it belongs to is at 18, so
+     the sections' slab is used where there is one and the metal's where
+     there is not. Nothing is invented: both figures are on the document. */
+  const coatedSlab = coatingSlabOf(coatedLines.map(l => l.gst), aluminium.gst)
   const coatingTax = aluminium.on
     ? (coatingUnit !== 'kg' && coatedLines.length
-        ? coatedLines.reduce((s, l) => s + lineAmount(l, true) * (l.gst / 100), 0)
+        ? coatedLines.reduce((s, l) => s + lineAmount(l, true) * (coatedSlab / 100), 0)
         : coating * (aluminium.gst / 100))
     : 0
 
@@ -417,11 +430,37 @@ export function totalsOf(
   return { metal, coating, goods, kg, coatBase, taxable, tax, total: +(taxable + tax).toFixed(2) }
 }
 
-/* 9 is here because they asked for it: a line carried at the half-slab,
-   written as if it were the whole, is put back to 18 on the way into a tax
-   invoice. 0 is here for anything quoted outside GST, which is dropped from
-   a tax invoice altogether rather than billed at nought. */
-const GST_RATES = ['18', '12', '9', '5', '0', '28']
+/* ── What slab the coating charge is at ───────────────────────────────────
+   The sections it covers decide it, because the charge is on them. Where
+   they carry no slab at all — put outside GST on purpose, or left at nought
+   by a rate memory that should never have learned it — the metal's slab
+   stands in, since a coating charge beside taxed metal is a taxed supply.
+   Used by the figures on the form and by the line that prints, so the two
+   can never say different things.                                        */
+export function coatingSlabOf(slabs: number[], metalSlab: number): number {
+  const counted = slabs.filter(g => g > 0)
+  if (!counted.length) return metalSlab || 18
+  const byCount = new Map<number, number>()
+  for (const g of counted) byCount.set(g, (byCount.get(g) ?? 0) + 1)
+  return [...byCount.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0]
+}
+
+/* ── The slabs, and the halves of them ────────────────────────────────────
+   Theirs, on 27-11: "this can be 9 or 2 points", and "different slabs like
+   5%, 9%, 9%". They write a line at the half of its slab, because that is
+   what the CGST column and the SGST column each collect — 2.5 and 2.5 make
+   the five a section pays, 9 and 9 make the eighteen. Nine was already here;
+   two and a half was not, so a line at the five-per-cent slab could not be
+   written the way they write it.
+
+   A half written as if it were the whole is put back to the whole on the way
+   into a tax invoice, because a bill has to charge the slab. 0 is here for
+   anything quoted outside GST, which is dropped from a tax invoice
+   altogether rather than billed at nought.                                */
+const GST_RATES = ['18', '12', '9', '5', '2.5', '0', '28']
+
+/** A half-slab, and the slab it stands for. */
+export const WHOLE_SLAB: Record<number, number> = { 2.5: 5, 6: 12, 9: 18, 14: 28 }
 /** Who raises the shop's documents. On the form, so it can be changed. */
 const DEFAULT_OWNER = 'ROHITH'
 /* ── A new line opens in the colour of the one above it ───────────────────
@@ -1051,6 +1090,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
       e.preventDefault()
       if (ready) save('Sent')
+      return
+    }
+    /* ── Putting it aside without the mouse ────────────────────────────
+       Theirs, on 27-11, looking for it on the keyboard and not finding it:
+       "if you want to click on the key to save draft… there is no option
+       here." There was a button and no key. Ctrl+D files it as a draft, as
+       Ctrl+S sends it. */
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
+      e.preventDefault()
+      if (ready && canDraft) save('Draft')
     }
   }
 
@@ -1838,7 +1887,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               <span className="text-[10px] ml-1" style={{ color: 'var(--text-4)' }}>Ctrl ↵</span>
             </button>
             <span className="text-[10px]" style={{ color: 'var(--text-4)' }}>
-              Ctrl + S raises it
+              Ctrl + S raises it{canDraft && ', Ctrl + D keeps it as a draft'}
             </span>
             {t.goods > 0 && alu.on && (
               <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
@@ -1925,11 +1974,13 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               title="File it as a draft — it stays off the figures until it is sent"
               style={ready ? undefined : { opacity: .45, cursor: 'not-allowed' }}>
               <Save size={14} /> Save as draft
+              <span className="text-[10px] ml-1 opacity-70">Ctrl D</span>
             </button>
           )}
           <button className="btn" disabled={!ready} onClick={() => save('Sent')}
             style={ready ? undefined : { opacity: .45, cursor: 'not-allowed' }}>
             {rev ? `Save revision ${rev}` : `Raise ${kind.toLowerCase()}`}
+            <span className="text-[10px] ml-1.5 opacity-70">Ctrl S</span>
           </button>
         </div>
       </div>

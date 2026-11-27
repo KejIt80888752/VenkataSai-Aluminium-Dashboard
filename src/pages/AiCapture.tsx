@@ -11,12 +11,17 @@ import {
 } from '@/data/aidocs'
 import { inr, inr2, csvDownload, fmtDate, cn } from '@/lib/utils'
 import ManualToComputerised from '@/components/ManualToComputerised'
+import OwnManualSheet from '@/components/OwnManualSheet'
 
 /* "Manual bill to computerised" comes first and opens first, because it is
    the one they asked to be shown and the only one running on their own
    paper. The rest wait on documents being put through the system. */
+/* "Write your own sheet" is theirs, on 27-11: on the call they found they
+   could look at the worked example and not touch it — "I don't have access
+   to it, sir". So the example stays, and beside it is the same thing with
+   the pen in their hand. */
 const TABS = [
-  'Manual → Computerised', 'Capture Queue', 'Upload Batches',
+  'Manual → Computerised', 'Write your own sheet', 'Capture Queue', 'Upload Batches',
   'Correction Report', 'Export Patterns', 'API',
 ] as const
 
@@ -28,7 +33,7 @@ export default function AiCapture() {
       <PageHead title="AI Document Capture"
         sub="Your own shorthand, learned once — the counter book becomes records without being re-explained" />
 
-      {tab !== 'Manual → Computerised' && AI_SUMMARY.bills > 0 && (
+      {tab !== 'Manual → Computerised' && tab !== 'Write your own sheet' && AI_SUMMARY.bills > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
           <Stat label="Bills Extracted"  value={String(AI_SUMMARY.bills)} icon={ScanLine} tone="brand" sub={`From ${AI_SUMMARY.batches} uploads`} />
           <Stat label="Straight Through" value={`${AI_SUMMARY.straightThroughPct}%`} icon={FileCheck2} tone="green" sub={`${AI_SUMMARY.autoApproved} posted without a touch`} />
@@ -46,6 +51,7 @@ export default function AiCapture() {
       </div>
 
       {tab === 'Manual → Computerised' && <ManualToComputerised />}
+      {tab === 'Write your own sheet' && <OwnManualSheet />}
       {tab === 'Capture Queue'    && <Queue />}
       {tab === 'Upload Batches'   && <Batches />}
       {tab === 'Correction Report'&& <Corrections />}
