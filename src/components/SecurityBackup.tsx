@@ -1,21 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Fingerprint, ShieldCheck, DatabaseBackup, Gauge, Download, FileLock2, CheckCircle2, CircleAlert, Clock,
+  Upload, RotateCcw, HardDriveDownload,
 } from 'lucide-react'
-import { COMPANY, TODAY, FY } from '@/data/company'
+import { COMPANY } from '@/data/company'
 import { cn } from '@/lib/utils'
-
-/* ── Daily backup log ──────────────────────────────────────────────────── */
-const backupDays = (n: number) => Array.from({ length: n }, (_, i) => {
-  const d = new Date(TODAY); d.setDate(d.getDate() - i)
-  return {
-    date: d.toISOString().slice(0, 10),
-    at: '01:30',
-    sizeMb: +(42.5 + i * 0.35).toFixed(1),
-    // One night the machine was off — worth showing rather than hiding.
-    ok: i !== 4,
-  }
-})
+import {
+  collect, sizeOf, snapshots, takeSnapshot, putBack, downloadBackup, readBackup, whenOf, kb,
+  type Snapshot,
+} from '@/lib/backup'
+import { Modal } from '@/components/ui'
 
 export default function SecurityBackup() {
   return (
@@ -117,62 +111,141 @@ function Biometric() {
   )
 }
 
-/* ── 2. A copy taken every night ───────────────────────────────────────── */
-function Backups() {
-  const days = backupDays(10)
-  const failed = days.filter(d => !d.ok)
+/* ── 2. A copy of the day's work, that can be carried out and brought back ─
+   Theirs, on 27-11: "that estimate is lost, again we have to redo."
 
-  const downloadNow = () => {
-    const blob = new Blob([JSON.stringify({
-      company: COMPANY.name, gstin: COMPANY.gstin, financialYear: FY,
-      takenAt: new Date().toISOString(),
-      note: 'Manual backup taken from the dashboard.',
-    }, null, 2)], { type: 'application/json' })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `vsa-backup-${new Date().toISOString().slice(0, 10)}.json`
-    a.click(); URL.revokeObjectURL(a.href)
+   This card used to show a nightly backup that nothing was taking, and its
+   button wrote out a file holding the company name and no records at all.
+   It now reads the registers themselves. The copies listed are the ones on
+   this machine, with the hour each was taken, and any of them can be put
+   back. The file is the one to keep off the machine.                       */
+function Backups() {
+  const [snaps, setSnaps] = useState<Snapshot[]>(() => snapshots())
+  const [now, setNow] = useState(() => { const d = collect(); return { keys: Object.keys(d).length, bytes: sizeOf(d) } })
+  const [msg, setMsg] = useState('')
+  const [putting, setPutting] = useState<{ when: string; data: Record<string, string>; keys: number } | null>(null)
+  const pick = useRef<HTMLInputElement>(null)
+
+  const refresh = () => {
+    setSnaps(snapshots())
+    const d = collect(); setNow({ keys: Object.keys(d).length, bytes: sizeOf(d) })
+  }
+
+  const copyNow = () => {
+    const s = takeSnapshot('taken by hand')
+    refresh()
+    setMsg(s ? `Copy kept on this machine at ${whenOf(s.at)}.` : 'No room on this machine for another copy.')
+  }
+
+  const toFile = () => {
+    const f = downloadBackup()
+    setMsg(`${f.keys} registers written out. Keep the file somewhere other than this machine.`)
+  }
+
+  const fromFile = (file: File) => {
+    const r = new FileReader()
+    r.onload = () => {
+      const read = readBackup(String(r.result ?? ''))
+      if (!read) { setMsg('That file is not one of ours — nothing was changed.'); return }
+      setPutting({
+        when: read.takenAt ? whenOf(read.takenAt) : file.name,
+        data: read.data, keys: Object.keys(read.data).length,
+      })
+    }
+    r.readAsText(file)
+  }
+
+  const confirmPutBack = () => {
+    if (!putting) return
+    const n = putBack(putting.data)
+    setPutting(null)
+    /* The screens are already holding what was there a moment ago, so the
+       page is read again rather than asking each one to notice. */
+    setMsg(`${n} registers put back. Reopening…`)
+    setTimeout(() => window.location.reload(), 600)
   }
 
   return (
     <div className="card">
       <div className="flex items-start justify-between gap-3 mb-1">
         <p className="section-title text-base flex items-center gap-2">
-          <DatabaseBackup size={16} className="text-brand" /> Nightly Backup
+          <DatabaseBackup size={16} className="text-brand" /> Your Work, Kept
         </p>
-        <button className="btn-outline !py-1 !text-xs shrink-0" onClick={downloadNow}>
-          <Download size={13} /> Take one now
-        </button>
+        <span className="flex gap-2 shrink-0">
+          <button className="btn-outline !py-1 !text-xs" onClick={copyNow} title="Keep a copy on this machine now">
+            <HardDriveDownload size={13} /> Copy now
+          </button>
+          <button className="btn !py-1 !text-xs" onClick={toFile} title="Write every register out to one file">
+            <Download size={13} /> Save to file
+          </button>
+        </span>
       </div>
       <p className="section-sub mb-4">
-        A full copy is taken at 1:30 every night and kept for thirty days. Nothing has to be remembered or pressed.
+        A copy is kept here each day, and again before anything is deleted or Undo all is pressed on a register.
+        Any copy below can be put back. The file keeps the work safe if something happens to this machine.
       </p>
 
       <div className="grid grid-cols-3 gap-2 mb-3">
-        <Tile k="Last good copy" v={days.find(d => d.ok)!.date.slice(8) + ' Aug'} tone="green" />
-        <Tile k="Copies kept" v="30 days" tone="brand" />
-        <Tile k="Nights missed" v={String(failed.length)} tone={failed.length ? 'red' : 'green'} />
+        <Tile k="Registers written" v={String(now.keys)} tone="brand" />
+        <Tile k="Size now" v={kb(now.bytes)} tone="brand" />
+        <Tile k="Copies kept here" v={String(snaps.length)} tone={snaps.length ? 'green' : 'red'} />
       </div>
 
       <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-2)' }}>
         <div className="max-h-44 overflow-y-auto">
-          {days.map((d, i) => (
-            <div key={d.date} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs"
+          {snaps.length === 0 ? (
+            <p className="px-3 py-4 text-xs" style={{ color: 'var(--text-4)' }}>
+              No copy yet on this machine. Press <b>Copy now</b> — then <b>Save to file</b> and keep that file
+              somewhere else.
+            </p>
+          ) : snaps.map((d, i) => (
+            <div key={d.at} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs"
               style={{ borderTop: i ? '1px solid var(--border-2)' : undefined }}>
-              <span className="flex items-center gap-2">
-                {d.ok
-                  ? <CheckCircle2 size={13} style={{ color: 'var(--green)' }} />
-                  : <CircleAlert size={13} style={{ color: 'var(--red)' }} />}
-                <span className="tabular-nums" style={{ color: 'var(--text-2)' }}>{d.date}</span>
-                <span style={{ color: 'var(--text-4)' }}>{d.at}</span>
+              <span className="flex items-center gap-2 min-w-0">
+                <CheckCircle2 size={13} style={{ color: 'var(--green)' }} className="shrink-0" />
+                <span className="tabular-nums shrink-0" style={{ color: 'var(--text-2)' }}>{whenOf(d.at)}</span>
+                <span className="truncate" style={{ color: 'var(--text-4)' }}>{d.why}</span>
               </span>
-              <span className="tabular-nums" style={{ color: d.ok ? 'var(--text-3)' : 'var(--red)' }}>
-                {d.ok ? `${d.sizeMb} MB` : 'machine was off'}
+              <span className="flex items-center gap-2 shrink-0">
+                <span className="tabular-nums" style={{ color: 'var(--text-3)' }}>{d.keys} · {kb(d.bytes)}</span>
+                <button className="btn-ghost !px-1.5 !py-0.5 !text-[11px]"
+                  onClick={() => setPutting({ when: whenOf(d.at), data: d.data, keys: d.keys })}>
+                  <RotateCcw size={12} /> Put back
+                </button>
               </span>
             </div>
           ))}
         </div>
       </div>
+
+      <div className="flex items-center justify-between gap-3 mt-3 pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
+        <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+          Have a file from another machine or an earlier day? Put it back here.
+        </p>
+        <button className="btn-outline !py-1 !text-xs shrink-0" onClick={() => pick.current?.click()}>
+          <Upload size={13} /> Put a file back
+        </button>
+        <input ref={pick} type="file" accept=".json,application/json" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) fromFile(f); e.target.value = '' }} />
+      </div>
+
+      {msg && <p className="text-[11px] mt-2" style={{ color: 'var(--text-3)' }}>{msg}</p>}
+
+      <Modal open={!!putting} onClose={() => setPutting(null)} title="Put this copy back?">
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: 'var(--text-2)' }}>
+            The registers go back to how they stood on <b>{putting?.when}</b> — {putting?.keys} of them.
+            Anything written since then is replaced.
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+            A copy of the registers as they stand now is kept first, so this can be undone the same way.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className="btn-outline" onClick={() => setPutting(null)}>Leave it</button>
+            <button className="btn" onClick={confirmPutBack}><RotateCcw size={14} /> Put it back</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

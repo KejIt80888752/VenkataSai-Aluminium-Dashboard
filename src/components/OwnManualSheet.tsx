@@ -14,15 +14,17 @@
    section afterwards. It is the one alias table the purchase sheet and the
    coating book read, so a word taught here is known on all three.        */
 
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   PenLine, ArrowRight, Plus, Trash2, Info, FileInput, RotateCcw, CircleCheck,
+  Mic, MicOff, Check, X,
 } from 'lucide-react'
 import { SectionPicker } from '@/components/SectionPicker'
 import { PICK_OPTIONS, productById } from '@/data/productmaster'
 import { useAliases } from '@/lib/useAliases'
 import { useCrud } from '@/lib/store'
+import { parseSheetLine } from '@/lib/speech'
 import { kg as kgFmt, cn, fmtDate } from '@/lib/utils'
 import { TODAY } from '@/data/company'
 
@@ -50,6 +52,64 @@ const perPiece = (l: OwnLine) =>
 export default function OwnManualSheet() {
   const { ours, teach } = useAliases('depot')
   const crud = useCrud<OwnLine>('own-manual-sheet', NO_LINES, idOf)
+
+  /* ── Saying the line instead of typing it ─────────────────────────────
+     Theirs, on 27-11: "speak to spreadsheet and it identifies product in
+     it." A counter with a section in one hand and a pen in the other has
+     no third hand for the keyboard. So: say the line, and it lands on the
+     sheet the way it was said — "five SP twelve feet 35.32 kg".
+
+     The shorthand is written down, never translated behind their back. If
+     the words happen to name a section in our own catalogue, that section
+     is offered and waits to be accepted. One tap teaches it; from then on
+     every sheet reads it, here and on the purchase screen. */
+  const [listening, setListening] = useState(false)
+  const [heard, setHeard] = useState('')
+  const [voiceMsg, setVoiceMsg] = useState('')
+  const [offer, setOffer] = useState<{ written: string; code: string } | null>(null)
+  const recog = useRef<any>(null)
+
+  const spoken = (text: string) => {
+    const line = parseSheetLine(text)
+    if (!line || (!line.written && !line.pieces)) {
+      setVoiceMsg(`Could not read "${text}". Say it as: five SP twelve feet 35.32 kg.`)
+      return
+    }
+    setVoiceMsg('')
+    crud.add({ ...blank(), written: line.written, lengthFt: line.lengthFt,
+      pieces: line.pieces, netWeightKg: line.netWeightKg })
+    /* Only where nobody has said what the shorthand is — a taught word is
+       already right and must not be second-guessed by a sound-alike. */
+    if (line.suggests && line.written && !ours(line.written)) {
+      setOffer({ written: line.written, code: line.suggests })
+    }
+  }
+
+  const startVoice = () => {
+    const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
+    if (!SR) {
+      setVoiceMsg('This browser cannot listen. Chrome or Edge on the counter machine will.')
+      return
+    }
+    const r = new SR()
+    r.lang = 'en-IN'; r.continuous = true; r.interimResults = true
+    r.onresult = (ev: any) => {
+      let done = ''
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript
+        if (ev.results[i].isFinal) done += t; else setHeard(t)
+      }
+      if (done.trim()) { setHeard(done.trim()); spoken(done) }
+    }
+    r.onerror = (ev: any) => setVoiceMsg(
+      ev.error === 'not-allowed'
+        ? 'The microphone was refused. Allow it in the browser and press Speak again.'
+        : `Could not listen — ${ev.error}.`)
+    r.onend = () => setListening(false)
+    r.start(); recog.current = r; setListening(true); setVoiceMsg(''); setHeard('')
+  }
+
+  const stopVoice = () => { recog.current?.stop(); setListening(false) }
 
   /* Added rows come back newest first; a sheet reads top to bottom. */
   const lines = useMemo(() => [...crud.rows].reverse(), [crud.rows])
@@ -146,6 +206,55 @@ export default function OwnManualSheet() {
           </div>
         </div>
       )}
+
+      {/* ── Saying the line ──────────────────────────────────────────────── */}
+      <div className="card" style={listening ? { borderColor: 'var(--brand)' } : undefined}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="section-title text-base">Say the Line</p>
+            <p className="section-sub">
+              Pieces, your shorthand, the length, the weight — in any order:
+              <span className="font-mono text-[11px] ml-1" style={{ color: 'var(--text-2)' }}>
+                five SP twelve feet 35.32 kg
+              </span>
+            </p>
+          </div>
+          <button className={cn(listening ? 'btn' : 'btn-outline')} onClick={listening ? stopVoice : startVoice}>
+            {listening ? <><MicOff size={14} /> Stop listening</> : <><Mic size={14} /> Speak a line</>}
+          </button>
+        </div>
+
+        {(listening || heard) && (
+          <p className="mt-3 rounded-lg px-3 py-2 text-sm"
+            style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)', color: 'var(--text-2)' }}>
+            {heard ? <>“{heard}”</> : <span style={{ color: 'var(--text-4)' }}>Listening — say the line.</span>}
+          </p>
+        )}
+
+        {offer && (
+          <div className="mt-3 rounded-lg px-3 py-2.5 flex flex-wrap items-center justify-between gap-3"
+            style={{ background: 'var(--bg-card2)', border: '1px solid var(--amber)' }}>
+            <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>
+              <span className="font-mono font-semibold" style={{ color: 'var(--text-1)' }}>{offer.written}</span>
+              {' '}sounds like{' '}
+              <b style={{ color: 'var(--text-1)' }}>{productById(offer.code)?.name ?? offer.code}</b>. Is that it?
+            </span>
+            <span className="flex gap-2 shrink-0">
+              <button className="btn-outline !py-1 !text-xs" onClick={() => setOffer(null)}>
+                <X size={13} /> No, I will point it
+              </button>
+              <button className="btn !py-1 !text-xs"
+                onClick={() => { teach(offer.written, offer.code); setOffer(null) }}>
+                <Check size={13} /> Yes, that is it
+              </button>
+            </span>
+          </div>
+        )}
+
+        {voiceMsg && (
+          <p className="text-[11.5px] mt-3" style={{ color: 'var(--amber)' }}>{voiceMsg}</p>
+        )}
+      </div>
 
       {/* ── The sheet itself ─────────────────────────────────────────────── */}
       <div className="card">

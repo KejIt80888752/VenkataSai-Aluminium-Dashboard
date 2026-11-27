@@ -499,7 +499,7 @@ export function coatingSlabOf(slabs: number[], metalSlab: number): number {
 const GST_RATES = ['18', '12', '9', '5', '2.5', '0', '28']
 
 /** A half-slab, and the slab it stands for. */
-export const WHOLE_SLAB: Record<number, number> = { 2.5: 5, 6: 12, 9: 18, 14: 28 }
+export { WHOLE_SLAB } from '@/lib/slabs'
 /** Who raises the shop's documents. On the form, so it can be changed. */
 const DEFAULT_OWNER = 'ROHITH'
 /* ── A new line opens in the colour of the one above it ───────────────────

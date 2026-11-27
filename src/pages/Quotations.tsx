@@ -319,6 +319,17 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
     .filter(l => l.gst > 0)
     .map(l => ({ ...l, gst: WHOLE_SLAB[l.gst] ?? l.gst }))
 
+  /* ── The metal's own slab travels with the lines ──────────────────────
+     Theirs, on 27-11: "carry forward". The sections were being put back to
+     the whole slab on the way into a bill and the aluminium was not, because
+     the metal's rate and slab are typed once at the top of the form and are
+     not a line. An estimate written the way they write it — 9 against the
+     metal, 9 against the sections — carried forward as 18 on the sections
+     and 9 on the aluminium, which is nearly the whole value of the bill
+     charged at half the tax. The coating slab, where somebody has set one by
+     hand, goes the same way. */
+  const whole = (g: number) => WHOLE_SLAB[g] ?? g
+
   const carryForward = (x: DocRow) => {
     const to = NEXT_STEP[kind]
     if (!to) return
@@ -338,6 +349,12 @@ export default function Quotations({ kind: fixedKind }: { kind?: Kind } = {}) {
       no: nextDocNo(SERIES[to].prefix, existing),
       from: {
         ...base,
+        ...(to === 'Tax Invoice' ? {
+          aluminium: base.aluminium
+            ? { ...base.aluminium, gst: whole(base.aluminium.gst) }
+            : base.aluminium,
+          coatingGst: base.coatingGst != null ? whole(base.coatingGst) : base.coatingGst,
+        } : {}),
         clientName: x.clientName,
         subject: x.subject,
         /* The terms do not travel. An offer promises a rate valid for the

@@ -31,6 +31,9 @@
   }
 
   #doc-print-area {
+    /* The chat keeps its copy off the screen until the browser asks for
+       it, so the one rule that puts it back has to be certain. */
+    display: block !important;
     position: static !important;
     width: 100% !important; max-width: none !important;
     margin: 0 !important; padding: 0 !important;
@@ -52,6 +55,19 @@
   #doc-print-area thead { display: table-header-group; }
 
   .print\:hidden { display: none !important; }
+
+  /* ── A WhatsApp chat on paper ─────────────────────────────────────────
+     Theirs, on 27-11: "download whatsapp chat as it looks like in whatsapp,
+     to be downloaded as pdf." The screen is already the phone's layout, so
+     printing only has to let it off the page it is boxed in, keep the
+     colours the browser would otherwise drop, and never cut a bubble in
+     half at the foot of a page. */
+  #doc-print-area .chat-bubble,
+  #doc-print-area .chat-day { page-break-inside: avoid; break-inside: avoid; }
+  /* The chat is laid out in coloured bubbles, not a ruled table, so the
+     hairline every cell gets is not wanted here. */
+  #doc-print-area .chat-paper td,
+  #doc-print-area .chat-paper th { border: 0 !important; }
 
   @page { size: A4 portrait; margin: 12mm; }
 }

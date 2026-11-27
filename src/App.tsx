@@ -58,6 +58,7 @@ import CoatBook        from '@/pages/CoatBook'
 import DcFlow          from '@/pages/DcFlow'
 import Stats           from '@/pages/Stats'
 import CalendarPage    from '@/pages/Calendar'
+import ChatPdf         from '@/pages/ChatPdf'
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -130,6 +131,7 @@ function AppRoutes() {
               <Route path="/dc-flow"         element={<DcFlow          />} />
               <Route path="/stats"           element={<Stats           />} />
               <Route path="/calendar"        element={<CalendarPage    />} />
+              <Route path="/chat-pdf"        element={<ChatPdf         />} />
               <Route path="*"              element={<Navigate to="/" replace />} />
             </Routes>
           </DashboardLayout>

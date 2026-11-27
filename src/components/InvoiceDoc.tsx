@@ -3,6 +3,7 @@ import { Printer, X } from 'lucide-react'
 import { COMPANY } from '@/data/company'
 import { productById } from '@/data/productmaster'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
+import { slabTag } from '@/lib/slabs'
 import { CLIENTS } from '@/data/parties'
 import { inr2, fmtDate } from '@/lib/utils'
 import { nameFor } from '@/data/itemmaster'
@@ -154,6 +155,15 @@ export default function InvoiceDoc({ inv, onClose }: { inv: Invoice; onClose: ()
                       Narration box for each item, like in Tally." */}
                   {l.narration ? (
                     <span className="block text-[10px] text-slate-500 italic">{l.narration}</span>
+                  ) : null}
+                  {/* ── The slab, split the way it is written by hand ────
+                      Theirs, on 27-11: "Tax Slab representation I asked for
+                      like 9/6 in description." Nine and nine on the
+                      eighteen, six and six on the twelve — and the one
+                      figure where the sale crosses the state line and IGST
+                      takes the whole of it. */}
+                  {l.amount ? (
+                    <span className="block text-[10px] text-slate-500 tabular-nums">{slabTag(l.gst, inter)}</span>
                   ) : null}
                 </td>
                 <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>

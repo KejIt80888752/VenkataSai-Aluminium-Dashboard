@@ -4,6 +4,7 @@
    figures are never lost and every change can be undone.                   */
 
 import { useState, useCallback, useMemo } from 'react'
+import { takeSnapshot } from '@/lib/backup'
 
 interface Overlay<T> {
   added: T[]
@@ -24,6 +25,18 @@ function read<T>(collection: string): Overlay<T> {
 }
 
 function write<T>(collection: string, o: Overlay<T>) {
+  /* ── A copy before anything goes ──────────────────────────────────────
+     Theirs, on 27-11: "that estimate is lost, again we have to redo." The
+     records the office writes are the only ones there are, so the moment a
+     write would hold fewer of them than the one before it — a delete, or
+     Undo all pressed on a register — the register as it stands is put away
+     first. Settings → Security & Backup brings it back. */
+  try {
+    const before = read<T>(collection)
+    if (o.added.length < before.added.length || o.deleted.length > before.deleted.length) {
+      takeSnapshot(`before ${collection} lost a record`)
+    }
+  } catch { /* a copy is a kindness, not a condition of saving */ }
   try { localStorage.setItem(KEY(collection), JSON.stringify(o)) } catch { /* storage full or blocked */ }
 }
 

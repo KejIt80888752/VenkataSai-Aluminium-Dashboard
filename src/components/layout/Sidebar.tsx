@@ -7,7 +7,7 @@ import {
   ShoppingBag, Building2, Truck, Users, CreditCard, BarChart2, Search, FileCheck2,
   FileSpreadsheet, TrendingUp, UserCog, Settings, LogOut, X, IndianRupee,
   Workflow, FileStack, Scale, SprayCan, MapPin, Boxes, ScanLine,
-  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch, CalendarDays,
+  ShieldCheck, ClipboardCheck, ClipboardList, BellRing, Undo2, DoorOpen, Landmark, Mic, QrCode, FileSearch, Layers3, HardHat, Ruler, BookOpen, Scissors, Grid3x3, ScanBarcode, History, Trophy, Split, PackageOpen, PackageX, Tags, FileInput, Palette, GitBranch, CalendarDays, MessageSquare,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BUILT } from '@/lib/version'
@@ -72,6 +72,7 @@ const NAV: ({ group: string } | { to: string; icon: typeof Package; label: strin
   { to: '/pack-goods',       icon: PackageOpen,     label: 'Pack & Loose Goods'},
   { group: 'AI & Automation' },
   { to: '/ai-capture',       icon: ScanLine,        label: 'AI Capture'        },
+  { to: '/chat-pdf',         icon: MessageSquare,   label: 'WhatsApp Chat → PDF'},
   { group: 'Finance' },
   { to: '/outstanding',      icon: CreditCard,      label: 'Outstanding'       },
   { to: '/payments',         icon: QrCode,          label: 'Payments'          },

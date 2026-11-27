@@ -128,7 +128,12 @@ export function RowActions({ onEdit, onDelete, label }: {
         <div className="space-y-4">
           <p className="text-sm" style={{ color: 'var(--text-2)' }}>
             {label ? <>“{label}” will be removed from this register.</> : 'This row will be removed from the register.'}
-            {' '}Nothing is lost for good — Undo all changes on this page brings it back.
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+            {/* It used to say "Undo all changes on this page brings it back", which
+                was the one button that would have taken the rest of the register
+                with it. A copy of the register is put away before the row goes. */}
+            A copy of this register is kept first — Settings → Security &amp; Backup brings it back.
           </p>
           <div className="flex justify-end gap-2">
             <button className="btn-outline" onClick={() => setConfirm(false)}>Keep it</button>
@@ -154,14 +159,42 @@ export function CrudBar({ noun, fields, onAdd, onImport, changes, onRestore }: {
 }) {
   const [adding, setAdding] = useState(false)
   const [importing, setImporting] = useState(false)
+  /* ── Undo all asks first ──────────────────────────────────────────────
+     Theirs, on 27-11: "that estimate is lost, again we have to redo." This
+     button read like a harmless undo and emptied the register in one click,
+     with nothing said and nothing asked. Every record the office has added
+     here is one of those "changes". So it says how many will go, and a copy
+     is put away first — Settings → Security & Backup brings it back. */
+  const [wiping, setWiping] = useState(false)
 
   return (
     <>
       {changes > 0 && (
-        <button className="btn-ghost !text-xs" onClick={onRestore} title="Undo every change made on this page">
+        <button className="btn-ghost !text-xs" onClick={() => setWiping(true)}
+          title="Take this register back to how it was shipped — everything added here goes">
           <RotateCcw size={13} /> {changes} {changes === 1 ? 'change' : 'changes'} — undo all
         </button>
       )}
+
+      <Modal open={wiping} onClose={() => setWiping(false)} title={`Undo all ${changes} changes?`}>
+        <div className="space-y-4">
+          <p className="text-sm" style={{ color: 'var(--text-2)' }}>
+            This takes the register back to how it was shipped. Every {noun.toLowerCase()} added or edited
+            here — <b>{changes} {changes === 1 ? 'change' : 'changes'}</b> — goes, and they are not entered again
+            for you.
+          </p>
+          <p className="text-[11px]" style={{ color: 'var(--text-4)' }}>
+            A copy of the register as it stands is kept first. Settings → Security &amp; Backup brings it back.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button className="btn-outline" onClick={() => setWiping(false)}>Keep my work</button>
+            <button className="btn" style={{ background: 'var(--red)' }}
+              onClick={() => { setWiping(false); onRestore() }}>
+              <RotateCcw size={14} /> Undo all {changes}
+            </button>
+          </div>
+        </div>
+      </Modal>
       {onImport && (
         <button className="btn-outline" onClick={() => setImporting(true)}>
           <Upload size={14} /> Upload

@@ -9,6 +9,7 @@ import { DEFAULT_TERMS } from '@/data/terms'
 import { productById } from '@/data/productmaster'
 import { imageOf } from '@/lib/productimages'
 import { colourName, swatchOf, withColour, UNCOATED } from '@/data/colours'
+import { slabTag } from '@/lib/slabs'
 
 /* ── A quotation the customer can actually be handed ───────────────────────
    They asked us to look at what Tally and the rest already do — "we are
@@ -281,7 +282,16 @@ export default function QuoteDoc({ doc, kind, onClose }: {
                   {l.narration ? (
                     <span className="block text-[10px] text-slate-500 italic">{l.narration}</span>
                   ) : null}
-
+                  {/* ── The slab, split the way it is written by hand ────
+                      Theirs, on 27-11: "Tax Slab representation I asked for
+                      like 9/6 in description." The figure beside the amount
+                      gives the whole slab; this gives the two halves CGST
+                      and SGST take, against the line they belong to. It is
+                      on a line that carries money, because a specification
+                      line is not being taxed. */}
+                  {showsSlab && l.amount && !lumpSum ? (
+                    <span className="block text-[10px] text-slate-500 tabular-nums">{slabTag(l.gst)}</span>
+                  ) : null}
                 </td>
                 {showsHsn && <td className="border border-slate-300 px-2 py-1.5">{l.hsn}</td>}
                 {/* The aluminium line already carries every kilo on the
@@ -388,7 +398,8 @@ export default function QuoteDoc({ doc, kind, onClose }: {
         )}
         {showsSlab && (
           <p className="text-[10px] text-slate-500 mt-1.5">
-            The small figure beside an amount is the GST rate that line carries.
+            The small figure beside an amount is the GST rate that line carries; the split under the description is
+            how CGST and SGST take it.
           </p>
         )}
 
