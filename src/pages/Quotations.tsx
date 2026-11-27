@@ -125,6 +125,19 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => {
   metalKg: metals.length
     ? +metals.reduce((s, l) => s + (l.kg ?? l.qty ?? 0), 0).toFixed(3)
     : undefined,
+  /* ── Each rate keeps its own weight ──────────────────────────────────
+     Theirs, on 27-11: "that weight issue is repeating again... estimate I
+     checked, it's not holding."
+
+     A job that mixes series is priced at more than one rate a kilo, and the
+     form holds a weight against each — thirty kilos at 415 and twenty at
+     445 are two lines on the paper. Coming back in, all of it was being
+     handed to the first rate and the second block opened empty: the total
+     survived, the split did not, and the metal was billed at the wrong
+     money. Each block is read back off its own line. */
+  metalBlocks: metals.length
+    ? metals.map(l => ({ rate: l.rate, kg: +(l.kg ?? l.qty ?? 0), gst: l.gst }))
+    : undefined,
   /* ── How it was priced, as the document says ────────────────────────
      Theirs, on 27-11: an estimate kept as a draft and opened again "misses
      the calculation". Both of these used to be guessed back from whether
