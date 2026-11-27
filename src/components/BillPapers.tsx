@@ -17,6 +17,7 @@ import {
   Camera, Upload, Trash2, Info, FileText, Maximize2, ZoomIn, ZoomOut, Pin,
 } from 'lucide-react'
 import { Modal } from '@/components/ui'
+import ReadBill from '@/components/ReadBill'
 import {
   addPapers, usePapers, removePaper, notePaper, paperBlob, usePinnedPaper, kb, whenOf, type Paper,
 } from '@/lib/papers'
@@ -219,6 +220,12 @@ export default function BillPapers({ compact = false }: { compact?: boolean }) {
         )}
       </div>
       )}
+
+      {/* ── Reading it ───────────────────────────────────────────────────
+          Theirs, on 27-11: "ella bill upload panna varanum." Whichever paper
+          is pinned is the one offered to the reader, so the bill on the
+          screen is the bill being read. */}
+      {!compact && shown && <ReadBill paper={shown} />}
 
       {/* Beside the sheet: the one paper somebody is typing from. */}
       {compact && shown && (
