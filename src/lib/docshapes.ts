@@ -19,7 +19,7 @@
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc, BuiltLine } from '@/components/DocBuilder'
 import { lineAmount, totalKgOf, totalNosOf, isAluminium, coatingSlabOf } from '@/components/DocBuilder'
-import type { PaidMode } from '@/components/DocBuilder'
+import type { PaidMode, CoatingMode } from '@/components/DocBuilder'
 import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
 
@@ -182,7 +182,9 @@ const linesOf = (d: BuiltDoc): Line[] => {
        them all as one supply — and the metal's where they carry none, so a
        charge beside taxed metal is never printed untaxed. The form works it
        out the same way, from the same function. */
-    const slab = coatingSlabOf(metal.map(l => l.gst), d.aluminium?.gst ?? 18)
+    const slab = d.coatingGst != null
+      ? d.coatingGst
+      : coatingSlabOf(metal.map(l => l.gst), d.aluminium?.gst ?? 18)
     if (charged > 0 || qty > 0) out.push({
       code: '', name: 'POWDER COATING', hsn: hsnFor('coating'),
       unit, qty, rate,
@@ -225,6 +227,8 @@ export function asQuotation(d: BuiltDoc, kind: SalesKind, status: Quotation['sta
     lines: linesOf(d),
     taxable: d.taxable, tax: d.tax, total: d.total,
     status, owner: d.owner, terms: d.terms,
+    /* Written down rather than guessed back off the lines — see Quotation. */
+    coatingMode: d.coatingMode, coatingUnit: d.coatingUnit, coatingGst: d.coatingGst,
   }
 }
 
@@ -265,6 +269,7 @@ export function asInvoice(d: BuiltDoc): Invoice {
     status: received <= 0 ? 'Unpaid' : received >= total ? 'Paid' : 'Partial',
     mode: d.paidMode ?? 'Credit',
     terms: d.terms,
+    coatingMode: d.coatingMode, coatingUnit: d.coatingUnit, coatingGst: d.coatingGst,
   }
 }
 
@@ -292,6 +297,10 @@ export interface DocRow {
      have gone back to unpaid without anybody choosing that. */
   received?: number
   paidMode?: PaidMode
+  /** how the coating was charged, as the document recorded it */
+  coatingMode?: CoatingMode
+  coatingUnit?: 'kg' | 'nos'
+  coatingGst?: number | null
   terms?: string[]
 }
 
@@ -300,6 +309,7 @@ export const rowOfQuotation = (q: Quotation): DocRow => ({
   clientName: q.clientName, subject: q.subject, lines: q.lines,
   taxable: q.taxable, tax: q.tax, total: q.total,
   status: q.status, owner: q.owner, balance: null, terms: q.terms,
+  coatingMode: q.coatingMode, coatingUnit: q.coatingUnit, coatingGst: q.coatingGst,
 })
 
 export const rowOfInvoice = (i: Invoice): DocRow => ({
@@ -315,6 +325,7 @@ export const rowOfInvoice = (i: Invoice): DocRow => ({
   received: i.received,
   paidMode: (i.mode === 'Credit' || i.mode === 'Cash' || i.mode === 'Cheque'
     || i.mode === 'UPI' || i.mode === 'NEFT') ? i.mode : 'Credit',
+  coatingMode: i.coatingMode, coatingUnit: i.coatingUnit, coatingGst: i.coatingGst,
   terms: i.terms,
 })
 

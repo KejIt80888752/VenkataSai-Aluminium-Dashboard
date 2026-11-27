@@ -61,11 +61,14 @@ export function SearchBox({ value, onChange, placeholder = 'Search…' }: {
 }
 
 /* ── Select ────────────────────────────────────────────────────────── */
-export function Select({ value, onChange, options, className }: {
+export function Select({ value, onChange, options, className, title }: {
   value: string; onChange: (v: string) => void; options: string[]; className?: string
+  /** what hovering it explains, where the choice needs a word */
+  title?: string
 }) {
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} className={cn('input w-auto min-w-[9rem]', className)}>
+    <select value={value} onChange={e => onChange(e.target.value)} title={title}
+      className={cn('input w-auto min-w-[9rem]', className)}>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
   )

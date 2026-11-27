@@ -97,6 +97,11 @@ export interface Invoice {
   piNo?: string
   /** "30 days", "Advance", whatever was agreed for this one */
   paymentTerms?: string
+  /** how the coating was charged on it — see Quotation above */
+  coatingMode?: 'section' | 'cumulative' | 'off'
+  coatingUnit?: 'kg' | 'nos'
+  /** the slab somebody chose for the coating, where they chose one */
+  coatingGst?: number | null
 }
 
 const interState = (c: Client) => c.state !== 'Karnataka'
@@ -290,6 +295,23 @@ export interface Quotation {
   owner: string
   /** what prints at the foot of this one, which may differ from the standard */
   terms?: string[]
+  /* ── How the coating was charged on it ─────────────────────────────────
+     Theirs, on 27-11: raise an estimate, keep it as a draft, open it again
+     and "the calculation goes missing". It did. Neither of these was ever
+     written down: they were guessed back from whether the document had a
+     POWDER COATING line on it. An estimate charges the coating section by
+     section and has no such line, so reopening one read the coating as
+     being by the kilo at a lot rate of nought, and ₹144 a length on every
+     section quietly came to nothing — with the rate still sitting in the
+     box, which is what made it so hard to see.
+
+     A document says how it was priced now rather than being asked to
+     remember. Old documents carry neither and are read the way they were
+     before, with the sections' own unit believed over a guess. */
+  coatingMode?: 'section' | 'cumulative' | 'off'
+  coatingUnit?: 'kg' | 'nos'
+  /** the slab somebody chose for the coating, where they chose one */
+  coatingGst?: number | null
 }
 
 const SUBJECTS = [

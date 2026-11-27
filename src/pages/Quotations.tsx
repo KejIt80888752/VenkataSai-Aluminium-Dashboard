@@ -125,9 +125,25 @@ const toBuilt = (r: DocRow): Partial<BuiltDoc> => {
   metalKg: metals.length
     ? +metals.reduce((s, l) => s + (l.kg ?? l.qty ?? 0), 0).toFixed(3)
     : undefined,
-  coatingMode: coatL ? 'cumulative' : 'section',
+  /* ── How it was priced, as the document says ────────────────────────
+     Theirs, on 27-11: an estimate kept as a draft and opened again "misses
+     the calculation". Both of these used to be guessed back from whether
+     the document had a POWDER COATING line on it — and an estimate, which
+     charges the coating section by section, has none. So a per-length
+     estimate reopened as a per-kilo one at a lot rate of nought, and ₹144
+     against each section came to nothing while the rate sat in the box
+     looking right.
+
+     The document records both now. Anything raised before does not, so it
+     is read the way it used to be, except that a coated section's own unit
+     is believed over the guess: sections are quoted by the piece, and a
+     document with sections and no lot line was never by the kilo. */
+  coatingMode: r.coatingMode ?? (coatL ? 'cumulative' : 'section'),
   coatingRate: coatL?.rate ?? 0,
-  coatingUnit: coatL?.unit === 'nos' ? 'nos' : 'kg',
+  coatingUnit: r.coatingUnit
+    ?? (coatL ? (coatL.unit === 'nos' ? 'nos' : 'kg')
+      : r.lines.some(l => l.group === 'coating') ? 'nos' : 'kg'),
+  coatingGst: r.coatingGst,
   /* The aluminium line and a cumulative coating line are summaries of the
      sections, not material in their own right. Read back as products they
      would be billed a second time, so only the sections come back. */

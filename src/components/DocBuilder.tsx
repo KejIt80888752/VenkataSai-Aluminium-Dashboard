@@ -206,6 +206,16 @@ export interface BuiltDoc {
   coatingMode: CoatingMode
   /** the one rate, where the lot is charged together */
   coatingRate: number
+  /* ── The slab the coating is charged at ───────────────────────────────
+     Theirs, on 27-11: "give the GST edit option everywhere, it is
+     disabled." The coating row had no GST cell at all, which is how
+     ₹1,392 of it went out at nought per cent on their own quotation with
+     no way to put it right from the form.
+
+     Left empty it follows the sections it covers, and the metal where they
+     carry none — which is what it has always done. Set, it is what
+     somebody chose, and nothing overrides that. */
+  coatingGst?: number | null
   /* ── What the coating is charged on ───────────────────────────────────
      Theirs, on 21-11: "powder coating needs a unit (per kg or unit price).
      It is missing now." A coater is usually paid by the kilo, but a small
@@ -351,6 +361,9 @@ export function totalsOf(
   /* What the metal comes to across every rate on the document, where there
      is more than one of them. */
   typedMetal?: number,
+  /* The slab somebody chose for the coating. Left out, it follows the
+     sections it covers and then the metal. */
+  typedCoatingGst?: number | null,
 ) {
   const picked = lines.filter(l => l.productId)
   const kg = typedKg != null ? typedKg : totalKgOf(picked)
@@ -436,11 +449,13 @@ export function totalsOf(
      made cannot be at no slab while the metal it belongs to is at 18, so
      the sections' slab is used where there is one and the metal's where
      there is not. Nothing is invented: both figures are on the document. */
-  const coatedSlab = coatingSlabOf(coatedLines.map(l => l.gst), aluminium.gst)
+  const coatedSlab = typedCoatingGst != null && typedCoatingGst >= 0
+    ? typedCoatingGst
+    : coatingSlabOf(coatedLines.map(l => l.gst), aluminium.gst)
   const coatingTax = aluminium.on
     ? (coatingUnit !== 'kg' && coatedLines.length
         ? coatedLines.reduce((s, l) => s + lineAmount(l, true) * (coatedSlab / 100), 0)
-        : coating * (aluminium.gst / 100))
+        : coating * (coatedSlab / 100))
     : 0
 
   /* Everything sold outright pays at its own slab — a hinge is not taxed at
@@ -574,6 +589,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [aluRate, setAluRate] = useState(0)
   const [aluGst, setAluGst] = useState(18)
   const [coatingMode, setCoatingMode] = useState<CoatingMode>('section')
+  /** null: follow the sections, then the metal. A number: somebody chose it. */
+  const [coatingGst, setCoatingGst] = useState<number | null>(null)
   const [coatingRate, setCoatingRate] = useState(0)
   const [coatingUnit, setCoatingUnit] = useState<'kg' | 'nos'>('nos')
   /* ── A weight for each rate ───────────────────────────────────────────
@@ -793,6 +810,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setPoNo(initial?.poNo ?? '')
     setPiNo(initial?.piNo ?? '')
     setPaymentTerms(initial?.paymentTerms ?? '')
+    setCoatingGst(initial?.coatingGst ?? null)
     setPaidMode(initial?.paidMode ?? 'Credit')
     setPaidNow(initial?.paidNow ?? 0)
     /* A purchase bill is what came off the lorry and opens uncoated; a
@@ -954,9 +972,16 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const t = useMemo(
     () => totalsOf(lines, alu, coatingUnit,
       autoWeighs ? undefined : aluKg, coatingRate,
-      autoWeighs ? undefined : typedMetal),
+      autoWeighs ? undefined : typedMetal, coatingGst),
     [lines, aluOn, aluRate, aluGst, coatingMode, coatingRate, coatingUnit,
-      aluKg, typedMetal, isPurchase])
+      aluKg, typedMetal, coatingGst, isPurchase])
+  /** What the coating is actually taxed at, chosen or followed. */
+  const coatingSlab = coatingGst != null
+    ? coatingGst
+    : coatingSlabOf(
+        lines.filter(l => alu.on && isAluminium(l)).map(l => l.gst),
+        aluGst,
+      )
   const rev = revisionNumber(docNo)
 
   const patch = (key: string, p: Partial<BuiltLine>) =>
@@ -1219,7 +1244,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       paymentTerms: paymentTerms.trim(),
       paidMode, paidNow: paidMode === 'Credit' ? 0 : paidNow,
       ...totalsOf(keep, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate,
-        autoWeighs ? undefined : typedMetal),
+        autoWeighs ? undefined : typedMetal, coatingGst),
+      coatingGst,
       metalBlocks: metalGroups.map(g => ({ rate: g.rate, kg: g.kg, gst: aluGst })),
       status,
     })
@@ -1579,12 +1605,19 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                     </td>
                     <td className="num" />
                     <td className="num">
-                      {gi === 0 ? (
-                        <Select value={String(aluGst)} onChange={v => setAluGst(Number(v))}
-                          options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" />
-                      ) : (
-                        <span className="text-[11px]" style={{ color: 'var(--text-4)' }}>{aluGst}%</span>
-                      )}
+                      {/* ── Editable on every block ───────────────────
+                          Theirs, on 27-11: "give the GST edit option
+                          everywhere, it is disabled." A second rate block
+                          printed its slab as plain text, which read as a
+                          cell that would not take a change. Every block is
+                          the same metal at the same HSN, so there is one
+                          slab between them — but it can be changed from
+                          any of them rather than only the first. */}
+                      <Select value={String(aluGst)} onChange={v => setAluGst(Number(v))}
+                        options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0"
+                        title={metalGroups.length > 1
+                          ? 'Every aluminium block is the same metal at the same HSN, so this slab covers all of them.'
+                          : undefined} />
                     </td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
                       {/* Each block's own money. Showing the document's
@@ -1655,7 +1688,26 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                         pre-fed
                       </p>
                     </td>
-                    <td className="num" />
+                    {/* ── The coating's own slab ────────────────────────
+                        Theirs, on 27-11: "give the GST edit option
+                        everywhere, it is disabled." This cell was empty.
+                        It is the one that went out at nought per cent on
+                        their quotation to SDM Interiors and could not be
+                        put right from the form. It opens on whatever the
+                        charge is actually being taxed at — the sections'
+                        slab, or the metal's where they carry none — and
+                        choosing here overrides both. */}
+                    <td className="num">
+                      <Select value={String(coatingSlab)}
+                        onChange={v => setCoatingGst(Number(v))}
+                        options={GST_RATES} className="!w-16 !py-1 !text-xs !min-w-0" />
+                      {coatingGst == null && (
+                        <p className="text-[10px] text-right mt-0.5" style={{ color: 'var(--text-4)' }}
+                          title="Taken from the sections this charge covers, and from the metal where they carry none. Choose one to fix it.">
+                          follows
+                        </p>
+                      )}
+                    </td>
                     <td className="num tabular-nums font-semibold" style={{ color: 'var(--brand)' }}>
                       {t.coating ? inr2(t.coating) : '—'}
                     </td>
