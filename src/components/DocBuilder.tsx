@@ -228,7 +228,31 @@ export interface BuiltDoc {
   poNo: string
   piNo: string
   paymentTerms: string
+  /* ── Where the money went ──────────────────────────────────────────────
+     Theirs, on 27-11: "he asked where the amount is received" — meaning,
+     when a bill is raised, where does what the customer paid get recorded,
+     and was it online or offline. Put the option in.
+
+     It is on the bill and not on the print: they had the received amount
+     and the balance taken off the paper on 23-11, and nothing about that
+     has changed. This is the shop's own record of what came in, and it is
+     what the Billing Register, Outstanding and Payments read. */
+  /** how it was paid, or Credit where nothing has come in yet */
+  paidMode: PaidMode
+  /** what was received against it at the time the bill was raised */
+  paidNow: number
 }
+
+/** Cash and cheque are over the counter; UPI and a bank transfer are not. */
+export type PaidMode = 'Credit' | 'Cash' | 'Cheque' | 'UPI' | 'NEFT'
+
+export const PAID_MODES: { key: PaidMode; label: string }[] = [
+  { key: 'Credit', label: 'Not paid yet — on credit' },
+  { key: 'UPI',    label: 'Online — UPI' },
+  { key: 'NEFT',   label: 'Online — bank transfer' },
+  { key: 'Cash',   label: 'Offline — cash' },
+  { key: 'Cheque', label: 'Offline — cheque' },
+]
 
 /**
  * The weight of the aluminium on a document — what the metal is priced on.
@@ -570,6 +594,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
   const [poNo, setPoNo] = useState('')
   const [piNo, setPiNo] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
+  const [paidMode, setPaidMode] = useState<PaidMode>('Credit')
+  const [paidNow, setPaidNow] = useState(0)
 
   /* Products the shop has added itself sit beside the master, so a door
      closer typed on one quotation is picked on the next. */
@@ -767,6 +793,8 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
     setPoNo(initial?.poNo ?? '')
     setPiNo(initial?.piNo ?? '')
     setPaymentTerms(initial?.paymentTerms ?? '')
+    setPaidMode(initial?.paidMode ?? 'Credit')
+    setPaidNow(initial?.paidNow ?? 0)
     /* A purchase bill is what came off the lorry and opens uncoated; a
        sales document opens on a colour, because nothing goes out in the
        mill finish without somebody saying so. */
@@ -1189,6 +1217,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
       vehicle: vehicle.trim(), ewayBill: ewayBill.trim(), remarks: remarks.trim(),
       shipTo: shipTo.trim(), poNo: poNo.trim(), piNo: piNo.trim(),
       paymentTerms: paymentTerms.trim(),
+      paidMode, paidNow: paidMode === 'Credit' ? 0 : paidNow,
       ...totalsOf(keep, alu, coatingUnit, autoWeighs ? undefined : aluKg, coatingRate,
         autoWeighs ? undefined : typedMetal),
       metalBlocks: metalGroups.map(g => ({ rate: g.rate, kg: g.kg, gst: aluGst })),
@@ -1307,6 +1336,7 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
                 value={clientName}
                 onChange={v => setClientName(v)}
                 onCreate={typed => { setNewParty(true); setClientName(typed) }}
+                createLabel={isPurchase ? 'supplier' : 'customer'}
                 placeholder={isPurchase ? 'Type a supplier name…' : 'Type a customer name…'} />
             ) : (
               <div className="flex gap-1.5">
@@ -1369,6 +1399,43 @@ export default function DocBuilder({ open, onClose, onSave, kind, docNo, initial
               <div><label className="label">Remarks</label>
                 <input className="input w-full" value={remarks} placeholder="Anything to search on later"
                   onChange={e => setRemarks(e.target.value)} /></div>
+            </div>
+
+            {/* ── What came in, and how ──────────────────────────────────
+                Theirs, on 27-11: when the bill is raised, where does the
+                amount get recorded — online or offline? Here, on the bill
+                itself, so nobody has to remember it and write it down on
+                another screen afterwards. It does not print: the received
+                amount and the balance came off the paper on 23-11 and have
+                stayed off. */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-3 rounded-lg p-3"
+              style={{ background: 'var(--bg-card2)', border: '1px solid var(--border-2)' }}>
+              <div><label className="label">How it is being paid</label>
+                <Select value={PAID_MODES.find(m => m.key === paidMode)?.label ?? PAID_MODES[0].label}
+                  onChange={v => {
+                    const m = PAID_MODES.find(x => x.label === v)?.key ?? 'Credit'
+                    setPaidMode(m)
+                    /* Nothing has come in on credit, and a mode chosen with
+                       no figure beside it almost always means the whole
+                       bill — so it opens on the whole and can be typed
+                       down to a part payment. */
+                    setPaidNow(m === 'Credit' ? 0 : (paidNow || t.total))
+                  }}
+                  options={PAID_MODES.map(m => m.label)} className="!w-full" /></div>
+              <div><label className="label">Received now</label>
+                <NumBox className="input w-full text-right" value={paidNow} disabled={paidMode === 'Credit'}
+                  placeholder={paidMode === 'Credit' ? 'nothing yet' : '0.00'}
+                  onChange={setPaidNow} /></div>
+              <div><label className="label">Balance after this</label>
+                <p className="input w-full flex items-center justify-end tabular-nums font-semibold"
+                  style={{ color: t.total - paidNow > 0 ? 'var(--amber)' : 'var(--green)' }}>
+                  {inr2(Math.max(0, +(t.total - paidNow).toFixed(2)))}
+                </p></div>
+              <p className="lg:col-span-3 text-[11px]" style={{ color: 'var(--text-4)' }}>
+                This is your record, not the customer's — it does not print on the bill. It is what the
+                Billing Register, Outstanding and Payments read, so a bill marked paid here stops being
+                chased there.
+              </p>
             </div>
           </div>
         )}

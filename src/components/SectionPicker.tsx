@@ -52,14 +52,17 @@ export const loose = (s: string) =>
     .replace(/\b(inches|inch|feet|foot|ft)\b/g, '')
     .replace(/[\s\-_/]/g, '')
 
-export function SectionPicker({ options, value, onChange, onCreate, placeholder = 'Type a section name…', className }: {
+export function SectionPicker({ options, value, onChange, onCreate, createLabel = 'item', placeholder = 'Type a section name…', className }: {
   options: PickOption[]
   /** the chosen section's code, or '' for none */
   value: string
   onChange: (code: string) => void
-  /** offered when nothing matches, so a shop can sell what the master has
-      never heard of rather than wait on somebody to add it */
+  /** offered so a shop can sell what the master has never heard of, or bill
+      a customer it has not dealt with, rather than wait on somebody to add
+      it. It is offered whatever the list is showing — see below. */
   onCreate?: (typed: string) => void
+  /** what the new one is: "item", "customer", "supplier". */
+  createLabel?: string
   placeholder?: string
   className?: string
 }) {
@@ -125,6 +128,12 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
         return words.every(w => hay.includes(w))
       })
       .slice(0, 50)
+  }, [options, query])
+
+  /* Already on the list, spelled the same way: there is nothing to add. */
+  const exactHit = useMemo(() => {
+    const q = loose(query)
+    return !!q && options.some(o => loose(o.name) === q || loose(o.code) === q)
   }, [options, query])
 
   /* A click anywhere else closes it, which is what a dropdown would do.
@@ -227,25 +236,13 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
                   : { bottom: window.innerHeight - at.top }),
                 background: 'var(--bg-card)', border: '1px solid var(--border-2)',
               }}>
-              {hits.length === 0 ? (
-                <div>
-                  {onCreate && query.trim() !== '' && (
-                    <button type="button"
-                      onClick={() => { onCreate(query.trim()); setQuery(''); setOpen(false) }}
-                      className="w-full text-left px-3 py-2 flex items-center gap-2"
-                      style={{ background: 'var(--bg-card2)' }}>
-                      <Plus size={13} style={{ color: 'var(--green)' }} />
-                      <span className="text-xs" style={{ color: 'var(--text-1)' }}>
-                        Add <b>{query.trim()}</b> as a new item
-                      </span>
-                    </button>
-                  )}
-                  <p className="px-3 py-2.5 text-[11.5px]" style={{ color: 'var(--text-4)' }}>
-                    Nothing in the list matches "{query}". Spaces, the foot mark and × or * are ignored,
-                    so 16SG and 2.5*1.5 both work.
-                  </p>
-                </div>
-              ) : hits.map((o, i) => (
+              {hits.length === 0 && (
+                <p className="px-3 py-2.5 text-[11.5px]" style={{ color: 'var(--text-4)' }}>
+                  Nothing in the list matches "{query}". Spaces, the foot mark and × or * are ignored,
+                  so 16SG and 2.5*1.5 both work.
+                </p>
+              )}
+              {hits.map((o, i) => (
                 <button key={optValue(o)} type="button" data-row={i}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => choose(o)}
@@ -260,6 +257,29 @@ export function SectionPicker({ options, value, onChange, onCreate, placeholder 
                   {optValue(o) === value && <Check size={12} style={{ color: 'var(--green)' }} />}
                 </button>
               ))}
+              {/* ── Adding one is always on offer ──────────────────────────
+                  Theirs, on 27-11: the option to add a customer "was there
+                  before, now it is not". It was there — only when nothing
+                  in the list matched at all. Type a new customer whose name
+                  begins like one they already have and the list showed the
+                  old one and no way to add the new, which is the commonest
+                  case there is. It sits under the matches now, and names
+                  what is being added rather than calling everything an
+                  item. */}
+              {onCreate && query.trim() !== '' && !exactHit && (
+                <button type="button"
+                  onClick={() => { onCreate(query.trim()); setQuery(''); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 flex items-center gap-2"
+                  style={{
+                    background: 'var(--bg-card2)',
+                    borderTop: hits.length ? '1px solid var(--border-2)' : undefined,
+                  }}>
+                  <Plus size={13} style={{ color: 'var(--green)' }} />
+                  <span className="text-xs" style={{ color: 'var(--text-1)' }}>
+                    Add <b>{query.trim()}</b> as a new {createLabel}
+                  </span>
+                </button>
+              )}
             </div>,
             document.body,
           )}

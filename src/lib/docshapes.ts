@@ -19,6 +19,7 @@
 import type { Quotation, Invoice, Line } from '@/data/txns'
 import type { BuiltDoc, BuiltLine } from '@/components/DocBuilder'
 import { lineAmount, totalKgOf, totalNosOf, isAluminium, coatingSlabOf } from '@/components/DocBuilder'
+import type { PaidMode } from '@/components/DocBuilder'
 import { hsnFor } from '@/data/hsn'
 import { COMPANY } from '@/data/company'
 
@@ -231,6 +232,10 @@ export function asQuotation(d: BuiltDoc, kind: SalesKind, status: Quotation['sta
 export function asInvoice(d: BuiltDoc): Invoice {
   const half = +(d.tax / 2).toFixed(2)
   const total = Math.round(d.taxable + d.tax)
+  /* Never more than the bill, and nothing at all where it is on credit. */
+  const received = d.paidMode && d.paidMode !== 'Credit'
+    ? Math.min(total, Math.max(0, d.paidNow ?? 0))
+    : 0
   return {
     id: `INV-${Date.now().toString(36)}`,
     no: d.no, date: d.date, dueDate: d.validTill,
@@ -250,7 +255,16 @@ export function asInvoice(d: BuiltDoc): Invoice {
     igst: d.interState ? d.tax : 0,
     roundOff: +(total - (d.taxable + d.tax)).toFixed(2),
     total,
-    cogs: 0, received: 0, status: 'Unpaid', mode: 'Credit', terms: d.terms,
+    cogs: 0,
+    /* ── What came in with the bill ─────────────────────────────────────
+       Theirs, on 27-11: "where is the amount received" — online or offline.
+       It is typed on the bill and kept here, so the Billing Register,
+       Outstanding and Payments all read one figure and a bill already paid
+       is not chased. Nothing of this prints. */
+    received,
+    status: received <= 0 ? 'Unpaid' : received >= total ? 'Paid' : 'Partial',
+    mode: d.paidMode ?? 'Credit',
+    terms: d.terms,
   }
 }
 
@@ -272,6 +286,12 @@ export interface DocRow {
   owner: string
   /** what is still to come in, on a bill that carries it */
   balance: number | null
+  /* ── What has been received, and how ───────────────────────────────────
+     Carried so a revision of a bill reopens on the payment it already has.
+     Without them a bill marked paid, reopened to correct an address, would
+     have gone back to unpaid without anybody choosing that. */
+  received?: number
+  paidMode?: PaidMode
   terms?: string[]
 }
 
@@ -291,7 +311,11 @@ export const rowOfInvoice = (i: Invoice): DocRow => ({
   tax: +(i.cgst + i.sgst + i.igst).toFixed(2),
   total: i.total,
   status: i.status, owner: '',
-  balance: +(i.total - i.received).toFixed(2), terms: i.terms,
+  balance: +(i.total - i.received).toFixed(2),
+  received: i.received,
+  paidMode: (i.mode === 'Credit' || i.mode === 'Cash' || i.mode === 'Cheque'
+    || i.mode === 'UPI' || i.mode === 'NEFT') ? i.mode : 'Credit',
+  terms: i.terms,
 })
 
 /** A stored row read back into the builder, for a revision or a carry-forward. */
@@ -301,6 +325,8 @@ export const builtFrom = (r: DocRow) => ({
   lines: r.lines,
   owner: r.owner,
   terms: r.terms,
+  paidMode: r.paidMode,
+  paidNow: r.received,
 })
 
 export const STATUS_OPTIONS: Record<'offer' | 'invoice', string[]> = {
