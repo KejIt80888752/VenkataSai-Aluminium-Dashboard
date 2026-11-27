@@ -25,6 +25,7 @@ import { PICK_OPTIONS, productById } from '@/data/productmaster'
 import { useAliases } from '@/lib/useAliases'
 import { useCrud } from '@/lib/store'
 import { parseSheetLine } from '@/lib/speech'
+import BillPapers from '@/components/BillPapers'
 import { kg as kgFmt, cn, fmtDate } from '@/lib/utils'
 import { TODAY } from '@/data/company'
 
@@ -206,6 +207,12 @@ export default function OwnManualSheet() {
           </div>
         </div>
       )}
+
+      {/* ── The paper you are typing from ───────────────────────────────
+          Theirs, on 27-11: "hand written bills unable to upload." Whichever
+          paper is pinned on the Upload your bill tab opens here, so the
+          counter book and the typing are on the one screen. */}
+      <BillPapers compact />
 
       {/* ── Saying the line ──────────────────────────────────────────────── */}
       <div className="card" style={listening ? { borderColor: 'var(--brand)' } : undefined}>
