@@ -13,7 +13,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageSquare, Printer, Upload, Trash2, Info } from 'lucide-react'
+import { MessageSquare, Printer, Upload, Trash2, Info, Image as ImageIcon } from 'lucide-react'
+import { unzip } from 'fflate'
 import { PageHead, Select, Stat } from '@/components/ui'
 import { parseChat, sendersOf, dayLabel, inkOf, type ChatMsg } from '@/lib/chatexport'
 
@@ -22,13 +23,43 @@ const MEDIA_WORD: Record<string, string> = {
   document: 'Document', GIF: 'GIF', contact: 'Contact', attachment: 'Attachment',
 }
 
+/* ── The pictures that came with it ────────────────────────────────────────
+   Theirs, on 27-11: "media also required sir, payment screen shots, etc."
+
+   A payment is settled in a screenshot, and a chat printed without them
+   proves nothing. Exported "With media", WhatsApp writes the pictures beside
+   the text — one zip on an iPhone, a folder of files on Android — so both
+   are taken here, and each picture is put back against the message that
+   named it. The files never leave this machine; they are read straight into
+   the page.                                                                */
+export type Media = Record<string, { url: string; type: string }>
+
+const PICTURE = /\.(jpe?g|png|gif|webp|heic|bmp)$/i
+const typeOf = (name: string) => {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+    : ext === 'png' ? 'image/png'
+    : ext === 'gif' ? 'image/gif'
+    : ext === 'webp' ? 'image/webp'
+    : 'application/octet-stream'
+}
+/* WhatsApp's own folder names travel with the file on some phones, and the
+   text names it without them. The last part is what matches. */
+const keyOf = (path: string) => path.split('/').pop()!.toLowerCase()
+
 export default function ChatPdf() {
   const [raw, setRaw] = useState('')
   const [title, setTitle] = useState('')
   const [me, setMe] = useState('')
   const [showNotices, setShowNotices] = useState(true)
   const [printing, setPrinting] = useState(false)
+  const [media, setMedia] = useState<Media>({})
+  const [msg, setMsg] = useState('')
   const pick = useRef<HTMLInputElement>(null)
+  /** every picture handed to the page, so none is left behind in memory */
+  const urls = useRef<string[]>([])
+
+  useEffect(() => () => { urls.current.forEach(URL.revokeObjectURL) }, [])
 
   /* The portal has to be on the page before the print dialog opens, so the
      copy is put up first and printed on the next paint. */
@@ -57,13 +88,45 @@ export default function ChatPdf() {
     return out
   }, [shown])
 
-  const load = (f: File) => {
-    const r = new FileReader()
-    r.onload = () => {
-      setRaw(String(r.result ?? ''))
-      if (!title) setTitle(f.name.replace(/^WhatsApp Chat (with )?/i, '').replace(/\.txt$/i, '').trim())
+  const nameIt = (fileName: string) => {
+    if (title) return
+    setTitle(fileName.replace(/^WhatsApp Chat (with )?/i, '').replace(/\.(txt|zip)$/i, '').trim())
+  }
+
+  const addMedia = (name: string, data: BlobPart, type: string) => {
+    const url = URL.createObjectURL(new Blob([data], { type }))
+    urls.current.push(url)
+    setMedia(m => ({ ...m, [keyOf(name)]: { url, type } }))
+  }
+
+  /** The zip an iPhone writes: the chat and its pictures in one file. */
+  const openZip = (f: File) => {
+    f.arrayBuffer().then(buf => {
+      unzip(new Uint8Array(buf), (err, files) => {
+        if (err) { setMsg('That zip could not be opened. Choose the .txt and the pictures instead.'); return }
+        for (const [path, data] of Object.entries(files)) {
+          if (!data.length || path.endsWith('/')) continue
+          if (/\.txt$/i.test(path)) { setRaw(new TextDecoder().decode(data)); nameIt(path.split('/').pop()!) }
+          else if (PICTURE.test(path)) addMedia(path, data, typeOf(path))
+        }
+        setMsg('')
+      })
+    })
+  }
+
+  /* Both exports are taken: the zip, and the loose files an Android phone
+     leaves in a folder, which are chosen together. */
+  const load = (files: FileList) => {
+    for (const f of Array.from(files)) {
+      if (/\.zip$/i.test(f.name)) { openZip(f); continue }
+      if (/\.txt$/i.test(f.name)) {
+        const r = new FileReader()
+        r.onload = () => { setRaw(String(r.result ?? '')); nameIt(f.name) }
+        r.readAsText(f)
+        continue
+      }
+      if (PICTURE.test(f.name)) addMedia(f.name, f, f.type || typeOf(f.name))
     }
-    r.readAsText(f)
   }
 
   const span = msgs.length
@@ -82,8 +145,9 @@ export default function ChatPdf() {
         <button className="btn" disabled={!msgs.length} onClick={() => setPrinting(true)}>
           <Printer size={14} /> Print / Save PDF
         </button>
-        <input ref={pick} type="file" accept=".txt,text/plain" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) load(f); e.target.value = '' }} />
+        <input ref={pick} type="file" multiple accept=".txt,.zip,image/*,text/plain,application/zip"
+          className="hidden"
+          onChange={e => { if (e.target.files?.length) load(e.target.files); e.target.value = '' }} />
       </PageHead>
 
       {!msgs.length ? (
@@ -93,15 +157,17 @@ export default function ChatPdf() {
           </p>
           <p className="section-sub mb-4">
             On the phone, open the chat → ⋮ (or the contact name) → <b>More</b> → <b>Export chat</b> →
-            <b> Without media</b>. WhatsApp writes one <b>.txt</b> file. Choose it above, or paste it below.
-            It is read on this machine and sent nowhere.
+            <b> With media</b>, so the payment screenshots come across too. An iPhone writes one <b>.zip</b>;
+            an Android phone writes a <b>.txt</b> with the pictures beside it — choose them all together.
+            Everything is read on this machine and sent nowhere.
           </p>
           <textarea className="input w-full min-h-[11rem] font-mono !text-[11px]"
             placeholder={'[27/11/26, 5:15:11 PM] Rohith: Sir, the estimate is ready\n[27/11/26, 5:38:37 PM] Office: Ok, raising the bill'}
             value={raw} onChange={e => setRaw(e.target.value)} />
           <p className="text-[11px] mt-2 flex items-start gap-1.5" style={{ color: 'var(--text-4)' }}>
             <Info size={12} className="mt-0.5 shrink-0" />
-            Pictures are not in the export. Where one was sent, the chat says so in its place.
+            Exported <b className="mx-1">Without media</b> instead? The chat still reads in full — it says where
+            each picture was sent, in its place.
           </p>
         </div>
       ) : (
@@ -111,8 +177,11 @@ export default function ChatPdf() {
               sub={`${senders.length} ${senders.length === 1 ? 'person' : 'people'} speaking`} />
             <Stat label="Covering" value={String(days.length)} icon={MessageSquare} tone="violet"
               sub={days.length === 1 ? 'one day' : `days · ${span}`} />
-            <Stat label="Pictures sent" value={String(msgs.filter(m => m.media).length)} icon={Upload} tone="amber"
-              sub="Not in the export — the chat says where they were" />
+            <Stat label="Pictures" value={`${Object.keys(media).length} of ${msgs.filter(m => m.media).length}`}
+              icon={ImageIcon} tone={Object.keys(media).length ? 'green' : 'amber'}
+              sub={Object.keys(media).length
+                ? 'came across and print with the chat'
+                : 'export again With media to bring them across'} />
             <Stat label="Notices" value={String(msgs.filter(m => !m.from).length)} icon={Info} tone="green"
               sub="WhatsApp's own lines, which can be left off" />
           </div>
@@ -140,14 +209,19 @@ export default function ChatPdf() {
             </div>
             <div className="flex justify-end mt-3 pt-3" style={{ borderTop: '1px solid var(--border-2)' }}>
               <button className="btn-ghost !text-xs" style={{ color: 'var(--red)' }}
-                onClick={() => { setRaw(''); setMe(''); setTitle('') }}>
+                onClick={() => {
+                  urls.current.forEach(URL.revokeObjectURL); urls.current = []
+                  setRaw(''); setMe(''); setTitle(''); setMedia({}); setMsg('')
+                }}>
                 <Trash2 size={13} /> Clear this chat off the screen
               </button>
             </div>
           </div>
 
+          {msg && <p className="text-[11.5px] mb-3 print:hidden" style={{ color: 'var(--amber)' }}>{msg}</p>}
+
           <Paper title={title} span={span} count={msgs.length} days={days} mine={mine}
-            people={senders.length} />
+            people={senders.length} media={media} />
 
           {/* ── On paper ────────────────────────────────────────────────
               Printing goes through the same portal the bills use: the page
@@ -157,7 +231,7 @@ export default function ChatPdf() {
           {printing && createPortal(
             <div id="doc-print-area" className="hidden print:block">
               <Paper title={title} span={span} count={msgs.length} days={days} mine={mine}
-                people={senders.length} />
+                people={senders.length} media={media} />
             </div>,
             document.getElementById('print-root')!,
           )}
@@ -170,10 +244,10 @@ export default function ChatPdf() {
 /* ── The chat as the phone draws it ───────────────────────────────────────
    One component, used for the preview on the screen and for the copy that
    goes to paper, so what they see is what prints.                         */
-function Paper({ title, span, count, days, mine, people }: {
+function Paper({ title, span, count, days, mine, people, media }: {
   title: string; span: string; count: number
   days: { day: string; msgs: ChatMsg[] }[]
-  mine: string; people: number
+  mine: string; people: number; media: Media
 }) {
   return (
           <div className="chat-paper rounded-xl overflow-hidden"
@@ -227,11 +301,24 @@ function Paper({ title, span, count, days, mine, people }: {
                               {m.from}
                             </span>
                           )}
-                          {m.media && (
-                            <span className="block text-[11px] italic mb-0.5" style={{ color: '#667781' }}>
-                              {MEDIA_WORD[m.media] ?? 'Attachment'} — not in the export
-                            </span>
-                          )}
+                          {/* The screenshot itself, where the export carried
+                              it — theirs, on 27-11: "media also required sir,
+                              payment screen shots, etc." A picture that did
+                              not come across still says where it was. */}
+                          {m.media && (() => {
+                            const pic = m.file ? media[m.file.toLowerCase()] : undefined
+                            return pic ? (
+                              <img src={pic.url} alt={m.file}
+                                className="chat-photo block rounded mb-1"
+                                style={{ maxWidth: '100%', maxHeight: '360px', objectFit: 'contain' }} />
+                            ) : (
+                              <span className="block text-[11px] italic mb-0.5" style={{ color: '#667781' }}>
+                                {MEDIA_WORD[m.media] ?? 'Attachment'}
+                                {m.media === 'video' || m.media === 'audio' || m.media === 'document'
+                                  ? ' — not shown on paper' : ' — not in the export'}
+                              </span>
+                            )
+                          })()}
                           <span className="whitespace-pre-wrap break-words">{m.text}</span>
                           <span className="block text-right text-[10px] mt-0.5" style={{ color: '#667781' }}>
                             {m.time}

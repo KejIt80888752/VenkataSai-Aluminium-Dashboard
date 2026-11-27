@@ -64,6 +64,12 @@
      half at the foot of a page. */
   #doc-print-area .chat-bubble,
   #doc-print-area .chat-day { page-break-inside: avoid; break-inside: avoid; }
+  /* A payment screenshot is the thing being proved, so it prints at a size
+     somebody can read, and never across a fold. */
+  #doc-print-area .chat-photo {
+    max-height: 95mm !important; max-width: 100% !important;
+    page-break-inside: avoid; break-inside: avoid;
+  }
   /* The chat is laid out in coloured bubbles, not a ruled table, so the
      hairline every cell gets is not wanted here. */
   #doc-print-area .chat-paper td,

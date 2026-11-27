@@ -23,8 +23,10 @@ export interface ChatMsg {
   /** null on the notices WhatsApp writes itself. */
   from: string | null
   text: string
-  /** "photo", "video", "sticker", "document", "audio" — where media was left out. */
+  /** "photo", "video", "sticker", "document", "audio" — what was sent with it. */
   media?: string
+  /** the file WhatsApp wrote beside the text, when the export carried one */
+  file?: string
 }
 
 /* WhatsApp sprinkles direction marks and a narrow no-break space through the
@@ -50,6 +52,27 @@ const mediaOf = (text: string): string | undefined => {
   if (!/omitted|attached|<attached/i.test(text)) return undefined
   for (const [re, kind] of MEDIA) if (re.test(text)) return kind
   return 'attachment'
+}
+
+/* ── The picture itself, where they exported one ───────────────────────────
+   Theirs, on 27-11: "media also required sir, payment screen shots, etc."
+
+   Exported "With media", WhatsApp writes the file beside the text and names
+   it in the line — <attached: 00000042-PHOTO-….jpg> on an iPhone,
+   IMG-20261127-WA0012.jpg (file attached) on Android. The name is lifted out
+   so the picture can be put back against its own message, and what is left
+   is the caption, which is the part worth reading.                         */
+const FILE_LINE = [
+  /<attached:\s*([^>]+?)\s*>/i,
+  /^\s*([\w .()\-]+\.[a-z0-9]{2,4})\s*\(file attached\)\s*/im,
+]
+
+const fileOf = (text: string): { file?: string; rest: string } => {
+  for (const re of FILE_LINE) {
+    const m = text.match(re)
+    if (m) return { file: m[1].trim(), rest: text.replace(re, '').trim() }
+  }
+  return { rest: text }
 }
 
 const two = (n: number) => String(n).padStart(2, '0')
@@ -98,10 +121,14 @@ export function parseChat(raw: string): ChatMsg[] {
     const [, d, mo, y, hh, mm, , ampm, rest] = m
     const when = stamp(d, mo, y, hh, mm, ampm)
     const { from, text } = splitSender(rest)
-    out.push({ id: id++, ...when, from, text, media: mediaOf(text) })
+    const kind = mediaOf(text)
+    const { file, rest: body } = kind ? fileOf(text) : { file: undefined, rest: text }
+    out.push({ id: id++, ...when, from, text: body, media: kind, file })
   }
-  /* A trailing blank paragraph on the last message is the file's own newline. */
-  for (const msg of out) msg.text = msg.text.replace(/\s+$/, '')
+  /* A trailing blank paragraph is the file's own newline; a leading one is
+     what is left where a picture's name has been lifted off the top of its
+     own caption. */
+  for (const msg of out) msg.text = msg.text.trim()
   return out
 }
 
